@@ -1,0 +1,23 @@
+node_modules/
+*.log
+dist/
+snapshots/
+
+# native build output
+native/InkBlade/bin/
+native/InkBlade/obj/
+native/InkBlade/snapshots/
+
+# IDE / local
+.vs/
+.idea/
+.vscode/
+*.user
+
+# local web reference (not part of the native game release)
+/css/
+/js/
+/index.html
+/server.mjs
+/start.bat
+/tools/
