@@ -21,3 +21,8 @@ native/InkBlade/snapshots/
 /server.mjs
 /start.bat
 /tools/
+/builds/
+.tools/
+.godot/
+*.apk
+*.aab

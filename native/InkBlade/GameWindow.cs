@@ -85,6 +85,8 @@ public sealed class GameWindow : Form
         }
         _startTime = _watch.Elapsed.TotalSeconds;
 
+        _canvas.KeyDown += OnKeyDown;
+        _canvas.KeyUp += OnKeyUp;
         KeyDown += OnKeyDown;
         KeyUp += OnKeyUp;
         Deactivate += (_, _) => Input.Clear();
@@ -105,6 +107,18 @@ public sealed class GameWindow : Form
         _timer.Tick += OnTick;
         _timer.Start();
         _lastTime = _watch.Elapsed.TotalSeconds;
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        Keys key = keyData & Keys.KeyCode;
+        if (key == Keys.Escape || Input.IsBound(key))
+        {
+            Input.OnKeyDown(key);
+            if (key == Keys.Enter && (keyData & Keys.Alt) != 0) ToggleFullscreen();
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     void OnTick(object? sender, EventArgs e)

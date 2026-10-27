@@ -220,7 +220,11 @@ public sealed class Game
             }
         }
 
-        if (State == "play" && Input.Pressed(InputAction.Pause)) OpenPause(null);
+        if (Input.Pressed(InputAction.Pause))
+        {
+            if (State == "play") OpenPause(null);
+            else if (State == "title") OpenPause(null);
+        }
         else if (State == "play" && Input.Pressed(InputAction.Restart)) StartRun();
     }
 
@@ -333,6 +337,14 @@ public sealed class Game
 
     void ClosePause()
     {
+        if (PausedFromTitle)
+        {
+            State = "title";
+            TitleT = 0.65f;
+            Submenu = null;
+            Audio.UiConfirm();
+            return;
+        }
         State = "play";
         Submenu = null;
         HintTimer = MathF.Max(HintTimer, 3);
@@ -419,8 +431,12 @@ public sealed class Game
             return;
         }
         if (TitleT < 0.65f) return;
-        if (Input.Confirm() || Input.Pressed(InputAction.Pause)
-            || Input.Pressed(InputAction.Restart) || Input.Pressed(InputAction.Jump))
+        if (Input.Pressed(InputAction.Pause))
+        {
+            OpenPause(null);
+            return;
+        }
+        if (Input.Confirm() || Input.Pressed(InputAction.Restart) || Input.Pressed(InputAction.Jump))
             StartRun();
     }
 
@@ -728,17 +744,29 @@ public sealed class Game
         const float x = 400, y = 108, w = 480, h = 474;
         Hud.Panel(x, y, w, h, "ПАУЗА", 30);
 
-        Ink.Text($"ВРЕМЯ {U.FmtTime(RunTime)}   ·   УБИЙСТВ {Kills}   ·   СЕРИЯ {MaxCombo}",
-            x + w / 2, y + 82, new TextOpt
-            {
-                Size = 11, Font = FontKind.Display, Align = InkAlign.Center,
-                Color = C.Ink, Alpha = 0.42f, Spacing = 1
-            });
+        if (!PausedFromTitle)
+        {
+            Ink.Text($"ВРЕМЯ {U.FmtTime(RunTime)}   ·   УБИЙСТВ {Kills}   ·   СЕРИЯ {MaxCombo}",
+                x + w / 2, y + 82, new TextOpt
+                {
+                    Size = 11, Font = FontKind.Display, Align = InkAlign.Center,
+                    Color = C.Ink, Alpha = 0.42f, Spacing = 1
+                });
+        }
+        else
+        {
+            Ink.Text("НАСТРОЙКИ И ПАУЗА",
+                x + w / 2, y + 82, new TextOpt
+                {
+                    Size = 11, Font = FontKind.Display, Align = InkAlign.Center,
+                    Color = C.Ink, Alpha = 0.42f, Spacing = 1
+                });
+        }
 
         string[] labels =
         {
-            "ПРОДОЛЖИТЬ",
-            "НАЧАТЬ ЗАНОВО",
+            PausedFromTitle ? "НАЗАД" : "ПРОДОЛЖИТЬ",
+            PausedFromTitle ? "НАЧАТЬ ИГРУ" : "НАЧАТЬ ЗАНОВО",
             "УПРАВЛЕНИЕ",
             $"ТРЯСКА ЭКРАНА: {(Settings.Shake ? "ВКЛ" : "ВЫКЛ")}",
             $"ЗВУК: {(Settings.Sound ? "ВКЛ" : "ВЫКЛ")}",
@@ -1011,11 +1039,14 @@ public sealed class Game
 
         foreach (var s in World.Solids) Box(s.X, s.Y, s.W, s.H, C.Rgba(44, 111, 107, 102));
         foreach (var s in World.Oneways) Box(s.X, s.Y, s.W, s.H, C.Rgba(44, 111, 107, 64));
-        var phb = Player.Hitbox();
-        Box(phb.X, phb.Y, phb.W, phb.H, C.Rgba(31, 122, 58, 255));
-        Box(Player.X, Player.Y, Player.W, Player.H, C.Rgba(31, 122, 58, 200));
-        if (Player.Attack is not null && Player.AttackActive() && Player.AttackHitbox() is { } ahb)
-            Box(ahb.X, ahb.Y, ahb.W, ahb.H, C.Rgba(184, 146, 63, 255));
+        if (Player is not null)
+        {
+            var phb = Player.Hitbox();
+            Box(phb.X, phb.Y, phb.W, phb.H, C.Rgba(31, 122, 58, 255));
+            Box(Player.X, Player.Y, Player.W, Player.H, C.Rgba(31, 122, 58, 200));
+            if (Player.Attack is not null && Player.AttackActive() && Player.AttackHitbox() is { } ahb)
+                Box(ahb.X, ahb.Y, ahb.W, ahb.H, C.Rgba(184, 146, 63, 255));
+        }
         foreach (var e in Enemies)
         {
             if (e.Dead) continue;

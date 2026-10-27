@@ -30,10 +30,10 @@ public static class Input
         [InputAction.Attack] = new[] { Keys.J, Keys.X },
         [InputAction.Dash] = new[] { Keys.K, Keys.C, Keys.LShiftKey, Keys.RShiftKey },
         [InputAction.Heal] = new[] { Keys.L, Keys.V },
-        [InputAction.Pause] = new[] { Keys.Escape, Keys.Enter },
+        [InputAction.Pause] = new[] { Keys.Escape },
         [InputAction.Restart] = new[] { Keys.R },
         [InputAction.Help] = new[] { Keys.F1 },
-        [InputAction.Hitboxes] = new[] { Keys.F2 },
+        [InputAction.Hitboxes] = new[] { Keys.F2, Keys.F },
         [InputAction.Mute] = new[] { Keys.M },
         [InputAction.Fullscreen] = new[] { Keys.F11 },
         [InputAction.Screenshot] = new[] { Keys.F12 }
@@ -67,6 +67,7 @@ public static class Input
     static float _rumbleTime;
     static float _rumbleStrong, _rumbleWeak;
     static bool _xinputBroken;
+    static bool _prevEnter, _edgeEnter;
 
     public static void Clear()
     {
@@ -94,6 +95,10 @@ public static class Input
 
     public static void Update(float dt)
     {
+        bool enterDown = KeysDown.Contains(Keys.Enter);
+        _edgeEnter = enterDown && !_prevEnter;
+        _prevEnter = enterDown;
+
         float[]? padAxes = null;
         bool[]? padButtons = null;
         bool padUsed = false;
@@ -220,7 +225,7 @@ public static class Input
     public static bool Pressed(InputAction a) => Edge[(int)a];
     public static float AxisX() => MoveX;
     public static float AxisY() => MoveY;
-    public static bool Confirm() => Edge[(int)InputAction.Jump] || Edge[(int)InputAction.Attack];
+    public static bool Confirm() => Edge[(int)InputAction.Jump] || Edge[(int)InputAction.Attack] || _edgeEnter;
 
     public static string Label(InputAction a)
     {
