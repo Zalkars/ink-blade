@@ -249,8 +249,8 @@ def make_card_2(W=2400, H=1080):
     
     slash_orig = Image.open(P_SLASH).convert("RGBA")
     # Crop combat focus: knight, red slash arc, dummy, damage text, enemies, sentinel laser
-    # slash_orig is 1280x720. Let's crop x: 120 to 1160, y: 220 to 625 (no keyboard bar)
-    combat_crop = slash_orig.crop((120, 220, 1160, 625))
+    # slash_orig is 1280x720. Let's crop x: 80 to 1200, y: 268 to 625 (clean action, no title text, no keyboard bar)
+    combat_crop = slash_orig.crop((80, 268, 1200, 625))
     
     # Also crop HUD health masks & soul sphere
     hud_crop = slash_orig.crop((30, 25, 230, 150))
