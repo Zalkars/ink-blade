@@ -171,13 +171,13 @@ static func draw_back_static(t := 0.0) -> void:
 	InkR.save()
 	InkR.t_translate(104, 520)
 	InkR.t_rotate_deg(-90)
-	InkR.text("ЧЕРНИЛЬНЫЙ КЛИНОК", 0, 0, 44, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.055, 12)
+	InkR.text(L10N.t("WORLD_CALLIGRAPHY"), 0, 0, 44, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.055, 12)
 	InkR.restore()
 
 	draw_pillar(74, 108, 58, 512)
 	draw_pillar(1148, 108, 58, 512)
 
-	InkR.text("ЧЕРНИЛА ПОМНЯТ", 640, 108, 20, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.16, 9)
+	InkR.text(L10N.t("WORLD_INK_REMEMBERS"), 640, 108, 20, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.16, 9)
 	InkR.line(470, 122, 810, 122, 0.16, InkR.INK, 1.5, 1.0)
 
 static func draw_pillar(x: float, y: float, w: float, h: float) -> void:
@@ -215,8 +215,8 @@ static func draw_gate(_t: float) -> void:
 
 	InkR.srand(44)
 	InkR.rect(cx - 62, 352, 124, 42, InkR.rgba(247, 239, 221, 230), InkR.rgba(23, 19, 15, 153), 1.6, 1.0, 1.0)
-	InkR.text("ДАЛЬШЕ —", cx - 2, 370, 12, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.7, 2)
-	InkR.text("В РАЗРАБОТКЕ", cx - 2, 386, 11, InkR.F_HAND, InkR.A_CENTER, InkR.RED, 0.85)
+	InkR.text(L10N.t("WORLD_NEXT"), cx - 2, 370, 12, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.7, 2)
+	InkR.text(L10N.t("WORLD_IN_DEV"), cx - 2, 386, 11, InkR.F_HAND, InkR.A_CENTER, InkR.RED, 0.85)
 	InkR.line(cx - 66, 344, cx - 50, 352, 1.5, InkR.rgba(23, 19, 15, 128), 1.0, 0.0)
 	InkR.line(cx + 50, 344, cx + 66, 352, 1.5, InkR.rgba(23, 19, 15, 128), 1.0, 0.0)
 

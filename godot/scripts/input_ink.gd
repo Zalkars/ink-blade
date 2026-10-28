@@ -166,18 +166,18 @@ func label_of(a: String) -> String:
 	# порядок как в Input.Label — keyboard массив
 	var kb := {
 		"left": "A / ←", "right": "D / →", "up": "W / ↑", "down": "S / ↓",
-		"jump": "ПРОБЕЛ", "attack": "J", "dash": "K", "heal": "L",
+		"jump": L10N.t("KEY_SPACE"), "attack": "J", "dash": "K", "heal": "L",
 		"pause": "ESC", "restart": "R", "help": "F1", "hitboxes": "F / F2", "mute": "M",
 		"fullscreen": "F11", "screenshot": "F12",
 	}
 	var gp := {
-		"left": "СТИК", "right": "СТИК", "up": "СТИК", "down": "СТИК",
+		"left": L10N.t("KEY_STICK"), "right": L10N.t("KEY_STICK"), "up": L10N.t("KEY_STICK"), "down": L10N.t("KEY_STICK"),
 		"jump": "A", "attack": "X", "dash": "B", "heal": "Y",
 		"pause": "START", "restart": "BACK", "help": "—", "hitboxes": "—", "mute": "—",
 		"fullscreen": "—", "screenshot": "—",
 	}
 	var touch := {
-		"left": "СТИК", "right": "СТИК", "up": "СТИК", "down": "СТИК",
+		"left": L10N.t("KEY_STICK"), "right": L10N.t("KEY_STICK"), "up": L10N.t("KEY_STICK"), "down": L10N.t("KEY_STICK"),
 		"jump": "A", "attack": "X", "dash": "B", "heal": "Y",
 		"pause": "Ⅱ", "restart": "—", "help": "—", "hitboxes": "—", "mute": "—",
 		"fullscreen": "—", "screenshot": "—",
@@ -193,7 +193,7 @@ func _update_pad() -> void:
 	var connected := Input.get_connected_joypads().size() > 0
 	if connected:
 		pad_connected = true
-		pad_id = "Геймпад (Godot)"
+		pad_id = L10N.t("PAD_NAME")
 		var reused := []
 		for i in range(16):
 			reused.append(false)

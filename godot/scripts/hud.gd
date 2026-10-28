@@ -30,7 +30,7 @@ static func panel(x: float, y: float, w: float, h: float, title_ = null, title_s
 	ink.save()
 	ink.alpha_push(0.7)
 	ink.circle(x + w - 30, y + h - 30, 11, null, ink.RED, 1.6, 1.0, 0.8, 10)
-	ink.text("Ч", x + w - 30, y + h - 25, 12, ink.F_DISPLAY, ink.A_CENTER, ink.RED)
+	ink.text(L10N.t("PANEL_SEAL"), x + w - 30, y + h - 25, 12, ink.F_DISPLAY, ink.A_CENTER, ink.RED)
 	ink.restore()
 
 static func glyph(x: float, y: float, label: String, active := false, panel_size := 28.0, font_size := 13.0, pad := 9.0) -> float:
@@ -115,7 +115,7 @@ static func draw_soul(p) -> void:
 
 	var cost_y: float = y + r - (r * 2) * (40.0 / 99.0)
 	ink.line(x + r + 3, cost_y, x + r + 11, cost_y, 1.2, ink.rgba(156, 33, 41, 128), 1.0, 1.0)
-	ink.text("ДУША", x + r + 14, y + 4, 10, ink.F_DISPLAY, ink.A_LEFT, ink.INK, 0.4, 2)
+	ink.text(L10N.t("HUD_SOUL"), x + r + 14, y + 4, 10, ink.F_DISPLAY, ink.A_LEFT, ink.INK, 0.4, 2)
 
 static func draw_dash(p) -> void:
 	var ink := InkR
@@ -135,7 +135,7 @@ static func draw_dash(p) -> void:
 			var k: float = 1.0 - minf(1.0, p.dash_cd / 0.34)
 			if float(i) / 3.0 < k:
 				ink.poly(tri, 2.6, ink.rgba(156, 33, 41, 140), 1.0, 0.4)
-	ink.text("РЫВОК", x + 4, y + 19, 9, ink.F_DISPLAY, ink.A_LEFT, ink.INK, 0.35, 2)
+	ink.text(L10N.t("HUD_DASH"), x + 4, y + 19, 9, ink.F_DISPLAY, ink.A_LEFT, ink.INK, 0.35, 2)
 
 static func draw_combo(g) -> void:
 	var ink := InkR
@@ -146,7 +146,7 @@ static func draw_combo(g) -> void:
 	ink.save()
 	ink.alpha_push(1.0)
 	ink.text("×%d" % g.combo, 640, 58, roundf(34 * pop), ink.F_HAND, ink.A_CENTER, ink.RED, minf(1.0, a * 2), 0.0, 1.2)
-	ink.text("СЕРИЯ", 640, 74, 9, ink.F_DISPLAY, ink.A_CENTER, ink.INK, 0.4, 3)
+	ink.text(L10N.t("HUD_COMBO"), 640, 74, 9, ink.F_DISPLAY, ink.A_CENTER, ink.INK, 0.4, 3)
 	ink.restore()
 
 static func draw_device() -> void:
@@ -155,8 +155,8 @@ static func draw_device() -> void:
 	var x := 1236.0
 	ink.save()
 	ink.alpha_push(0.45)
-	ink.text("ГЕЙМПАД" if gp else "КЛАВИАТУРА", x - 30, 34, 10, ink.F_DISPLAY, ink.A_RIGHT, ink.INK, 1.0, 2)
-	ink.text("F1 — УПРАВЛЕНИЕ", x - 30, 52, 10, ink.F_DISPLAY, ink.A_RIGHT, ink.INK, 1.0, 1)
+	ink.text(L10N.t("HUD_GAMEPAD") if gp else L10N.t("HUD_KEYBOARD"), x - 30, 34, 10, ink.F_DISPLAY, ink.A_RIGHT, ink.INK, 1.0, 2)
+	ink.text(L10N.t("HUD_HELP"), x - 30, 52, 10, ink.F_DISPLAY, ink.A_RIGHT, ink.INK, 1.0, 1)
 	ink.restore()
 	ink.alpha_push(0.4)
 	if gp:
@@ -175,8 +175,8 @@ static func draw_hints(g) -> void:
 	if a <= 0.01:
 		return
 	var lines := [
-		[["attack", "удар"], ["dash", "рывок"], ["heal", "лечение (удерж)"]],
-		[["jump", "прыжок"], ["attack_up", "вниз + прыжок — спрыгнуть"], ["pause", "пауза"]],
+		[["attack", L10N.t("HINT_ATTACK")], ["dash", L10N.t("HINT_DASH")], ["heal", L10N.t("HINT_HEAL")]],
+		[["jump", L10N.t("HINT_JUMP")], ["attack_up", L10N.t("HINT_DROP")], ["pause", L10N.t("HINT_PAUSE")]],
 	]
 	ink.save()
 	ink.alpha_push(a * 0.8)
@@ -208,7 +208,12 @@ static func draw_banner(g) -> void:
 		a = b.t / 1.2
 	ink.save()
 	ink.alpha_push(1.0)
-	ink.text(b.title, 640, 238, 40, ink.F_TITLE, ink.A_CENTER, ink.INK, clampf(a, 0.0, 1.0), 3, 2)
+	# длинные названия залов в других языках не должны вылезать за экран
+	var ts := 40.0
+	var tw := ink.measure_text(b.title, ts, 3.0)
+	if tw > 760.0:
+		ts = maxf(22.0, ts * 760.0 / tw)
+	ink.text(b.title, 640, 238, ts, ink.F_TITLE, ink.A_CENTER, ink.INK, clampf(a, 0.0, 1.0), 3, 2)
 	ink.line(480, 254, 800, 254, 2.5, ink.RED, 1.0, 1.4)
 	if b.sub != "":
 		ink.text(b.sub, 640, 280, 15, ink.F_HAND, ink.A_CENTER, ink.INK, clampf(a, 0.0, 1.0) * 0.65)
@@ -238,6 +243,6 @@ static func draw_touch_hints(g) -> void:
 	ink.alpha_push(a * 0.82)
 	ink.rect(330, 666, 620, 32, ink.rgba(23, 19, 15, 82),
 		ink.rgba(246, 237, 218, 92), 1.0, 1.0, 0.5)
-	ink.text("СТИК — ДВИЖЕНИЕ    A — ПРЫЖОК    X — УДАР    B — РЫВОК    Y — ЛЕЧЕНИЕ",
+	ink.text(L10N.t("TOUCH_HINT_BAR"),
 		640, 687, 10, ink.F_DISPLAY, ink.A_CENTER, ink.CREAM, 1.0, 0.8)
 	ink.restore()

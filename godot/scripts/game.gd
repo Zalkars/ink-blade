@@ -8,7 +8,7 @@ const H := 720.0
 
 const MENU_ITEMS := ["resume", "restart", "settings", "controls", "title"]
 const TITLE_MENU_ITEMS := ["play", "settings", "controls"]
-const SETTINGS_ITEMS := ["sound", "shake", "vibration", "touch", "hitboxes", "controls", "back"]
+const SETTINGS_ITEMS := ["lang", "sound", "shake", "vibration", "touch", "hitboxes", "controls", "back"]
 const SETTINGS_FILE := "user://settings.cfg"
 
 var state := "title"
@@ -58,6 +58,8 @@ var _stick_id := -1
 var _stick_origin := Vector2.ZERO
 var _stick_vec := Vector2.ZERO
 var _baking := false
+var _rebaking := false
+var _rebake_pending := false
 
 # Тач-схема в координатах логического холста 1280x720. Координаты касаний
 # переводятся через обратную матрицу viewport canvas transform.
@@ -96,6 +98,7 @@ func _ready() -> void:
 func _load_settings() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(SETTINGS_FILE) == OK:
+		L10N.set_lang(str(cfg.get_value("locale", "lang", L10N.lang)))
 		settings_sound = cfg.get_value("audio", "sound", true)
 		settings_shake = cfg.get_value("game", "shake", true)
 		settings_vibration = cfg.get_value("game", "vibration", true)
@@ -108,6 +111,7 @@ func _load_settings() -> void:
 
 func _save_settings() -> void:
 	var cfg := ConfigFile.new()
+	cfg.set_value("locale", "lang", L10N.lang)
 	cfg.set_value("audio", "sound", settings_sound)
 	cfg.set_value("game", "shake", settings_shake)
 	cfg.set_value("game", "vibration", settings_vibration)
@@ -201,8 +205,8 @@ func _start_run() -> void:
 	state = "play"
 	title_submenu = null
 	banner = {
-		"title": "ЗАЛ ПЕРВОГО ВЗМАХА",
-		"sub": "освой движение и клинок",
+		"title": L10N.t("BANNER_TITLE"),
+		"sub": L10N.t("BANNER_SUB"),
 		"t": 4.2, "max": 4.2,
 	}
 	hint_timer = 18
@@ -511,7 +515,9 @@ func _update_settings(_dt: float) -> void:
 
 func _toggle_setting(idx: int) -> void:
 	var id: String = SETTINGS_ITEMS[idx]
-	if id == "sound":
+	if id == "lang":
+		L10N.next_lang()
+	elif id == "sound":
 		settings_sound = not settings_sound
 		SND.set_muted(not settings_sound)
 	elif id == "shake":
@@ -539,6 +545,8 @@ func _toggle_setting(idx: int) -> void:
 		SND.ui_confirm()
 		return
 
+	if id == "lang":
+		_request_rebake()
 	_save_settings()
 	SND.ui_confirm()
 
@@ -658,7 +666,7 @@ func _render_title() -> void:
 
 
 func _render_title_menu() -> void:
-	var labels := ["ИГРАТЬ", "НАСТРОЙКИ", "УПРАВЛЕНИЕ"]
+	var labels := [L10N.t("MENU_PLAY"), L10N.t("MENU_SETTINGS"), L10N.t("MENU_CONTROLS")]
 	var bx := 440.0
 	var bw := 400.0
 	var bh := 48.0
@@ -683,10 +691,10 @@ func _render_title_menu() -> void:
 			InkR.F_DISPLAY, InkR.A_CENTER, InkR.RED if sel else InkR.INK, 1.0 if sel else 0.8, 2.0)
 
 	if touch_mode or CTL.device == "touch":
-		InkR.text("КОСНИТЕСЬ ДЛЯ ВЫБОРА", 640, 646, 12,
+		InkR.text(L10N.t("TITLE_TAP_SELECT"), 640, 646, 12,
 			InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.45, 1.5)
 	else:
-		InkR.text("↑ ↓ — выбор   ·   ENTER / ПРОБЕЛ — подтвердить   ·   ESC — настройки   ·   F — отладка",
+		InkR.text(L10N.t("TITLE_HINT"),
 			640, 646, 11, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.5, 1.0)
 
 
@@ -717,9 +725,9 @@ func _render_settings() -> void:
 	var y := 80.0
 	var w := 540.0
 	var h := 550.0
-	InkHud.panel(x, y, w, h, "НАСТРОЙКИ", 28)
+	InkHud.panel(x, y, w, h, L10N.t("SETTINGS_TITLE"), 28)
 
-	InkR.text("ПАРАМЕТРЫ ИГРЫ И УПРАВЛЕНИЯ",
+	InkR.text(L10N.t("SETTINGS_SUBTITLE"),
 		x + w * 0.5, y + 80, 11, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.42, 1.0)
 
 	var iy := y + 112.0
@@ -744,38 +752,42 @@ func _render_settings() -> void:
 		var val_str := ""
 		var is_on := false
 
-		if id == "sound":
-			title_str = "ЗВУК"
+		if id == "lang":
+			title_str = L10N.t("SET_LANG")
+			val_str = L10N.lang_name().to_upper()
+			is_on = true
+		elif id == "sound":
+			title_str = L10N.t("SET_SOUND")
 			is_on = settings_sound
-			val_str = "ВКЛ" if is_on else "ВЫКЛ"
+			val_str = L10N.t("VALUE_ON") if is_on else L10N.t("VALUE_OFF")
 		elif id == "shake":
-			title_str = "ТРЯСКА ЭКРАНА"
+			title_str = L10N.t("SET_SHAKE")
 			is_on = settings_shake
-			val_str = "ВКЛ" if is_on else "ВЫКЛ"
+			val_str = L10N.t("VALUE_ON") if is_on else L10N.t("VALUE_OFF")
 		elif id == "vibration":
-			title_str = "ВИБРАЦИЯ"
+			title_str = L10N.t("SET_VIBRATION")
 			is_on = settings_vibration
-			val_str = "ВКЛ" if is_on else "ВЫКЛ"
+			val_str = L10N.t("VALUE_ON") if is_on else L10N.t("VALUE_OFF")
 		elif id == "touch":
-			title_str = "СЕНСОРНЫЕ КНОПКИ"
+			title_str = L10N.t("SET_TOUCH")
 			if settings_touch == 0:
-				val_str = "АВТО"
+				val_str = L10N.t("VALUE_AUTO")
 				is_on = true
 			elif settings_touch == 1:
-				val_str = "ВКЛ"
+				val_str = L10N.t("VALUE_ON")
 				is_on = true
 			else:
-				val_str = "ВЫКЛ"
+				val_str = L10N.t("VALUE_OFF")
 				is_on = false
 		elif id == "hitboxes":
-			title_str = "ОТЛАДКА И ХИТБОКСЫ"
+			title_str = L10N.t("SET_HITBOXES")
 			is_on = debug_hitboxes
-			val_str = "ВКЛ" if is_on else "ВЫКЛ"
+			val_str = L10N.t("VALUE_ON") if is_on else L10N.t("VALUE_OFF")
 		elif id == "controls":
-			title_str = "УПРАВЛЕНИЕ"
+			title_str = L10N.t("SET_CONTROLS")
 			val_str = "›"
 		elif id == "back":
-			title_str = "‹ НАЗАД"
+			title_str = L10N.t("UI_BACK")
 			val_str = ""
 
 		InkR.text(title_str, x + 56, ry + 7, 19 if sel else 18,
@@ -786,15 +798,18 @@ func _render_settings() -> void:
 				InkR.F_BODY, InkR.A_RIGHT, InkR.RED if sel else InkR.INK, 0.8 if sel else 0.4)
 		elif id != "back":
 			var badge_col: Color = InkR.RED if is_on else InkR.rgba(23, 19, 15, 70)
-			InkR.rect(x + w - 120, ry - 12, 70, 26,
+			# ширина плашки подстраивается под название языка (локализации бывают длинными)
+			var badge_w: float = maxf(70.0, InkR.measure_text(val_str, 12) + 18.0)
+			var badge_x: float = x + w - 50 - badge_w
+			InkR.rect(badge_x, ry - 12, badge_w, 26,
 				InkR.rgba(156, 33, 41, 24) if is_on else InkR.rgba(23, 19, 15, 12),
 				badge_col, 1.2, 1.0, 0.5)
-			InkR.text(val_str, x + w - 85, ry + 4, 12,
+			InkR.text(val_str, badge_x + badge_w * 0.5, ry + 4, 12,
 				InkR.F_BOLD, InkR.A_CENTER, badge_col, 1.0)
 
 	InkR.line(x + 30, y + h - 54, x + w - 30, y + h - 54, 1.0, InkR.rgba(23, 19, 15, 46), 1.0, 0.8)
-	var hint := "ТАП ПО ПУНКТУ ДЛЯ ПЕРЕКЛЮЧЕНИЯ" if (touch_mode or CTL.device == "touch") \
-		else "↑ ↓ — выбор   ·   ENTER / ПРОБЕЛ — изменить   ·   ESC — назад"
+	var hint := L10N.t("SETTINGS_HINT_TOUCH") if (touch_mode or CTL.device == "touch") \
+		else L10N.t("SETTINGS_HINT_KB")
 	InkR.text(hint, x + w * 0.5, y + h - 26, 12,
 		InkR.F_HAND, InkR.A_CENTER, InkR.INK, 0.6)
 
@@ -836,14 +851,14 @@ func _render_title_scene(t: float) -> void:
 	InkR.blob(1084, 670, 7, InkR.rgba(23, 19, 15, 36), null, 2.0, 1.0, 0.6, 10, 0.13, false, 1.0)
 
 	InkR.srand(502)
-	InkR.text("ЧЕРНИЛЬНЫЙ", 96, 238, 62, InkR.F_TITLE, InkR.A_LEFT, InkR.INK, 1.0, 2.0, 2.0)
-	InkR.text("КЛИНОК", 92, 344, 108, InkR.F_TITLE, InkR.A_LEFT, InkR.INK, 1.0, 4.0, 3.0)
+	InkR.text(L10N.t("TITLE_LINE1"), 96, 238, 62, InkR.F_TITLE, InkR.A_LEFT, InkR.INK, 1.0, 2.0, 2.0)
+	InkR.text(L10N.t("TITLE_LINE2"), 92, 344, 108, InkR.F_TITLE, InkR.A_LEFT, InkR.INK, 1.0, 4.0, 3.0)
 	InkR.line(100, 364, 610, 364, 5.0, InkR.RED, 1.0, 2.2)
 	InkR.line(104, 370, 560, 370, 1.5, InkR.rgba(23, 19, 15, 77), 1.0, 1.4)
-	InkR.text("ТРЕНИРОВОЧНАЯ ЗАЛА · ПРОТОТИП", 102, 400, 14,
+	InkR.text(L10N.t("TITLE_SUBTITLE"), 102, 400, 14,
 		InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.6, 4.0)
 
-	InkR.text("v 0.1 · прототип", 1240, 700, 11,
+	InkR.text(L10N.t("TITLE_VERSION"), 1240, 700, 11,
 		InkR.F_HAND, InkR.A_RIGHT, InkR.CREAM, 0.55)
 
 
@@ -977,17 +992,17 @@ func _render_pause() -> void:
 	var y := 108.0
 	var w := 480.0
 	var h := 474.0
-	InkHud.panel(x, y, w, h, "ПАУЗА", 30)
+	InkHud.panel(x, y, w, h, L10N.t("PAUSE_TITLE"), 30)
 
-	InkR.text("ВРЕМЯ %s   ·   УБИЙСТВ %d   ·   СЕРИЯ %d" % [_fmt_time(run_time), kills, max_combo],
+	InkR.text(L10N.t("PAUSE_STATS", [_fmt_time(run_time), kills, max_combo]),
 		x + w / 2, y + 82, 11, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.42, 1.0)
 
 	var labels := [
-		"ПРОДОЛЖИТЬ",
-		"НАЧАТЬ ЗАНОВО",
-		"НАСТРОЙКИ",
-		"УПРАВЛЕНИЕ",
-		"ВЫЙТИ В МЕНЮ",
+		L10N.t("PAUSE_RESUME"),
+		L10N.t("PAUSE_RESTART"),
+		L10N.t("PAUSE_SETTINGS"),
+		L10N.t("PAUSE_CONTROLS"),
+		L10N.t("PAUSE_QUIT"),
 	]
 
 	var iy := y + 134.0
@@ -1012,9 +1027,9 @@ func _render_pause() -> void:
 		iy += 50
 
 	InkR.line(x + 30, y + h - 58, x + w - 30, y + h - 58, 1.0, InkR.rgba(23, 19, 15, 46), 1.0, 0.8)
-	var hint := "ТАП ПО ПУНКТУ ДЛЯ ВЫБОРА" if (touch_mode or CTL.device == "touch") \
-		else ("СТИК — выбор   ·   A — выбрать   ·   START — назад" if CTL.device == "gamepad" \
-		else "↑ ↓ — выбор   ·   ПРОБЕЛ / ENTER — выбрать   ·   ESC — назад")
+	var hint := L10N.t("PAUSE_HINT_TOUCH") if (touch_mode or CTL.device == "touch") \
+		else (L10N.t("PAUSE_HINT_PAD") if CTL.device == "gamepad" \
+		else L10N.t("PAUSE_HINT_KB"))
 	InkR.text(hint, x + w / 2, y + h - 32, 12,
 		InkR.F_HAND, InkR.A_CENTER, InkR.INK, 0.62)
 
@@ -1035,21 +1050,21 @@ func _render_controls() -> void:
 	if touch_mode or CTL.device == "touch":
 		_render_touch_controls(x, y, w, h)
 		return
-	InkHud.panel(x, y, w, h, "УПРАВЛЕНИЕ", 28)
+	InkHud.panel(x, y, w, h, L10N.t("CONTROLS_TITLE"), 28)
 
-	InkR.text("ДЕЙСТВИЕ", x + 52, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
-	InkR.text("КЛАВИАТУРА", x + 420, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
-	InkR.text("ГЕЙМПАД", x + 590, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
+	InkR.text(L10N.t("COL_ACTION"), x + 52, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
+	InkR.text(L10N.t("COL_KEYBOARD"), x + 420, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
+	InkR.text(L10N.t("COL_GAMEPAD"), x + 590, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
 
 	var rows := [
-		["ДВИЖЕНИЕ", "A / D / ← / →", "СТИК"],
-		["ПРЫЖОК", "ПРОБЕЛ / Z", "A"],
-		["АТАКА", "J / X", "X / RB"],
-		["РЫВОК", "K / SHIFT", "B / LB"],
-		["ЛЕЧЕНИЕ (ДЕРЖАТЬ)", "L / V", "Y"],
-		["ПАУЗА", "ESC / ENTER", "START"],
-		["ЗАНОВО", "R", "BACK"],
-		["ОТЛАДКА / ХИТБОКСЫ", "F / F2", "—"],
+		[L10N.t("ACT_MOVE"), "A / D / ← / →", L10N.t("KEY_STICK")],
+		[L10N.t("ACT_JUMP"), L10N.t("KEY_SPACE") + " / Z", "A"],
+		[L10N.t("ACT_ATTACK"), "J / X", "X / RB"],
+		[L10N.t("ACT_DASH"), "K / SHIFT", "B / LB"],
+		[L10N.t("ACT_HEAL"), "L / V", "Y"],
+		[L10N.t("ACT_PAUSE"), "ESC", "START"],
+		[L10N.t("ACT_RESTART"), "R", "BACK"],
+		[L10N.t("ACT_DEBUG"), "F / F2", "—"],
 	]
 
 	var ry := y + 126.0
@@ -1070,7 +1085,7 @@ func _render_controls() -> void:
 		ry += 33
 
 	InkR.line(x + 690, y + 88, x + 690, y + 424, 1.0, InkR.rgba(23, 19, 15, 31), 1.0, 0.8)
-	InkR.text("ПРОВЕРКА ВВОДА", x + 720, y + 118, 10,
+	InkR.text(L10N.t("INPUT_TEST"), x + 720, y + 118, 10,
 		InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
 
 	var snap: Dictionary = CTL.snapshot()
@@ -1096,45 +1111,45 @@ func _render_controls() -> void:
 	var ax: float = snap.axes[0] if snap.axes.size() > 0 else 0.0
 	var ay: float = snap.axes[1] if snap.axes.size() > 1 else 0.0
 	InkR.circle(sx + ax * 26, sy + ay * 18, 4.4, InkR.RED, InkR.RED_DARK, 1.0, 1.0, 0.4, 8)
-	InkR.text("СТИК", sx, sy + 40, 9, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.45)
+	InkR.text(L10N.t("KEY_STICK"), sx, sy + 40, 9, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.45)
 
-	InkR.text("ГЕЙМПАД ПОДКЛЮЧЁН" if snap.connected else "ГЕЙМПАД НЕ НАЙДЕН",
+	InkR.text(L10N.t("PAD_CONNECTED") if snap.connected else L10N.t("PAD_MISSING"),
 		x + 720, y + 362, 11, InkR.F_DISPLAY, InkR.A_LEFT,
 		InkR.INK if snap.connected else InkR.RED, 0.7, 1.0)
-	InkR.text(snap.id if snap.connected else "нажмите любую кнопку на геймпаде",
+	InkR.text(snap.id if snap.connected else L10N.t("PAD_PRESS_ANY"),
 		x + 720, y + 378, 10, InkR.F_BODY, InkR.A_LEFT, InkR.INK, 0.45)
-	InkR.text("v 0.1 · тестовая раскладка", x + 720, y + 398, 10,
+	InkR.text(L10N.t("CONTROLS_VERSION"), x + 720, y + 398, 10,
 		InkR.F_HAND, InkR.A_LEFT, InkR.INK, 0.5)
 
 	InkR.line(x + 34, y + 430, x + w - 34, y + 430, 1.0, InkR.rgba(23, 19, 15, 51), 1.0, 0.8)
 
 	var notes := [
-		"↑ + удар — слэш вверх      ↓ + удар в воздухе — отскок от врага",
-		"вниз + прыжок на платформе — спрыгнуть      рывок даёт краткую неуязвимость",
-		"удары копят душу, удерживай лечение, чтобы вернуть маску",
+		L10N.t("CONTROLS_NOTE_1"),
+		L10N.t("CONTROLS_NOTE_2"),
+		L10N.t("CONTROLS_NOTE_3"),
 	]
 	for i in range(notes.size()):
 		InkR.text(notes[i], x + w / 2, y + 456 + i * 24, 13,
 			InkR.F_HAND, InkR.A_CENTER, InkR.INK, 0.72)
 
 	InkR.line(x + 34, y + 526, x + w - 34, y + 526, 1.2, InkR.rgba(156, 33, 41, 89), 1.0, 0.8, [6.0, 6.0])
-	InkR.text("ESC / START — НАЗАД", x + 52, y + h - 26, 11,
+	InkR.text(L10N.t("CONTROLS_BACK"), x + 52, y + h - 26, 11,
 		InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 2.0)
-	InkR.text("F1 — ЗАКРЫТЬ", x + w - 52, y + h - 26, 11,
+	InkR.text(L10N.t("CONTROLS_CLOSE"), x + w - 52, y + h - 26, 11,
 		InkR.F_DISPLAY, InkR.A_RIGHT, InkR.INK, 0.45, 1.0)
 
 
 func _render_touch_controls(x: float, y: float, w: float, h: float) -> void:
-	InkHud.panel(x, y, w, h, "СЕНСОРНОЕ УПРАВЛЕНИЕ", 28)
-	InkR.text("ДЕЙСТВИЕ", x + 90, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
-	InkR.text("КНОПКА", x + 540, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
+	InkHud.panel(x, y, w, h, L10N.t("TOUCH_CONTROLS_TITLE"), 28)
+	InkR.text(L10N.t("COL_ACTION"), x + 90, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
+	InkR.text(L10N.t("TOUCH_COL_BUTTON"), x + 540, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
 	var rows := [
-		["ДВИЖЕНИЕ (плавающий стик слева)", "СТИК"],
-		["ПРЫЖОК (вниз + A — спрыгнуть)", "A"],
-		["АТАКА (вверх + X — удар вверх, вниз + X — пого)", "X"],
-		["РЫВОК (краткая неуязвимость)", "B"],
-		["ЛЕЧЕНИЕ (удерживать, тратит душу)", "Y"],
-		["ПАУЗА И МЕНЮ", "Ⅱ"],
+		[L10N.t("TOUCH_MOVE"), L10N.t("KEY_STICK")],
+		[L10N.t("TOUCH_JUMP"), "A"],
+		[L10N.t("TOUCH_ATTACK"), "X"],
+		[L10N.t("TOUCH_DASH"), "B"],
+		[L10N.t("TOUCH_HEAL"), "Y"],
+		[L10N.t("TOUCH_PAUSE"), "Ⅱ"],
 	]
 	var ry: float = y + 132.0
 	for i in range(rows.size()):
@@ -1146,7 +1161,7 @@ func _render_touch_controls(x: float, y: float, w: float, h: float) -> void:
 		ry += 52
 
 	InkR.line(x + 54, y + 472, x + w - 54, y + 472, 1.2, InkR.rgba(156, 33, 41, 89), 1.0, 0.8)
-	InkR.text("Держите Y для восстановления масок души. Двигайте стик и бейте на ходу.",
+	InkR.text(L10N.t("TOUCH_TIP"),
 		x + w / 2, y + 508, 14, InkR.F_HAND, InkR.A_CENTER, InkR.INK, 0.72)
 
 	var bx := x + w * 0.5 - 110.0
@@ -1154,7 +1169,7 @@ func _render_touch_controls(x: float, y: float, w: float, h: float) -> void:
 	var bw := 220.0
 	var bh := 42.0
 	InkR.rect(bx, by, bw, bh, InkR.rgba(246, 237, 218, 240), InkR.rgba(23, 19, 15, 180), 1.6, 1.0, 0.8)
-	InkR.text("‹ НАЗАД", x + w * 0.5, by + bh * 0.5 + 5, 16,
+	InkR.text(L10N.t("UI_BACK"), x + w * 0.5, by + bh * 0.5 + 5, 16,
 		InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.9, 1.5)
 
 
@@ -1182,12 +1197,12 @@ func _render_death() -> void:
 	InkR.blob(840, 280, 90, InkR.rgba(120, 25, 30, 51), null, 2.0, 1.0, 0.6, 10, 0.13, false, 4.0)
 	InkR.blob(640, 330, 210, InkR.rgba(20, 15, 11, 205), null, 2.0, 1.0, 0.6, 10, 0.13, false, 3.0)
 
-	InkR.text("ТЫ РАСТВОРИЛСЯ В ЧЕРНИЛАХ", 640, 276, 44,
+	InkR.text(L10N.t("DEATH_TITLE"), 640, 276, 44,
 		InkR.F_TITLE, InkR.A_CENTER, InkR.CREAM, 1.0, 0.0, 2.0)
 	InkR.line(400, 298, 880, 298, 3.0, InkR.RED, 1.0, 1.8)
-	InkR.text("но бумага запомнила форму", 640, 328, 17,
+	InkR.text(L10N.t("DEATH_SUB"), 640, 328, 17,
 		InkR.F_HAND, InkR.A_CENTER, InkR.CREAM, 0.55)
-	InkR.text("время %s     ·     убийств %d     ·     серия %d" % [_fmt_time(run_time), kills, max_combo],
+	InkR.text(L10N.t("DEATH_STATS", [_fmt_time(run_time), kills, max_combo]),
 		640, 376, 13, InkR.F_DISPLAY, InkR.A_CENTER, InkR.CREAM, 0.6, 1.0)
 
 	var pulse: float = 0.75 + sin(clock * 3.4) * 0.25
@@ -1197,7 +1212,7 @@ func _render_death() -> void:
 		var rw := 400.0
 		var rh := 50.0
 		InkR.rect(rx, ry, rw, rh, InkR.rgba(156, 33, 41, 210), InkR.RED, 2.2, 1.0, 0.8)
-		InkR.text("ВОЗРОДИТЬСЯ", 640, ry + 32, 21,
+		InkR.text(L10N.t("DEATH_REBIRTH"), 640, ry + 32, 21,
 			InkR.F_DISPLAY, InkR.A_CENTER, InkR.CREAM, pulse, 2.0)
 
 		var mx := 480.0
@@ -1205,15 +1220,15 @@ func _render_death() -> void:
 		var mw := 320.0
 		var mh := 44.0
 		InkR.rect(mx, my, mw, mh, InkR.rgba(23, 19, 15, 170), InkR.rgba(246, 237, 218, 120), 1.4, 1.0, 0.8)
-		InkR.text("В ГЛАВНОЕ МЕНЮ", 640, my + 28, 16,
+		InkR.text(L10N.t("DEATH_MENU"), 640, my + 28, 16,
 			InkR.F_DISPLAY, InkR.A_CENTER, InkR.CREAM, 0.85, 1.0)
 	else:
-		InkR.text("ПРОБЕЛ / A — ВОЗРОЖДЕНИЕ", 640, 520, 20,
+		InkR.text(L10N.t("DEATH_HINT_REBIRTH"), 640, 520, 20,
 			InkR.F_DISPLAY, InkR.A_CENTER, InkR.CREAM, pulse, 2.0)
-		InkR.text("ESC / START — В МЕНЮ", 640, 560, 14,
+		InkR.text(L10N.t("DEATH_HINT_MENU"), 640, 560, 14,
 			InkR.F_DISPLAY, InkR.A_CENTER, InkR.CREAM, 0.7, 1.5)
 
-	InkR.text("каждая смерть — ещё один мазок", 640, 642, 13,
+	InkR.text(L10N.t("DEATH_TAGLINE"), 640, 642, 13,
 		InkR.F_HAND, InkR.A_CENTER, InkR.CREAM, 0.4)
 
 
@@ -1289,6 +1304,22 @@ func _bake_all() -> void:
 	await _bake_stage()
 	await _bake_title()
 	_baking = false
+
+
+## Перезапекает слои с текстом после смены языка. Если язык меняют несколько
+## раз подряд, лишние проходы схлопываются в один.
+func _request_rebake() -> void:
+	_rebake_pending = true
+	if _rebaking:
+		return
+	_rebaking = true
+	while _rebake_pending:
+		_rebake_pending = false
+		InkR.tex_stage = null
+		InkR.tex_title = null
+		await _bake_stage()
+		await _bake_title()
+	_rebaking = false
 
 
 func _bake_image(size: Vector2i, draw_fn: Callable) -> Image:
@@ -1483,7 +1514,7 @@ func _tap_ui(pos: Vector2, screen_pos := Vector2(-1, -1)) -> void:
 		"title":
 			if title_submenu == "settings":
 				# Кнопка «‹ НАЗАД» или строка «НАЗАД» в настройках
-				if Rect2(40, 40, 160, 50).has_point(pos) or Rect2(370 + 20, 80 + 112 + 6 * 46 - 18, 540 - 40, 44).has_point(pos):
+				if Rect2(40, 40, 160, 50).has_point(pos) or Rect2(370 + 20, 80 + 112 + (SETTINGS_ITEMS.size() - 1) * 46 - 18, 540 - 40, 44).has_point(pos):
 					title_submenu = null
 					SND.ui()
 				else:
@@ -1498,7 +1529,7 @@ func _tap_ui(pos: Vector2, screen_pos := Vector2(-1, -1)) -> void:
 					_activate_title_menu(i)
 		"paused":
 			if submenu == "settings":
-				if Rect2(40, 40, 160, 50).has_point(pos) or Rect2(370 + 20, 80 + 112 + 6 * 46 - 18, 540 - 40, 44).has_point(pos):
+				if Rect2(40, 40, 160, 50).has_point(pos) or Rect2(370 + 20, 80 + 112 + (SETTINGS_ITEMS.size() - 1) * 46 - 18, 540 - 40, 44).has_point(pos):
 					submenu = null
 					SND.ui()
 				else:

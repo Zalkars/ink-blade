@@ -70,5 +70,5 @@ func draw() -> void:
 	ink.restore()
 
 	if hits > 0:
-		ink.text("УРОН: %d" % int(total), cx(), y - 30, 14, ink.F_DISPLAY, ink.A_CENTER,
+		ink.text(L10N.t("DUMMY_DAMAGE", [int(total)]), cx(), y - 30, 14, ink.F_DISPLAY, ink.A_CENTER,
 			ink.INK, 0.45, 2)
