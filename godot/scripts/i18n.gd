@@ -91,6 +91,13 @@ func next_lang() -> void:
 	lang = _codes[(i + 1) % _codes.size()]
 
 
+func prev_lang() -> void:
+	if _codes.is_empty():
+		return
+	var i := _codes.find(lang)
+	lang = _codes[(i - 1 + _codes.size()) % _codes.size()]
+
+
 ## Название текущего языка на нём самом (например «Русский»).
 func lang_name() -> String:
 	return str(_names.get(lang, lang))

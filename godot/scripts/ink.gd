@@ -309,6 +309,23 @@ static func fill_poly(pts: Array, color2: Color, a := 1.0, jitter := 0.9, outlin
 	if outline:
 		poly(pts, outline_width, outline_color if outline_color != null else INK, a, jitter, true, passes)
 
+## Рамка для отладочного оверлея: пунктир через draw_dashed_line.
+## Обычный rect(dash=...) собирает каждый штрих отдельным draw_polyline —
+## на десятке боксов это сотни вызовов за кадр и просадка fps в разы.
+static func dbg_rect(x: float, y: float, w: float, h: float, color2: Color, a := 1.0) -> void:
+	if _cv == null:
+		return
+	var col := ca(color2, _alpha * a)
+	var p0 := Vector2(x, y)
+	var p1 := Vector2(x + w, y)
+	var p2 := Vector2(x + w, y + h)
+	var p3 := Vector2(x, y + h)
+	_cv.draw_dashed_line(p0, p1, col, 1.0, 6.0, true, false)
+	_cv.draw_dashed_line(p1, p2, col, 1.0, 6.0, true, false)
+	_cv.draw_dashed_line(p2, p3, col, 1.0, 6.0, true, false)
+	_cv.draw_dashed_line(p3, p0, col, 1.0, 6.0, true, false)
+
+
 static func rect(x: float, y: float, w: float, h: float, fill = null, color2 = null, width := 2.0, a := 1.0, jitter := 1.15, outline := true, dash = null, passes := 1) -> void:
 	var pts := [Vector2(x, y), Vector2(x + w, y), Vector2(x + w, y + h), Vector2(x, y + h)]
 	if fill != null:

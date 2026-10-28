@@ -50,9 +50,5 @@ mute={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":77)]}
 fullscreen={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":4194342)]}
 screenshot={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":4194343)]}
 
-[input_devices]
-pointing/emulate_touch_from_mouse=true
-pointing/emulate_mouse_from_touch=true
-
 [gui]
 theme/default_font_multichannel_signed_distance_field=true

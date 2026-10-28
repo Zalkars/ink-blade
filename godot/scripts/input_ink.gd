@@ -8,7 +8,7 @@ extends Node
 const ACTIONS := [
 	"left", "right", "up", "down",
 	"jump", "attack", "dash", "heal",
-	"pause", "restart", "help", "hitboxes", "mute",
+	"pause", "back", "restart", "help", "hitboxes", "mute",
 	"fullscreen", "screenshot",
 ]
 
@@ -16,7 +16,7 @@ const ACTIONS := [
 const BINDABLE := [
 	"left", "right", "up", "down",
 	"jump", "attack", "dash", "heal",
-	"pause", "restart", "help", "hitboxes", "mute",
+	"pause", "back", "restart", "help", "hitboxes", "mute",
 	"fullscreen", "screenshot",
 ]
 
@@ -33,6 +33,7 @@ const DEFAULT_KEYBOARD := {
 	"dash": [KEY_K, KEY_C, KEY_SHIFT],
 	"heal": [KEY_L, KEY_V],
 	"pause": [KEY_ESCAPE],
+	"back": [KEY_ESCAPE],
 	"restart": [KEY_R],
 	"help": [KEY_F1],
 	"hitboxes": [KEY_F2, KEY_F],
@@ -47,8 +48,14 @@ const DEFAULT_PAD := {
 	"dash": [1, 4],
 	"heal": [3],
 	"pause": [9],
+	"back": [1],
 	"restart": [8],
 }
+
+# Слот B всегда остаётся кнопкой «назад» в меню (как Esc на клавиатуре).
+const PAD_BACK_SLOT := 1
+# Слот START — пауза/назад по умолчанию; им же отменяется захват клавиши.
+const PAD_START_SLOT := 9
 
 const PAD_LABELS := [
 	"A", "B", "X", "Y", "LB", "RB", "LT", "RT",
@@ -64,6 +71,8 @@ const DEADZONE := 0.32
 var device := "keyboard"
 var disabled := false
 var vibration_enabled := true
+# Тач-ввод разрешён только в Android-сборке: на ПК его нет вообще.
+var touch_enabled := false
 var pad_connected := false
 var pad_id := ""
 var pad_buttons: Array = []
@@ -142,16 +151,19 @@ func _key_used(code: int, except: String) -> bool:
 ## Назначает клавишу действию. Код забирается у других действий, чтобы одна
 ## клавиша не срабатывала дважды; если у них это была единственная клавиша,
 ## они получают свободную клавишу (сначала старую клавишу изменяемого действия).
-## Esc зарезервирована за паузой (она же «назад» в меню) и не отдаётся другим
-## действиям. Возвращает false, если назначить нельзя.
+## Esc зарезервирована за паузой и «назад» (выход из любого экрана) и не
+## отдаётся другим действиям. Возвращает false, если назначить нельзя.
 func set_key(action: String, code: int) -> bool:
 	if not keyboard.has(action) or code <= 0:
 		return false
-	if code == KEY_ESCAPE and action != "pause":
+	if code == KEY_ESCAPE and not (action in ["pause", "back"]):
 		return false
 	var old: Array = keyboard[action].duplicate()
 	for a in keyboard.keys():
 		if a == action:
+			continue
+		# Esc и так закреплена за паузой и «назад» — не отбираем.
+		if code == KEY_ESCAPE and a in ["pause", "back"]:
 			continue
 		var arr: Array = keyboard[a]
 		if not arr.has(code):
@@ -159,8 +171,8 @@ func set_key(action: String, code: int) -> bool:
 		var rest := arr.filter(func(k): return int(k) != code)
 		keyboard[a] = _spare_key(a, old, code) if rest.is_empty() else rest
 	var next: Array = [code]
-	# Esc навсегда остаётся клавишей паузы/назад, даже если паузу переназначили.
-	if action == "pause" and code != KEY_ESCAPE:
+	# Esc навсегда остаётся клавишей паузы/назад, даже если их переназначили.
+	if action in ["pause", "back"] and code != KEY_ESCAPE:
 		next.append(KEY_ESCAPE)
 	keyboard[action] = next
 	return true
@@ -177,12 +189,19 @@ func set_pad(action: String, slot: int) -> bool:
 	for a in pad_map.keys():
 		if a == action:
 			continue
+		# B закреплена за «назад»: даже если её назначают другому действию,
+		# из меню всегда можно выйти.
+		if a == "back" and slot == PAD_BACK_SLOT:
+			continue
 		var arr: Array = pad_map[a]
 		if not arr.has(slot):
 			continue
 		var rest := arr.filter(func(s): return int(s) != slot)
 		pad_map[a] = [old[0]] if (rest.is_empty() and not old.is_empty()) else rest
-	pad_map[action] = [slot]
+	var next: Array = [slot]
+	if action == "back" and slot != PAD_BACK_SLOT:
+		next.append(PAD_BACK_SLOT)
+	pad_map[action] = next
 	return true
 
 
@@ -221,6 +240,14 @@ func first_key_label(a: String) -> String:
 	if arr.is_empty():
 		return "—"
 	return key_label(int(arr[0]))
+
+
+## Первая (основная) кнопка геймпада действия — для подсказок.
+func first_pad_label(a: String) -> String:
+	var arr: Array = pad_map.get(a, [])
+	if arr.is_empty():
+		return "—"
+	return pad_label(int(arr[0]))
 
 
 ## Подпись клавиатурного назначения действия (все клавиши через «/»).
@@ -316,6 +343,11 @@ func axis_y() -> float:
 
 func confirm() -> bool:
 	return pressed("jump") or pressed("attack") or _edge_enter
+
+
+## Выход назад в меню: Esc / START (пауза) или отдельная кнопка «назад» (B).
+func back() -> bool:
+	return pressed("pause") or pressed("back")
 
 
 func rumble(strong: float, weak: float, ms: int) -> void:
@@ -542,5 +574,8 @@ func _input(event: InputEvent) -> void:
 		device = "gamepad"
 		SND.unlock()
 	elif event is InputEventScreenTouch and event.pressed:
+		# Тач — только в Android-сборке (game.gd выставляет флаг).
+		if not touch_enabled:
+			return
 		device = "touch"
 		SND.unlock()

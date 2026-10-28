@@ -21,6 +21,7 @@ var _seed := 1234567
 
 var _player: AudioStreamPlayer
 var _playback: AudioStreamGeneratorPlayback
+var _mix_buf := PackedVector2Array()
 
 
 func _ready() -> void:
@@ -33,7 +34,10 @@ func _init_out() -> void:
 	_player = AudioStreamPlayer.new()
 	var stream := AudioStreamGenerator.new()
 	stream.mix_rate = SAMPLE_RATE
-	stream.buffer_length = 0.35
+	# Буфер — это и есть задержка вывода: при 0.35 с звук отставал от картинки
+	# примерно на треть секунды. 0.09 с даёт ~90 мс и ещё оставляет запас
+	# на подкачку раз в кадр.
+	stream.buffer_length = 0.09
 	_player.stream = stream
 	_player.volume_db = 0.0
 	add_child(_player)
@@ -316,12 +320,14 @@ func _process(_delta: float) -> void:
 	var avail := _playback.get_frames_available()
 	if avail <= 0:
 		return
-	# не вырабатываем больше полутора секунд за раз (защита от зависаний)
-	var total := mini(avail, SAMPLE_RATE * 3 / 2)
-	while total > 0:
-		var n := mini(total, 1024)
-		for i in range(n):
-			var v := _mix_frame()
-			_playback.push_frame(Vector2(v, v))
-		total -= n
+	# Не вырабатываем больше четверти секунды за раз (защита от зависаний),
+	# и отправляем кадры одним push_buffer вместо push_frame на каждый сэмпл:
+	# 22050 вызовов в секунду заметно грели главный поток.
+	var total := mini(avail, SAMPLE_RATE / 4)
+	if _mix_buf.size() != total:
+		_mix_buf.resize(total)
+	for i in range(total):
+		var v := _mix_frame()
+		_mix_buf[i] = Vector2(v, v)
+	_playback.push_buffer(_mix_buf)
 
