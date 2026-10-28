@@ -107,10 +107,6 @@ func languages() -> Array[String]:
 	return _codes.duplicate()
 
 
-func has_lang(code: String) -> bool:
-	return _strings.has(code)
-
-
 ## Список отсутствующих ключей по языкам (для ручной проверки переводов).
 func audit() -> Dictionary:
 	var report := {}

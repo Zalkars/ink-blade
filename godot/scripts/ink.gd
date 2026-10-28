@@ -32,6 +32,15 @@ const F_BOLD := 3
 const F_ITALIC := 4
 const F_HAND := 5
 
+# Шрифты. Свободные аналоги Georgia / Palatino Linotype / Segoe Script (лицензия OFL).
+# Заменяются в одном месте: см. docs/fonts.md.
+const FONT_TITLE := preload("res://assets/fonts/PTSerif-BoldItalic.ttf")
+const FONT_DISPLAY := preload("res://assets/fonts/PTSerif-Bold.ttf")
+const FONT_BODY := preload("res://assets/fonts/PTSerif-Regular.ttf")
+const FONT_BOLD := preload("res://assets/fonts/PTSerif-Bold.ttf")
+const FONT_ITALIC := preload("res://assets/fonts/PTSerif-Italic.ttf")
+const FONT_HAND := preload("res://assets/fonts/MarckScript-Regular.ttf")
+
 # InkAlign
 const A_LEFT := 0
 const A_CENTER := 1
@@ -45,7 +54,7 @@ static var _tx_stack: Array = []
 static var _tx := Transform2D()
 static var _boil := 0
 static var _seed: int = 123456789
-static var _font: Font = null
+static var _fonts: Dictionary = {}
 static var _inited := false
 
 # предсозданные текстуры
@@ -68,11 +77,23 @@ static func init_static() -> void:
 	if _inited:
 		return
 	_inited = true
-	_font = ThemeDB.fallback_font
+	_fonts = {
+		F_TITLE: FONT_TITLE,
+		F_DISPLAY: FONT_DISPLAY,
+		F_BODY: FONT_BODY,
+		F_BOLD: FONT_BOLD,
+		F_ITALIC: FONT_ITALIC,
+		F_HAND: FONT_HAND,
+	}
 	_make_tex_hatch()
 	_make_tex_radials()
 	_make_tex_vgrads()
 	_make_tex_vignette()
+
+static func font_for(kind: int) -> Font:
+	if _fonts.is_empty():
+		init_static()
+	return _fonts.get(kind, FONT_BODY)
 
 static func begin_frame(real_time: float) -> void:
 	_boil = int(real_time * 10.0)
@@ -430,22 +451,22 @@ static func hatch(pts: Array, gap := 8.0, a := 0.25, color2 = null, width := 1.0
 		_cv.draw_polygon(pva, cols, uvs, tex_hatch)
 
 # ---------- текст ----------
-static func measure_text(s: String, size := 22.0, spacing := 0.0) -> float:
-	if _font == null:
-		return 0.0
+static func measure_text(s: String, size := 22.0, spacing := 0.0, font_kind := F_BODY) -> float:
+	var f := font_for(font_kind)
 	var px := maxi(4, int(round(size)))
 	if spacing == 0.0:
-		return _font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x
+		return f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x
 	var w := 0.0
 	for ch in s:
-		w += _font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x + spacing
+		w += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x + spacing
 	return maxf(0.0, w - spacing)
 
 static func text(s: String, x: float, y: float, size := 22.0, font_kind := F_BODY, align := A_LEFT, color2: Color = INK, a := 1.0, spacing := 0.0, ghost := 0.0, baseline := 0) -> void:
-	if _cv == null or _font == null:
+	if _cv == null:
 		return
+	var f := font_for(font_kind)
 	var px := maxi(4, int(round(size)))
-	var total := measure_text(s, size, spacing)
+	var total := measure_text(s, size, spacing, font_kind)
 	var tx := x
 	if align == A_CENTER:
 		tx = x - total * 0.5
@@ -454,25 +475,25 @@ static func text(s: String, x: float, y: float, size := 22.0, font_kind := F_BOD
 	var ty := y
 	if baseline == 1:
 		# y — вертикальный центр строки, а не базовая линия
-		ty = y + (_font.get_ascent(px) - _font.get_descent(px)) * 0.5
+		ty = y + (f.get_ascent(px) - f.get_descent(px)) * 0.5
 	elif baseline == 2:
-		ty = y - _font.get_ascent(px)
+		ty = y - f.get_ascent(px)
 
 	var em := maxf(0.001, a)
 	if ghost > 0.0:
-		_draw_str(s, tx + ghost, ty + ghost, px, ca(color2, _alpha * em * 0.28), spacing)
-	_draw_str(s, tx, ty, px, ca(color2, _alpha * em), spacing)
+		_draw_str(f, s, tx + ghost, ty + ghost, px, ca(color2, _alpha * em * 0.28), spacing)
+	_draw_str(f, s, tx, ty, px, ca(color2, _alpha * em), spacing)
 
-static func _draw_str(s: String, x: float, y: float, px: int, col: Color, spacing: float) -> void:
+static func _draw_str(f: Font, s: String, x: float, y: float, px: int, col: Color, spacing: float) -> void:
 	if _cv == null:
 		return
 	if spacing == 0.0:
-		_cv.draw_string(_font, Vector2(x, y), s, HORIZONTAL_ALIGNMENT_LEFT, -1, px, col)
+		_cv.draw_string(f, Vector2(x, y), s, HORIZONTAL_ALIGNMENT_LEFT, -1, px, col)
 		return
 	var cx := x
 	for ch in s:
-		_cv.draw_string(_font, Vector2(cx, y), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, px, col)
-		cx += _font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x + spacing
+		_cv.draw_string(f, Vector2(cx, y), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, px, col)
+		cx += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x + spacing
 
 # ---------- плоские заливки ----------
 static func fill_rect_color(x: float, y: float, w: float, h: float, col: Color, a := 1.0) -> void:
@@ -522,9 +543,6 @@ static func paper() -> void:
 	if _cv == null or tex_paper == null:
 		return
 	_cv.draw_texture_rect(tex_paper, Rect2(0, 0, W, H), false)
-
-static func paper_to(cv: CanvasItem, rt: Rect2) -> void:
-	cv.draw_texture_rect(tex_paper, rt, false)
 
 static func vignette() -> void:
 	if _cv == null or tex_vignette == null:

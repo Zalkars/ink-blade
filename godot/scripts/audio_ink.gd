@@ -58,10 +58,6 @@ func set_muted(m: bool) -> void:
 	_target_master = 0.0 if muted else 0.72
 
 
-func toggle_muted() -> void:
-	set_muted(not muted)
-
-
 func tone(o: Dictionary) -> void:
 	if _playback == null or muted:
 		return

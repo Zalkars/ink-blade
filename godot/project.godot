@@ -33,22 +33,5 @@ environment/defaults/default_clear_color=Color(0.937255, 0.894118, 0.8, 1)
 [audio]
 buses/default_bus_layout=""
 
-[input]
-move_left={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":65), Object(InputEventKey,"physical_keycode":4194319)]}
-move_right={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":68), Object(InputEventKey,"physical_keycode":4194321)]}
-move_up={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":87), Object(InputEventKey,"physical_keycode":4194320)]}
-move_down={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":83), Object(InputEventKey,"physical_keycode":4194322)]}
-jump={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":32), Object(InputEventKey,"physical_keycode":90)]}
-attack={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":74), Object(InputEventKey,"physical_keycode":88)]}
-dash={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":75), Object(InputEventKey,"physical_keycode":67), Object(InputEventKey,"physical_keycode":4194325)]}
-heal={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":76), Object(InputEventKey,"physical_keycode":86)]}
-pause={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":4194305), Object(InputEventKey,"physical_keycode":4194306)]}
-restart={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":82)]}
-help={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":4194332)]}
-hitboxes={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":4194333), Object(InputEventKey,"physical_keycode":70), Object(InputEventKey,"keycode":70)]}
-mute={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":77)]}
-fullscreen={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":4194342)]}
-screenshot={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":4194343)]}
-
 [gui]
 theme/default_font_multichannel_signed_distance_field=true

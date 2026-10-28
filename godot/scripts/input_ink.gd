@@ -452,20 +452,6 @@ func update(dt: float) -> void:
 	_edge_enter = enter_down and not _prev_enter
 	_prev_enter = enter_down
 
-	if disabled:
-		for a in ACTIONS:
-			state[a] = false
-			prev[a] = false
-			edge[a] = false
-		move_x = 0.0
-		move_y = 0.0
-		stick_on = false
-		stick_x = 0.0
-		stick_y = 0.0
-		_touch_edges.clear()
-		_edge_enter = false
-		return
-
 	var kx: float = _key_axis("left", "right")
 	var ky: float = _key_axis("up", "down")
 

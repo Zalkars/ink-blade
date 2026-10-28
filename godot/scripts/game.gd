@@ -25,7 +25,6 @@ const SETTINGS_ROWS_Y := 104.0
 var state := "title"
 var clock := 0.0
 var title_t := 0.0
-var time_scale := 1.0
 var hitstop := 0.0
 
 var player = null
@@ -76,7 +75,6 @@ var _pointers := {}
 var _stick_id := -1
 var _stick_origin := Vector2.ZERO
 var _stick_vec := Vector2.ZERO
-var _baking := false
 var _rebaking := false
 var _rebake_pending := false
 
@@ -256,7 +254,7 @@ func _process(delta: float) -> void:
 	_handle_global()
 
 	if state == "play":
-		var ts := time_scale
+		var ts := 1.0
 		if hitstop > 0.0:
 			hitstop = maxf(0.0, hitstop - dt)
 			ts *= 0.06
@@ -302,7 +300,6 @@ func _new_run() -> void:
 	death_delay = 0
 	dead_t = 0
 	hitstop = 0
-	time_scale = 1
 	hint_timer = 0
 	hint_alpha = 0
 	banner = {"title": "", "sub": "", "t": 0.0, "max": 1.0}
@@ -1895,11 +1892,9 @@ func _save_screenshot() -> void:
 # ---------- запекание ----------
 
 func _bake_all() -> void:
-	_baking = true
 	await _bake_paper()
 	await _bake_stage()
 	await _bake_title()
-	_baking = false
 
 
 ## Перезапекает слои с текстом после смены языка. Если язык меняют несколько

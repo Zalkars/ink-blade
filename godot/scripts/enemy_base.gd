@@ -81,9 +81,6 @@ func update(dt: float) -> void:
 func behavior(_dt: float) -> void:
 	pass
 
-func _draw() -> void:
-	pass
-
 func physics(dt: float, gravity := 2400.0) -> void:
 	if not hover:
 		vy = minf(vy + gravity * dt, 1100.0)
