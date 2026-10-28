@@ -12,8 +12,18 @@ const ACTIONS := [
 	"fullscreen", "screenshot",
 ]
 
-# Godot-коды клавиш (соответствуют MappingWinForms из Input.cs)
-const KEYBOARD := {
+# Действия, доступные для переназначения (в порядке экрана настроек).
+const BINDABLE := [
+	"left", "right", "up", "down",
+	"jump", "attack", "dash", "heal",
+	"pause", "restart", "help", "hitboxes", "mute",
+	"fullscreen", "screenshot",
+]
+
+# Значения по умолчанию. KEYBOARD — Godot-коды клавиш (как в Input.cs),
+# PAD — слоты XInput (0=A, 1=B, 2=X, 3=Y, 4=LB, 5=RB, 6=LT, 7=RT,
+# 8=BACK, 9=START, 10=LS, 11=RS, 12..15=D-pad).
+const DEFAULT_KEYBOARD := {
 	"left": [KEY_A, KEY_LEFT],
 	"right": [KEY_D, KEY_RIGHT],
 	"up": [KEY_W, KEY_UP],
@@ -22,7 +32,7 @@ const KEYBOARD := {
 	"attack": [KEY_J, KEY_X],
 	"dash": [KEY_K, KEY_C, KEY_SHIFT],
 	"heal": [KEY_L, KEY_V],
-	"pause": [KEY_ESCAPE, KEY_BACK],
+	"pause": [KEY_ESCAPE],
 	"restart": [KEY_R],
 	"help": [KEY_F1],
 	"hitboxes": [KEY_F2, KEY_F],
@@ -31,16 +41,19 @@ const KEYBOARD := {
 	"screenshot": [KEY_F12],
 }
 
-# Кнопки геймпада: индексы массива соответствуют семантике XInput из оригинала,
-# значения — JoyButton в Godot 4.
-const PAD_MAP := {
+const DEFAULT_PAD := {
 	"jump": [0],
-	"attack": [2, 10],
+	"attack": [2, 5],
 	"dash": [1, 4],
 	"heal": [3],
 	"pause": [9],
 	"restart": [8],
 }
+
+const PAD_LABELS := [
+	"A", "B", "X", "Y", "LB", "RB", "LT", "RT",
+	"BACK", "START", "LS", "RS", "↑", "↓", "←", "→",
+]
 
 # XInput-индекс -> Godot JoyButton / ось триггера
 const PAD_BUTTON_JOY := [0, 1, 2, 3, 9, 10, -1, -2, 4, 6, 7, 8, 11, 12, 13, 14]
@@ -57,6 +70,10 @@ var pad_buttons: Array = []
 var pad_axes := [0.0, 0.0]
 var move_x := 0.0
 var move_y := 0.0
+
+# Текущие назначения (заполняются reset_bindings и загружаются из settings.cfg).
+var keyboard := {}
+var pad_map := {}
 
 var state := {}
 var prev := {}
@@ -86,6 +103,165 @@ func _ready() -> void:
 	pad_buttons = []
 	for i in range(16):
 		pad_buttons.append(false)
+	reset_bindings()
+
+
+## Сбрасывает назначения клавиш и кнопок к значениям по умолчанию.
+func reset_bindings() -> void:
+	keyboard.clear()
+	pad_map.clear()
+	for a in ACTIONS:
+		keyboard[a] = DEFAULT_KEYBOARD.get(a, []).duplicate()
+		pad_map[a] = DEFAULT_PAD.get(a, []).duplicate()
+
+
+## Клавиша-компенсация для действия, у которого забрали последнюю клавишу.
+## Esc не отдаём никогда (она всегда «назад»), уже занятые клавиши — тоже.
+func _spare_key(target: String, old: Array, taken: int) -> Array:
+	for k in old:
+		var c := int(k)
+		if c != KEY_ESCAPE and c != taken and not _key_used(c, target):
+			return [c]
+	for k in DEFAULT_KEYBOARD.get(target, []):
+		var c := int(k)
+		if c != KEY_ESCAPE and c != taken and not _key_used(c, target):
+			return [c]
+	return []
+
+
+func _key_used(code: int, except: String) -> bool:
+	for a in keyboard.keys():
+		if a == except:
+			continue
+		var arr: Array = keyboard[a]
+		if arr.has(code):
+			return true
+	return false
+
+
+## Назначает клавишу действию. Код забирается у других действий, чтобы одна
+## клавиша не срабатывала дважды; если у них это была единственная клавиша,
+## они получают свободную клавишу (сначала старую клавишу изменяемого действия).
+## Esc зарезервирована за паузой (она же «назад» в меню) и не отдаётся другим
+## действиям. Возвращает false, если назначить нельзя.
+func set_key(action: String, code: int) -> bool:
+	if not keyboard.has(action) or code <= 0:
+		return false
+	if code == KEY_ESCAPE and action != "pause":
+		return false
+	var old: Array = keyboard[action].duplicate()
+	for a in keyboard.keys():
+		if a == action:
+			continue
+		var arr: Array = keyboard[a]
+		if not arr.has(code):
+			continue
+		var rest := arr.filter(func(k): return int(k) != code)
+		keyboard[a] = _spare_key(a, old, code) if rest.is_empty() else rest
+	var next: Array = [code]
+	# Esc навсегда остаётся клавишей паузы/назад, даже если паузу переназначили.
+	if action == "pause" and code != KEY_ESCAPE:
+		next.append(KEY_ESCAPE)
+	keyboard[action] = next
+	return true
+
+
+## Назначает кнопку геймпада (слот XInput) действию.
+func set_pad(action: String, slot: int) -> bool:
+	if not pad_map.has(action) or slot < 0 or slot >= PAD_LABELS.size():
+		return false
+	# Движение на геймпаде всегда стик / D-pad.
+	if action in ["left", "right", "up", "down"]:
+		return false
+	var old: Array = pad_map[action].duplicate()
+	for a in pad_map.keys():
+		if a == action:
+			continue
+		var arr: Array = pad_map[a]
+		if not arr.has(slot):
+			continue
+		var rest := arr.filter(func(s): return int(s) != slot)
+		pad_map[a] = [old[0]] if (rest.is_empty() and not old.is_empty()) else rest
+	pad_map[action] = [slot]
+	return true
+
+
+## JoyButton -> слот XInput (или -1, если кнопка не поддерживается).
+func slot_of_joy(button: int) -> int:
+	return PAD_BUTTON_JOY.find(button)
+
+
+func key_label(code: int) -> String:
+	match code:
+		KEY_LEFT: return "←"
+		KEY_RIGHT: return "→"
+		KEY_UP: return "↑"
+		KEY_DOWN: return "↓"
+		KEY_SPACE: return L10N.t("KEY_SPACE")
+		KEY_ESCAPE: return "ESC"
+		KEY_ENTER, KEY_KP_ENTER: return "ENTER"
+		KEY_BACKSPACE: return "BACKSPACE"
+		KEY_TAB: return "TAB"
+		KEY_SHIFT: return "SHIFT"
+		KEY_CTRL: return "CTRL"
+		KEY_ALT: return "ALT"
+	var s := OS.get_keycode_string(code)
+	return s.to_upper() if s != "" else "?"
+
+
+func pad_label(slot: int) -> String:
+	if slot >= 0 and slot < PAD_LABELS.size():
+		return PAD_LABELS[slot]
+	return "—"
+
+
+## Первая (основная) клавиша действия — для подсказок в интерфейсе.
+func first_key_label(a: String) -> String:
+	var arr: Array = keyboard.get(a, [])
+	if arr.is_empty():
+		return "—"
+	return key_label(int(arr[0]))
+
+
+## Подпись клавиатурного назначения действия (все клавиши через «/»).
+func label_key(a: String) -> String:
+	if a == "attack_up":
+		a = "down"
+	var arr: Array = keyboard.get(a, [])
+	if arr.is_empty():
+		return "—"
+	var parts := PackedStringArray()
+	for k in arr:
+		parts.append(key_label(int(k)))
+	return " / ".join(parts)
+
+
+## Подпись движения: клавиши влево/вправо вперемешку, как в памятке.
+func label_move() -> String:
+	var l: Array = keyboard.get("left", [])
+	var r: Array = keyboard.get("right", [])
+	var parts := PackedStringArray()
+	for i in range(maxi(l.size(), r.size())):
+		if i < l.size():
+			parts.append(key_label(int(l[i])))
+		if i < r.size():
+			parts.append(key_label(int(r[i])))
+	return " / ".join(parts) if not parts.is_empty() else "—"
+
+
+## Подпись геймпад-назначения действия.
+func label_pad(a: String) -> String:
+	if a == "attack_up":
+		a = "down"
+	if a in ["left", "right", "up", "down"]:
+		return L10N.t("KEY_STICK")
+	var arr: Array = pad_map.get(a, [])
+	if arr.is_empty():
+		return "—"
+	var parts := PackedStringArray()
+	for s in arr:
+		parts.append(pad_label(int(s)))
+	return " / ".join(parts)
 
 
 func touch_enter(a: String) -> void:
@@ -163,30 +339,19 @@ func snapshot() -> Dictionary:
 
 
 func label_of(a: String) -> String:
-	# порядок как в Input.Label — keyboard массив
-	var kb := {
-		"left": "A / ←", "right": "D / →", "up": "W / ↑", "down": "S / ↓",
-		"jump": L10N.t("KEY_SPACE"), "attack": "J", "dash": "K", "heal": "L",
-		"pause": "ESC", "restart": "R", "help": "F1", "hitboxes": "F / F2", "mute": "M",
-		"fullscreen": "F11", "screenshot": "F12",
-	}
-	var gp := {
-		"left": L10N.t("KEY_STICK"), "right": L10N.t("KEY_STICK"), "up": L10N.t("KEY_STICK"), "down": L10N.t("KEY_STICK"),
-		"jump": "A", "attack": "X", "dash": "B", "heal": "Y",
-		"pause": "START", "restart": "BACK", "help": "—", "hitboxes": "—", "mute": "—",
-		"fullscreen": "—", "screenshot": "—",
-	}
-	var touch := {
-		"left": L10N.t("KEY_STICK"), "right": L10N.t("KEY_STICK"), "up": L10N.t("KEY_STICK"), "down": L10N.t("KEY_STICK"),
-		"jump": "A", "attack": "X", "dash": "B", "heal": "Y",
-		"pause": "Ⅱ", "restart": "—", "help": "—", "hitboxes": "—", "mute": "—",
-		"fullscreen": "—", "screenshot": "—",
-	}
 	if a == "attack_up":
 		return label_of("down")
 	if device == "touch":
+		var touch := {
+			"left": L10N.t("KEY_STICK"), "right": L10N.t("KEY_STICK"), "up": L10N.t("KEY_STICK"), "down": L10N.t("KEY_STICK"),
+			"jump": "A", "attack": "X", "dash": "B", "heal": "Y",
+			"pause": "Ⅱ", "restart": "—", "help": "—", "hitboxes": "—", "mute": "—",
+			"fullscreen": "—", "screenshot": "—",
+		}
 		return touch.get(a, a)
-	return (gp[a] if device == "gamepad" else kb[a]) if kb.has(a) else a
+	if device == "gamepad":
+		return label_pad(a)
+	return label_key(a)
 
 
 func _update_pad() -> void:
@@ -229,6 +394,25 @@ func _update_pad() -> void:
 		pad_axes = [0.0, 0.0]
 
 
+## Нажата ли клавиша: проверяем и логический, и физический код, чтобы
+## назначения работали в любой раскладке.
+func _key_down(code: int) -> bool:
+	return Input.is_key_pressed(code) or Input.is_physical_key_pressed(code)
+
+
+func _key_axis(neg: String, pos: String) -> float:
+	var v := 0.0
+	for k in keyboard.get(pos, []):
+		if _key_down(int(k)):
+			v += 1.0
+			break
+	for k in keyboard.get(neg, []):
+		if _key_down(int(k)):
+			v -= 1.0
+			break
+	return v
+
+
 func update(dt: float) -> void:
 	_update_pad()
 
@@ -250,10 +434,8 @@ func update(dt: float) -> void:
 		_edge_enter = false
 		return
 
-	var kx: float = (1.0 if (Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)) else 0.0) \
-		- (1.0 if (Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT)) else 0.0)
-	var ky: float = (1.0 if (Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)) else 0.0) \
-		- (1.0 if (Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP)) else 0.0)
+	var kx: float = _key_axis("left", "right")
+	var ky: float = _key_axis("up", "down")
 
 	var sx: float = pad_axes[0]
 	var sy: float = pad_axes[1]
@@ -297,18 +479,14 @@ func update(dt: float) -> void:
 
 	for a in ACTIONS:
 		var d: bool = false
-		# InputMap нужен для TouchScreenButton на Android (и не мешает
-		# собственному опросу клавиатуры/геймпада ниже).
-		if InputMap.has_action(a) and Input.is_action_pressed(a):
-			d = true
-		var keys: Array = KEYBOARD.get(a, [])
+		var keys: Array = keyboard.get(a, [])
 		for k in keys:
-			if Input.is_key_pressed(k):
+			if _key_down(int(k)):
 				d = true
 				break
 		if not d:
-			for bi in PAD_MAP.get(a, []):
-				if pad_buttons[bi]:
+			for bi in pad_map.get(a, []):
+				if pad_buttons[int(bi)]:
 					d = true
 					break
 		if not d and touch_down.get(a, false):

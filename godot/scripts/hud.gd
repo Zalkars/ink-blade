@@ -156,7 +156,7 @@ static func draw_device() -> void:
 	ink.save()
 	ink.alpha_push(0.45)
 	ink.text(L10N.t("HUD_GAMEPAD") if gp else L10N.t("HUD_KEYBOARD"), x - 30, 34, 10, ink.F_DISPLAY, ink.A_RIGHT, ink.INK, 1.0, 2)
-	ink.text(L10N.t("HUD_HELP"), x - 30, 52, 10, ink.F_DISPLAY, ink.A_RIGHT, ink.INK, 1.0, 1)
+	ink.text(L10N.t("HUD_HELP", [CTL.first_key_label("help")]), x - 30, 52, 10, ink.F_DISPLAY, ink.A_RIGHT, ink.INK, 1.0, 1)
 	ink.restore()
 	ink.alpha_push(0.4)
 	if gp:

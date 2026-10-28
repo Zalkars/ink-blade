@@ -436,7 +436,8 @@ static func text(s: String, x: float, y: float, size := 22.0, font_kind := F_BOD
 		tx = x - total
 	var ty := y
 	if baseline == 1:
-		ty = y - (_font.get_ascent(px) + _font.get_descent(px)) * 0.5
+		# y — вертикальный центр строки, а не базовая линия
+		ty = y + (_font.get_ascent(px) - _font.get_descent(px)) * 0.5
 	elif baseline == 2:
 		ty = y - _font.get_ascent(px)
 

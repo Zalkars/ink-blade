@@ -8,7 +8,7 @@ const H := 720.0
 
 const MENU_ITEMS := ["resume", "restart", "settings", "controls", "title"]
 const TITLE_MENU_ITEMS := ["play", "settings", "controls"]
-const SETTINGS_ITEMS := ["lang", "sound", "shake", "vibration", "touch", "hitboxes", "controls", "back"]
+const SETTINGS_ITEMS := ["lang", "sound", "shake", "vibration", "touch", "hitboxes", "controls", "bindings", "back"]
 const SETTINGS_FILE := "user://settings.cfg"
 
 var state := "title"
@@ -61,6 +61,15 @@ var _baking := false
 var _rebaking := false
 var _rebake_pending := false
 
+# экран назначения клавиш
+var bind_menu_index := 0
+var bind_col := 0
+var bind_capture := false
+var bind_capture_t := 0.0
+var bind_lock_t := 0.0
+var bind_notice := ""
+var bind_notice_t := 0.0
+
 # Тач-схема в координатах логического холста 1280x720. Координаты касаний
 # переводятся через обратную матрицу viewport canvas transform.
 const T_ZONE_STICK := Rect2(0, 140, 560, 580)
@@ -104,9 +113,36 @@ func _load_settings() -> void:
 		settings_vibration = cfg.get_value("game", "vibration", true)
 		settings_touch = cfg.get_value("controls", "touch_mode", 0)
 		debug_hitboxes = cfg.get_value("debug", "hitboxes", false)
+		_load_bindings(cfg)
 	CTL.vibration_enabled = settings_vibration
 	SND.set_muted(not settings_sound)
 	_apply_touch_mode()
+
+
+## Читает назначения клавиш/кнопок из секции [bindings].
+## Отсутствующие или битые значения остаются по умолчанию.
+func _load_bindings(cfg: ConfigFile) -> void:
+	for a in CTL.ACTIONS:
+		var kb = cfg.get_value("bindings", "key_" + a, null)
+		if kb is Array:
+			var keys := []
+			for k in kb:
+				if int(k) > 0:
+					keys.append(int(k))
+			CTL.keyboard[a] = keys
+		var pd = cfg.get_value("bindings", "pad_" + a, null)
+		if pd is Array:
+			var slots := []
+			for s in pd:
+				var slot := int(s)
+				if slot >= 0 and slot < CTL.PAD_LABELS.size():
+					slots.append(slot)
+			CTL.pad_map[a] = slots
+	# Esc — постоянная клавиша паузы/назад, даже если файл старый или битый.
+	var pause_keys: Array = CTL.keyboard.get("pause", [])
+	if not pause_keys.has(KEY_ESCAPE):
+		pause_keys.append(KEY_ESCAPE)
+		CTL.keyboard["pause"] = pause_keys
 
 
 func _save_settings() -> void:
@@ -117,6 +153,9 @@ func _save_settings() -> void:
 	cfg.set_value("game", "vibration", settings_vibration)
 	cfg.set_value("controls", "touch_mode", settings_touch)
 	cfg.set_value("debug", "hitboxes", debug_hitboxes)
+	for a in CTL.ACTIONS:
+		cfg.set_value("bindings", "key_" + a, CTL.keyboard.get(a, []))
+		cfg.set_value("bindings", "pad_" + a, CTL.pad_map.get(a, []))
 	cfg.save(SETTINGS_FILE)
 
 
@@ -201,6 +240,8 @@ func _new_run() -> void:
 
 func _start_run() -> void:
 	_touch_stop()
+	bind_capture = false
+	bind_lock_t = 0.0
 	_new_run()
 	state = "play"
 	title_submenu = null
@@ -253,6 +294,10 @@ func hazard_teleport() -> void:
 # ---------- цикл ----------
 
 func _handle_global() -> void:
+	# Пока экран ждёт новую клавишу, глобальные горячие клавиши молчат:
+	# иначе назначение, скажем, на «M» тут же выключило бы звук.
+	if bind_capture or bind_lock_t > 0.0:
+		return
 	if CTL.pressed("mute"):
 		settings_sound = not settings_sound
 		SND.set_muted(not settings_sound)
@@ -391,6 +436,8 @@ func _open_pause(sub) -> void:
 	if state != "play":
 		return
 	_touch_stop()
+	bind_capture = false
+	bind_lock_t = 0.0
 	state = "paused"
 	# _process продолжает текущий кадр после _handle_global; без поглощения
 	# edge пауза сразу закрывалась в _update_pause тем же самым нажатием.
@@ -402,6 +449,8 @@ func _open_pause(sub) -> void:
 
 func _close_pause() -> void:
 	_touch_stop()
+	bind_capture = false
+	bind_lock_t = 0.0
 	state = "play"
 	submenu = null
 	hint_timer = maxf(hint_timer, 3)
@@ -417,6 +466,9 @@ func _update_pause(dt: float) -> void:
 		return
 	elif submenu == "settings":
 		_update_settings(dt)
+		return
+	elif submenu == "bindings":
+		_update_bindings(dt)
 		return
 
 	if CTL.pressed("pause"):
@@ -464,6 +516,9 @@ func _update_title(dt: float) -> void:
 		return
 	elif title_submenu == "settings":
 		_update_settings(dt)
+		return
+	elif title_submenu == "bindings":
+		_update_bindings(dt)
 		return
 
 	if title_t < 0.25:
@@ -535,6 +590,20 @@ func _toggle_setting(idx: int) -> void:
 			title_submenu = "controls"
 		else:
 			submenu = "controls"
+		SND.ui_confirm()
+		return
+	elif id == "bindings":
+		bind_capture = false
+		bind_capture_t = 0.0
+		bind_lock_t = 0.0
+		bind_menu_index = 0
+		bind_col = 0
+		bind_notice = ""
+		bind_notice_t = 0.0
+		if state == "title":
+			title_submenu = "bindings"
+		else:
+			submenu = "bindings"
 		SND.ui_confirm()
 		return
 	elif id == "back":
@@ -661,6 +730,8 @@ func _render_title() -> void:
 		_render_settings()
 	elif title_submenu == "controls":
 		_render_controls()
+	elif title_submenu == "bindings":
+		_render_bindings()
 	else:
 		_render_title_menu()
 
@@ -724,7 +795,7 @@ func _render_settings() -> void:
 	var x := 370.0
 	var y := 80.0
 	var w := 540.0
-	var h := 550.0
+	var h := 596.0
 	InkHud.panel(x, y, w, h, L10N.t("SETTINGS_TITLE"), 28)
 
 	InkR.text(L10N.t("SETTINGS_SUBTITLE"),
@@ -786,6 +857,9 @@ func _render_settings() -> void:
 		elif id == "controls":
 			title_str = L10N.t("SET_CONTROLS")
 			val_str = "›"
+		elif id == "bindings":
+			title_str = L10N.t("SET_BINDINGS")
+			val_str = "›"
 		elif id == "back":
 			title_str = L10N.t("UI_BACK")
 			val_str = ""
@@ -793,7 +867,7 @@ func _render_settings() -> void:
 		InkR.text(title_str, x + 56, ry + 7, 19 if sel else 18,
 			InkR.F_BODY, InkR.A_LEFT, InkR.RED if sel else InkR.INK, 1.0 if sel else 0.75)
 
-		if id == "controls":
+		if id == "controls" or id == "bindings":
 			InkR.text(val_str, x + w - 50, ry + 7, 22,
 				InkR.F_BODY, InkR.A_RIGHT, InkR.RED if sel else InkR.INK, 0.8 if sel else 0.4)
 		elif id != "back":
@@ -987,6 +1061,9 @@ func _render_pause() -> void:
 	elif submenu == "settings":
 		_render_settings()
 		return
+	elif submenu == "bindings":
+		_render_bindings()
+		return
 
 	var x := 400.0
 	var y := 108.0
@@ -1057,14 +1134,14 @@ func _render_controls() -> void:
 	InkR.text(L10N.t("COL_GAMEPAD"), x + 590, y + 96, 10, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
 
 	var rows := [
-		[L10N.t("ACT_MOVE"), "A / D / ← / →", L10N.t("KEY_STICK")],
-		[L10N.t("ACT_JUMP"), L10N.t("KEY_SPACE") + " / Z", "A"],
-		[L10N.t("ACT_ATTACK"), "J / X", "X / RB"],
-		[L10N.t("ACT_DASH"), "K / SHIFT", "B / LB"],
-		[L10N.t("ACT_HEAL"), "L / V", "Y"],
-		[L10N.t("ACT_PAUSE"), "ESC", "START"],
-		[L10N.t("ACT_RESTART"), "R", "BACK"],
-		[L10N.t("ACT_DEBUG"), "F / F2", "—"],
+		[L10N.t("ACT_MOVE"), CTL.label_move(), L10N.t("KEY_STICK")],
+		[L10N.t("ACT_JUMP"), CTL.label_key("jump"), CTL.label_pad("jump")],
+		[L10N.t("ACT_ATTACK"), CTL.label_key("attack"), CTL.label_pad("attack")],
+		[L10N.t("ACT_DASH"), CTL.label_key("dash"), CTL.label_pad("dash")],
+		[L10N.t("ACT_HEAL"), CTL.label_key("heal"), CTL.label_pad("heal")],
+		[L10N.t("ACT_PAUSE"), CTL.label_key("pause"), CTL.label_pad("pause")],
+		[L10N.t("ACT_RESTART"), CTL.label_key("restart"), CTL.label_pad("restart")],
+		[L10N.t("ACT_DEBUG"), CTL.label_key("hitboxes"), "—"],
 	]
 
 	var ry := y + 126.0
@@ -1135,7 +1212,7 @@ func _render_controls() -> void:
 	InkR.line(x + 34, y + 526, x + w - 34, y + 526, 1.2, InkR.rgba(156, 33, 41, 89), 1.0, 0.8, [6.0, 6.0])
 	InkR.text(L10N.t("CONTROLS_BACK"), x + 52, y + h - 26, 11,
 		InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 2.0)
-	InkR.text(L10N.t("CONTROLS_CLOSE"), x + w - 52, y + h - 26, 11,
+	InkR.text(L10N.t("CONTROLS_CLOSE", [CTL.first_key_label("help")]), x + w - 52, y + h - 26, 11,
 		InkR.F_DISPLAY, InkR.A_RIGHT, InkR.INK, 0.45, 1.0)
 
 
@@ -1171,6 +1248,341 @@ func _render_touch_controls(x: float, y: float, w: float, h: float) -> void:
 	InkR.rect(bx, by, bw, bh, InkR.rgba(246, 237, 218, 240), InkR.rgba(23, 19, 15, 180), 1.6, 1.0, 0.8)
 	InkR.text(L10N.t("UI_BACK"), x + w * 0.5, by + bh * 0.5 + 5, 16,
 		InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.9, 1.5)
+
+
+# ---------- назначение клавиш ----------
+
+const BIND_PANEL := Rect2(170, 40, 940, 636)
+const BIND_ROW_H := 28.0
+const BIND_ROWS_Y := 120.0
+const BIND_KEY_X := 470.0
+const BIND_PAD_X := 690.0
+const BIND_CELL_W := 180.0
+const BIND_CAPTURE_MAX := 10.0
+const BIND_MOVE := ["left", "right", "up", "down"]
+
+
+func _bind_last() -> int:
+	return CTL.BINDABLE.size() + 1
+
+
+func _bind_is_fixed(a: String) -> bool:
+	return a in BIND_MOVE
+
+
+func _bind_action_name(a: String) -> String:
+	match a:
+		"left": return L10N.t("ACT_LEFT")
+		"right": return L10N.t("ACT_RIGHT")
+		"up": return L10N.t("ACT_UP")
+		"down": return L10N.t("ACT_DOWN")
+		"jump": return L10N.t("ACT_JUMP")
+		"attack": return L10N.t("ACT_ATTACK")
+		"dash": return L10N.t("ACT_DASH")
+		"heal": return L10N.t("ACT_HEAL")
+		"pause": return L10N.t("ACT_PAUSE")
+		"restart": return L10N.t("ACT_RESTART")
+		"help": return L10N.t("ACT_HELP")
+		"hitboxes": return L10N.t("ACT_DEBUG")
+		"mute": return L10N.t("ACT_MUTE")
+		"fullscreen": return L10N.t("ACT_FULLSCREEN")
+		"screenshot": return L10N.t("ACT_SCREENSHOT")
+	return a
+
+
+func _update_bindings(dt: float) -> void:
+	# после захвата клавиши гасим навигацию, иначе та же кнопка сразу
+	# запустила бы новое назначение
+	if bind_lock_t > 0.0:
+		bind_lock_t = maxf(0.0, bind_lock_t - dt)
+		return
+	if bind_notice_t > 0.0:
+		bind_notice_t = maxf(0.0, bind_notice_t - dt)
+	if bind_capture:
+		bind_capture_t += dt
+		if bind_capture_t >= BIND_CAPTURE_MAX:
+			bind_capture = false
+			bind_capture_t = 0.0
+			bind_notice = L10N.t("BIND_CANCELLED")
+			bind_notice_t = 1.6
+			SND.ui()
+		return
+	if CTL.pressed("pause"):
+		_close_bindings()
+		return
+	var n: int = _bind_last() + 1
+	if CTL.pressed("up"):
+		bind_menu_index = (bind_menu_index - 1 + n) % n
+		SND.ui()
+	elif CTL.pressed("down"):
+		bind_menu_index = (bind_menu_index + 1) % n
+		SND.ui()
+	if bind_menu_index < CTL.BINDABLE.size():
+		if CTL.pressed("left") and bind_col != 0:
+			bind_col = 0
+			SND.ui()
+		elif CTL.pressed("right") and bind_col != 1:
+			bind_col = 1
+			SND.ui()
+	if CTL.confirm():
+		_activate_bind_row()
+
+
+func _activate_bind_row() -> void:
+	if bind_menu_index == CTL.BINDABLE.size():
+		CTL.reset_bindings()
+		_save_settings()
+		bind_notice = L10N.t("BIND_RESET_DONE")
+		bind_notice_t = 2.2
+		SND.ui_confirm()
+		return
+	if bind_menu_index > CTL.BINDABLE.size():
+		_close_bindings()
+		return
+	var a: String = CTL.BINDABLE[bind_menu_index]
+	if bind_col == 1 and _bind_is_fixed(a):
+		bind_notice = L10N.t("BIND_FIXED")
+		bind_notice_t = 2.2
+		SND.ui()
+		return
+	_start_capture()
+
+
+func _close_bindings() -> void:
+	bind_capture = false
+	bind_capture_t = 0.0
+	bind_lock_t = 0.0
+	if state == "title":
+		title_submenu = "settings"
+	else:
+		submenu = "settings"
+	settings_menu_index = SETTINGS_ITEMS.find("bindings")
+	SND.ui()
+
+
+func _start_capture() -> void:
+	bind_capture = true
+	bind_capture_t = 0.0
+	bind_lock_t = 0.12
+	bind_notice = ""
+	bind_notice_t = 0.0
+	SND.ui()
+
+
+func _cancel_capture() -> void:
+	bind_capture = false
+	bind_capture_t = 0.0
+	bind_lock_t = 0.2
+	SND.ui()
+
+
+func _finish_capture(ok: bool) -> void:
+	bind_capture = false
+	bind_capture_t = 0.0
+	bind_lock_t = 0.25
+	if ok:
+		_save_settings()
+		bind_notice = ""
+		bind_notice_t = 0.0
+		SND.ui_confirm()
+	else:
+		bind_notice_t = 2.2
+		SND.ui()
+
+
+func _apply_key_capture(code: int) -> void:
+	var a: String = CTL.BINDABLE[bind_menu_index]
+	var ok: bool = CTL.set_key(a, code)
+	if not ok:
+		bind_notice = L10N.t("BIND_RESERVED")
+	_finish_capture(ok)
+
+
+func _apply_pad_capture(slot: int) -> void:
+	var a: String = CTL.BINDABLE[bind_menu_index]
+	var ok: bool = CTL.set_pad(a, slot)
+	if not ok:
+		bind_notice = L10N.t("BIND_FIXED")
+	_finish_capture(ok)
+
+
+## Возвращает true, если событие поглощено экраном назначений.
+func _handle_bind_capture(event: InputEvent) -> bool:
+	if event is InputEventKey and event.pressed and not event.echo:
+		var code: int = int(event.physical_keycode)
+		if code == 0:
+			code = int(event.keycode)
+		if code == KEY_ESCAPE:
+			_cancel_capture()
+			return true
+		if bind_col != 0:
+			return false
+		_apply_key_capture(code)
+		return true
+	if event is InputEventJoypadButton and event.pressed:
+		if bind_col != 1:
+			return false
+		var slot: int = CTL.slot_of_joy(event.button_index)
+		if slot < 0:
+			bind_notice = L10N.t("BIND_UNSUPPORTED")
+			_finish_capture(false)
+		else:
+			_apply_pad_capture(slot)
+		return true
+	if event is InputEventJoypadMotion and bind_col == 1:
+		if absf(event.axis_value) < 0.55:
+			return false
+		if event.axis == JOY_AXIS_TRIGGER_LEFT:
+			_apply_pad_capture(6)
+			return true
+		if event.axis == JOY_AXIS_TRIGGER_RIGHT:
+			_apply_pad_capture(7)
+			return true
+		return false
+	if event is InputEventScreenTouch and event.pressed:
+		_cancel_capture()
+		return true
+	if event is InputEventMouseButton and event.pressed:
+		_cancel_capture()
+		return true
+	return false
+
+
+func _render_bindings() -> void:
+	var x := BIND_PANEL.position.x
+	var y := BIND_PANEL.position.y
+	var w := BIND_PANEL.size.x
+	var h := BIND_PANEL.size.y
+	InkHud.panel(x, y, w, h, L10N.t("BIND_TITLE"), 28)
+
+	InkR.text(L10N.t("BIND_SUBTITLE"), x + w * 0.5, y + 76, 11,
+		InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.42, 1.0)
+
+	InkR.text(L10N.t("COL_ACTION"), x + 52, y + 100, 10,
+		InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
+	InkR.text(L10N.t("COL_KEYBOARD"), x + BIND_KEY_X, y + 100, 10,
+		InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
+	InkR.text(L10N.t("COL_GAMEPAD"), x + BIND_PAD_X, y + 100, 10,
+		InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55, 3.0)
+
+	for i in range(CTL.BINDABLE.size()):
+		var a: String = CTL.BINDABLE[i]
+		var ry: float = y + BIND_ROWS_Y + i * BIND_ROW_H
+		var sel: bool = (i == bind_menu_index)
+		if i % 2 == 0:
+			InkR.rect(x + 28, ry - 13, w - 56, 26, InkR.rgba(23, 19, 15, 9),
+				InkR.rgba(23, 19, 15, 13), 0.5, 1.0, 0.5)
+		if sel:
+			InkR.srand(900 + i)
+			InkR.fill_poly([
+				Vector2(x + 34, ry - 11), Vector2(x + 46, ry - 8),
+				Vector2(x + 41, ry + 12), Vector2(x + 32, ry + 9)
+			], InkR.rgba(156, 33, 41, 40), 1.0, 0.8)
+		InkR.text(_bind_action_name(a), x + 56, ry + 5, 14,
+			InkR.F_BODY, InkR.A_LEFT, InkR.RED if sel else InkR.INK, 1.0 if sel else 0.78)
+		_draw_bind_cell(a, 0, x + BIND_KEY_X, ry, sel and bind_col == 0)
+		_draw_bind_cell(a, 1, x + BIND_PAD_X, ry, sel and bind_col == 1)
+
+	var fy: float = y + BIND_ROWS_Y + CTL.BINDABLE.size() * BIND_ROW_H + 14.0
+	InkR.line(x + 34, fy - 8, x + w - 34, fy - 8, 1.0,
+		InkR.rgba(23, 19, 15, 46), 1.0, 0.8)
+	_draw_bind_button(Rect2(x + 52, fy, 240, 38), L10N.t("BIND_RESET"),
+		bind_menu_index == CTL.BINDABLE.size())
+	_draw_bind_button(Rect2(x + w - 52 - 240, fy, 240, 38), L10N.t("UI_BACK"),
+		bind_menu_index > CTL.BINDABLE.size())
+
+	if bind_notice_t > 0.0 and bind_notice != "":
+		var na: float = clampf(bind_notice_t / 0.5, 0.0, 1.0)
+		InkR.text(bind_notice, x + w * 0.5, y + h - 16, 12,
+			InkR.F_DISPLAY, InkR.A_CENTER, InkR.RED, na, 1.0)
+	else:
+		var hint := L10N.t("BIND_HINT_TOUCH") if (touch_mode or CTL.device == "touch") \
+			else (L10N.t("BIND_HINT_PAD") if CTL.device == "gamepad" else L10N.t("BIND_HINT_KB"))
+		InkR.text(hint, x + w * 0.5, y + h - 16, 11,
+			InkR.F_HAND, InkR.A_CENTER, InkR.INK, 0.55)
+
+	if bind_capture:
+		_draw_bind_capture()
+
+
+func _draw_bind_cell(a: String, col: int, cx: float, cy: float, active: bool) -> void:
+	var fixed: bool = _bind_is_fixed(a)
+	var text: String = CTL.label_key(a) if col == 0 else CTL.label_pad(a)
+	var alpha := 0.82
+	if col == 1 and fixed:
+		alpha = 0.45
+	if active:
+		InkR.rect(cx - 8, cy - 12, BIND_CELL_W, 24, InkR.rgba(156, 33, 41, 22),
+			InkR.RED, 1.3, 1.0, 0.6)
+		alpha = 1.0
+	InkR.text(text, cx, cy + 5, 13, InkR.F_BOLD, InkR.A_LEFT,
+		InkR.RED if active else InkR.INK, alpha)
+
+
+func _draw_bind_button(r: Rect2, text: String, sel: bool) -> void:
+	InkR.rect(r.position.x, r.position.y, r.size.x, r.size.y,
+		InkR.rgba(156, 33, 41, 30) if sel else InkR.rgba(246, 237, 218, 200),
+		InkR.RED if sel else InkR.rgba(23, 19, 15, 120), 1.6 if sel else 1.2, 1.0, 0.8)
+	InkR.text(text, r.position.x + r.size.x * 0.5, r.position.y + r.size.y * 0.5 + 6, 15,
+		InkR.F_DISPLAY, InkR.A_CENTER, InkR.RED if sel else InkR.INK,
+		1.0 if sel else 0.8, 1.5)
+
+
+func _draw_bind_capture() -> void:
+	InkR.save()
+	InkR.alpha_push(0.55)
+	InkR.fill_rect_color(0, 0, W, H, InkR.rgba(17, 12, 9, 255))
+	InkR.restore()
+
+	var pw := 640.0
+	var ph := 220.0
+	var px := (W - pw) * 0.5
+	var py := (H - ph) * 0.5
+	InkHud.panel(px, py, pw, ph, L10N.t("BIND_TITLE"), 24)
+
+	var idx: int = clampi(bind_menu_index, 0, CTL.BINDABLE.size() - 1)
+	InkR.text(_bind_action_name(CTL.BINDABLE[idx]), px + pw * 0.5, py + 86, 26,
+		InkR.F_DISPLAY, InkR.A_CENTER, InkR.RED, 1.0, 1.5)
+	InkR.text(L10N.t("BIND_PRESS"), px + pw * 0.5, py + 120, 14,
+		InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.85, 1.0)
+	InkR.text(L10N.t("BIND_CANCEL"), px + pw * 0.5, py + 146, 11,
+		InkR.F_HAND, InkR.A_CENTER, InkR.INK, 0.55)
+
+	var k: float = clampf(1.0 - bind_capture_t / BIND_CAPTURE_MAX, 0.0, 1.0)
+	InkR.rect(px + 90, py + 168, pw - 180, 6, InkR.rgba(23, 19, 15, 20),
+		InkR.rgba(23, 19, 15, 60), 1.0, 1.0, 0.5)
+	InkR.rect(px + 90, py + 168, (pw - 180) * k, 6, InkR.rgba(156, 33, 41, 190),
+		null, 0.0, 1.0, 0.5)
+
+
+func _tap_bindings(pos: Vector2) -> void:
+	if bind_capture:
+		_cancel_capture()
+		return
+	var x := BIND_PANEL.position.x
+	var y := BIND_PANEL.position.y
+	var w := BIND_PANEL.size.x
+	for i in range(CTL.BINDABLE.size()):
+		var ry: float = y + BIND_ROWS_Y + i * BIND_ROW_H
+		if Rect2(x + 34, ry - 13, w - 68, 26).has_point(pos):
+			bind_menu_index = i
+			if pos.x >= x + BIND_PAD_X - 10:
+				bind_col = 1
+			elif pos.x >= x + BIND_KEY_X - 10:
+				bind_col = 0
+			_activate_bind_row()
+			return
+	var fy: float = y + BIND_ROWS_Y + CTL.BINDABLE.size() * BIND_ROW_H + 14.0
+	if Rect2(x + 52, fy, 240, 38).has_point(pos):
+		bind_menu_index = CTL.BINDABLE.size()
+		_activate_bind_row()
+		return
+	if Rect2(x + w - 52 - 240, fy, 240, 38).has_point(pos):
+		bind_menu_index = CTL.BINDABLE.size() + 1
+		_activate_bind_row()
+		return
+	if not BIND_PANEL.has_point(pos):
+		_close_bindings()
 
 
 # ---------- смерть и отладка ----------
@@ -1428,6 +1840,11 @@ func _touch_zone_action(screen_pos: Vector2) -> String:
 
 
 func _input(event: InputEvent) -> void:
+	# экран назначений перехватывает ввод целиком, пока ждёт клавишу
+	if bind_capture:
+		if _handle_bind_capture(event):
+			get_viewport().set_input_as_handled()
+		return
 	if event is InputEventScreenTouch:
 		if settings_touch != 2:
 			touch_mode = true
@@ -1522,6 +1939,8 @@ func _tap_ui(pos: Vector2, screen_pos := Vector2(-1, -1)) -> void:
 			elif title_submenu == "controls":
 				title_submenu = null
 				SND.ui()
+			elif title_submenu == "bindings":
+				_tap_bindings(pos)
 			else:
 				var i := _title_menu_item_at(pos)
 				if i >= 0:
@@ -1537,6 +1956,8 @@ func _tap_ui(pos: Vector2, screen_pos := Vector2(-1, -1)) -> void:
 			elif submenu == "controls":
 				submenu = null
 				SND.ui()
+			elif submenu == "bindings":
+				_tap_bindings(pos)
 			elif _zone_action(pos) == "pause" or (screen_pos.x >= 0.0 and _touch_zone_action(screen_pos) == "pause"):
 				_close_pause()
 			else:
