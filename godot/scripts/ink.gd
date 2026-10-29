@@ -34,7 +34,7 @@ const F_HAND := 5
 
 # Шрифты. Свободные аналоги Georgia / Palatino Linotype / Segoe Script (лицензия OFL).
 # Заменяются в одном месте: см. docs/fonts.md.
-const FONT_TITLE := preload("res://assets/fonts/PTSerif-BoldItalic.ttf")
+const FONT_TITLE := preload("res://assets/fonts/Underdog-Regular.ttf")
 const FONT_DISPLAY := preload("res://assets/fonts/PTSerif-Bold.ttf")
 const FONT_BODY := preload("res://assets/fonts/PTSerif-Regular.ttf")
 const FONT_BOLD := preload("res://assets/fonts/PTSerif-Bold.ttf")
