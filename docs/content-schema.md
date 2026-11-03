@@ -132,6 +132,27 @@ instantiate(id, overrides) -> Node
 
 Сканировать `res://` через `DirAccess` в экспортированном PCK нельзя — поведение отличается от редактора, поэтому в билде источником становится манифест.
 
+### Оружие
+
+Оружие — такие же карточки, но отдельного типа `WeaponDef` и отдельного каталога `WDB`:
+
+```
+id: StringName                 # weapon.blade
+display_name_key: String       # ключ локализации
+order: int                     # порядок переключения
+damage: int
+windup / active / cooldown: float
+reach: Vector2
+knockback: float
+hit_both_sides: bool
+ink: Color
+swing_radius / swing_width: float
+```
+
+`Player` при старте берёт все карточки из `WDB`, сортирует по `order` и применяет текущую к удару. Новое оружие = новый `.tres` в `content/weapons` и ключ имени в локализации; код игрока не меняется.
+
+Каталог `WDB` читает папку `content/weapons` в редакторе и секцию `weapons` манифеста в сборке.
+
 ---
 
 ## 7. `SaveData` — сохранение
@@ -202,9 +223,13 @@ abilities: Array[StringName]
 | `scripts/content/content_aliases.gd` | `ContentAliases` — переименования ID |
 | `scripts/content/entity_database.gd` | автозагрузка `DB` |
 | `content/entities/enemy_grunt.tres` | первая карточка |
+| `content/weapons/blade.tres` | чернильный клинок |
+| `content/weapons/brush.tres` | тяжёлая кисть |
 | `content/aliases.tres` | таблица переименований (пока пустая) |
 | `content/manifest.json` | генерируется, лежит в git |
 | `tools/build_manifest.gd` | генератор манифеста |
+| `scripts/content/weapon_def.gd` | `WeaponDef` — карточка оружия |
+| `scripts/content/weapon_database.gd` | автозагрузка `WDB` |
 | `scripts/world/level.gd` | сцена уровня: тайлы, враги, чекпоинты |
 | `scripts/world/checkpoint.gd` | чекпоинт-метка |
 | `scripts/world/ink_tileset.gd` | `TileSet` из атласа, коллизии тайлов |

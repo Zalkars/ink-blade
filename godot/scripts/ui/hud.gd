@@ -23,6 +23,7 @@ func _ready() -> void:
 		CTL.label_key("jump"),
 		CTL.label_key("dash"),
 		CTL.label_key("attack"),
+		CTL.label_key("swap"),
 		CTL.label_key("pause"),
 	])
 
@@ -39,6 +40,7 @@ func _draw() -> void:
 	if player != null:
 		_draw_hearts()
 		_draw_dash()
+		_draw_weapon()
 
 	if not hint.is_empty():
 		var strip := Rect2(0.0, size.y - 46.0, size.x, 46.0)
@@ -77,6 +79,22 @@ func _draw_dash() -> void:
 	draw_rect(Rect2(pos, Vector2(96.0, 5.0)), Color(INK, 0.18))
 	draw_rect(Rect2(pos, Vector2(96.0 * ready, 5.0)), RED if ready >= 1.0 else Color(RED, 0.55))
 	draw_string(FONT_TEXT, pos + Vector2(106.0, 7.0), L10N.t("ui.hud.dash"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, FAINT)
+
+
+## Текущее оружие справа сверху: имя и точки-переключатели.
+func _draw_weapon() -> void:
+	var name := player.weapon_name()
+	if name.is_empty():
+		return
+	var right := size.x - 40.0
+	draw_string(FONT_TEXT, Vector2(right - 340.0, 36.0), L10N.t("ui.hud.weapon"),
+		HORIZONTAL_ALIGNMENT_RIGHT, 340.0, 11, FAINT)
+	draw_string(FONT_BOLD, Vector2(right - 340.0, 62.0), name,
+		HORIZONTAL_ALIGNMENT_RIGHT, 340.0, 18, Color(INK, 0.78))
+	var count: int = player.weapons.size()
+	for i in count:
+		var c := Vector2(right - float(count - 1 - i) * 16.0, 78.0)
+		draw_circle(c, 4.0, RED if i == player.weapon_index else Color(INK, 0.2))
 
 
 func _draw_debug() -> void:

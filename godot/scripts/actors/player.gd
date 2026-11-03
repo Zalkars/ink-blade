@@ -10,6 +10,7 @@ extends CharacterBody2D
 
 signal hp_changed(hp: int, max_hp: int)
 signal died
+signal weapon_changed(name: String)
 
 const MAX_HP := 5
 
@@ -59,6 +60,13 @@ var iframes := 0.0
 var hurt_t := 0.0
 var attack_t := 0.0
 var attack_cd := 0.0
+var attack_windup := 0.0
+var attack_total := ATTACK_TIME
+var _struck := false
+
+var weapons: Array = []
+var weapon_index := 0
+var weapon: WeaponDef
 
 var _wob := 0.0
 var _spawn := Vector2.ZERO
@@ -66,7 +74,34 @@ var _spawn := Vector2.ZERO
 
 func _ready() -> void:
 	_spawn = global_position
+	weapons = WDB.all()
+	_equip(0)
 	hp_changed.emit(hp, MAX_HP)
+
+
+## Берёт оружие по порядку карточек. Если каталог пуст, остаётся встроенный клинок.
+func _equip(index: int) -> void:
+	if weapons.is_empty():
+		return
+	weapon_index = wrapi(index, 0, weapons.size())
+	weapon = weapons[weapon_index]
+	attack_t = 0.0
+	attack_windup = 0.0
+	attack_cd = 0.0
+	_struck = false
+	weapon_changed.emit(weapon_name())
+
+
+func next_weapon() -> void:
+	if weapons.size() < 2:
+		return
+	_equip(weapon_index + 1)
+
+
+func weapon_name() -> String:
+	if weapon == null:
+		return ""
+	return L10N.t(weapon.display_name_key)
 
 
 func _physics_process(delta: float) -> void:
@@ -75,7 +110,11 @@ func _physics_process(delta: float) -> void:
 	iframes = maxf(0.0, iframes - delta)
 	hurt_t = maxf(0.0, hurt_t - delta)
 	attack_t = maxf(0.0, attack_t - delta)
+	attack_windup = maxf(0.0, attack_windup - delta)
 	attack_cd = maxf(0.0, attack_cd - delta)
+	if attack_t > 0.0 and not _struck and attack_windup <= 0.0:
+		_strike()
+		_struck = true
 
 	if dead:
 		_apply_gravity(delta)
@@ -97,6 +136,8 @@ func _physics_process(delta: float) -> void:
 		_try_dash()
 	if CTL.pressed("attack"):
 		_try_attack()
+	if CTL.pressed("swap"):
+		next_weapon()
 
 	var ax := CTL.axis_x()
 	if absf(ax) < 0.2:
@@ -156,19 +197,33 @@ func _try_dash() -> void:
 
 
 func _try_attack() -> void:
-	if attack_cd > 0.0:
+	if attack_cd > 0.0 or weapon == null:
 		return
-	attack_t = ATTACK_TIME
-	attack_cd = ATTACK_TIME + ATTACK_COOLDOWN
-	_strike()
+	_struck = false
+	attack_windup = weapon.windup
+	attack_total = weapon.windup + weapon.active
+	attack_t = attack_total
+	attack_cd = attack_total + weapon.cooldown
+	if attack_windup <= 0.0:
+		_strike()
+		_struck = true
 
 
 func _strike() -> void:
+	if weapon == null:
+		return
+	var reach: Vector2 = weapon.reach
+	var center := global_position
+	if weapon.hit_both_sides:
+		# Кисть бьёт вокруг: широкая фигура без смещения вперёд.
+		reach = Vector2(weapon.reach.x * 2.0, weapon.reach.y)
+	else:
+		center += Vector2(weapon.reach.x * 0.5 * facing, 0.0)
 	var shape := RectangleShape2D.new()
-	shape.size = ATTACK_REACH
+	shape.size = reach
 	var params := PhysicsShapeQueryParameters2D.new()
 	params.shape = shape
-	params.transform = Transform2D(0.0, global_position + Vector2(ATTACK_REACH.x * 0.5 * facing, 0.0))
+	params.transform = Transform2D(0.0, center)
 	params.collision_mask = ENEMY_LAYER
 	params.collide_with_areas = false
 	params.collide_with_bodies = true
@@ -176,7 +231,7 @@ func _strike() -> void:
 	for hit in found:
 		var body = hit.get("collider")
 		if body != null and body.has_method("hit"):
-			body.hit(ATTACK_DAMAGE, facing)
+			body.hit(weapon.damage, facing, weapon.knockback)
 
 
 func take_damage(amount: int, from_dir: float) -> void:
@@ -233,11 +288,13 @@ func _draw() -> void:
 	if not dead:
 		draw_circle(Vector2(3.5 * facing, -9.0), 2.4, RED)
 
-	if attack_t > 0.0:
-		var k := 1.0 - attack_t / ATTACK_TIME
+	if attack_t > 0.0 and weapon != null:
+		var k := 1.0 - attack_t / maxf(attack_total, 0.001)
 		var a0 := -0.9 + k * 0.9
 		var a1 := 0.7 + k * 0.5
+		var r: float = weapon.swing_radius
+		var col: Color = weapon.ink
 		if facing > 0:
-			draw_arc(Vector2(2.0, -4.0), 38.0, a0, a1, 14, RED, 3.0)
+			draw_arc(Vector2(2.0, -4.0), r, a0, a1, 14, col, weapon.swing_width)
 		else:
-			draw_arc(Vector2(-2.0, -4.0), 38.0, PI - a1, PI - a0, 14, RED, 3.0)
+			draw_arc(Vector2(-2.0, -4.0), r, PI - a1, PI - a0, 14, col, weapon.swing_width)

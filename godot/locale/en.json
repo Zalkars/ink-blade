@@ -138,7 +138,8 @@
     "ui.title.version": "skeleton · v0.1",
     "ui.title.hint": "%s / %s — select   ·   %s — confirm   ·   %s — debug",
     "ui.hud.dash": "DASH",
-    "ui.hud.hint": "%s — run   ·   %s — jump   ·   %s — dash   ·   %s — attack   ·   %s — pause",
+    "ui.hud.weapon": "WEAPON",
+    "ui.hud.hint": "%s — run   ·   %s — jump   ·   %s — dash   ·   %s — attack   ·   %s — switch weapon   ·   %s — pause",
     "ui.pause.title": "PAUSE",
     "ui.pause.resume": "RESUME",
     "ui.pause.restart": "RESTART",
@@ -152,6 +153,9 @@
     "ui.cleared.restart": "RESTART",
     "ui.overlay.subtitle": "hall: %s",
     "ui.overlay.hint": "%s / %s — select   ·   %s — confirm",
+
+    "weapon.blade.name": "INK BLADE",
+    "weapon.brush.name": "HEAVY BRUSH",
 
     "DUMMY_DAMAGE": "DAMAGE: %d",
     "KEY_SPACE": "SPACE",

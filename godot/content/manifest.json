@@ -8,5 +8,19 @@
       "version": 1,
       "hash": "012fa6a0b66e0a01bc2820d4f3cf53a7861ed3932c14526397214aa57ff80f55"
     }
+  },
+  "weapons": {
+    "weapon.blade": {
+      "path": "res://content/weapons/blade.tres",
+      "type": "WeaponDef",
+      "order": 0,
+      "hash": "14b0fabba3b19427fb7ad1bfbac755ec083a26892f5c331bfb951885de2d1dfe"
+    },
+    "weapon.brush": {
+      "path": "res://content/weapons/brush.tres",
+      "type": "WeaponDef",
+      "order": 1,
+      "hash": "3b0732177d3b28cad844d605308ee52a5cdb3004359d21da142c37f60b3ad4c5"
+    }
   }
 }

@@ -138,7 +138,8 @@
     "ui.title.version": "каркас · v0.1",
     "ui.title.hint": "%s / %s — выбор   ·   %s — подтвердить   ·   %s — отладка",
     "ui.hud.dash": "РЫВОК",
-    "ui.hud.hint": "%s — бег   ·   %s — прыжок   ·   %s — рывок   ·   %s — удар   ·   %s — пауза",
+    "ui.hud.weapon": "ОРУЖИЕ",
+    "ui.hud.hint": "%s — бег   ·   %s — прыжок   ·   %s — рывок   ·   %s — удар   ·   %s — сменить оружие   ·   %s — пауза",
     "ui.pause.title": "ПАУЗА",
     "ui.pause.resume": "ПРОДОЛЖИТЬ",
     "ui.pause.restart": "ЗАНОВО",
@@ -152,6 +153,9 @@
     "ui.cleared.restart": "ЗАНОВО",
     "ui.overlay.subtitle": "зал: %s",
     "ui.overlay.hint": "%s / %s — выбор   ·   %s — подтвердить",
+
+    "weapon.blade.name": "ЧЕРНИЛЬНЫЙ КЛИНОК",
+    "weapon.brush.name": "ТЯЖЁЛАЯ КИСТЬ",
 
     "DUMMY_DAMAGE": "УРОН: %d",
     "KEY_SPACE": "ПРОБЕЛ",

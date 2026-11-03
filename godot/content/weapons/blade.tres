@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="WeaponDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/content/weapon_def.gd" id="1_weapon"]
+
+[resource]
+script = ExtResource("1_weapon")
+id = &"weapon.blade"
+display_name_key = "weapon.blade.name"
+order = 0
+damage = 1
+windup = 0.0
+active = 0.18
+cooldown = 0.08
+reach = Vector2(52, 44)
+knockback = 140.0
+hit_both_sides = false
+ink = Color(0.611765, 0.121569, 0.141176, 1)
+swing_radius = 38.0
+swing_width = 3.0

@@ -56,6 +56,18 @@ func _run() -> void:
 		"геометрия в TileMapLayer: %d клеток" % (flow.level.tile_layer.get_used_cells().size() if flow.level.tile_layer != null else 0))
 	_check(flow.level.one_way_cells > 0, "односторонние платформы — тайлы: %d" % flow.level.one_way_cells)
 
+	# Оружие: карточки, стартовый клинок, переключение на кисть
+	_check(int(WDB.count()) >= 2, "каталог оружия: %d карточки" % int(WDB.count()))
+	_check(flow.player.weapon != null and String(flow.player.weapon.id) == "weapon.blade",
+		"стартовое оружие — клинок")
+	var blade_damage: int = flow.player.weapon.damage
+	flow.player.next_weapon()
+	_check(String(flow.player.weapon.id) == "weapon.brush", "переключение на кисть")
+	_check(flow.player.weapon.damage > blade_damage, "кисть бьёт сильнее клинка")
+	_check(flow.player.weapon.windup > 0.0, "у кисти есть замах")
+	flow.player.next_weapon()
+	_check(String(flow.player.weapon.id) == "weapon.blade", "переключение возвращает клинок")
+
 	# Каталог контента: карточка -> сцена -> настройка
 	_check(int(DB.count()) >= 1, "каталог загружен: %d карточек" % int(DB.count()))
 	var grunt_def: EntityDef = DB.get_def(&"enemy.grunt")
@@ -117,6 +129,21 @@ func _run() -> void:
 	flow.player._try_attack()
 	await get_tree().physics_frame
 	_check(target.hp < target_hp, "атака снимает здоровье врагу (%d -> %d)" % [target_hp, target.hp])
+
+	# Тяжёлая кисть: замах, широкий удар, сильный урон
+	var brush_target = flow.level.enemies[1]
+	flow.player.global_position = brush_target.global_position + Vector2(-40.0, -40.0)
+	flow.player.facing = 1
+	flow.player.attack_cd = 0.0
+	flow.player.next_weapon()
+	_check(String(flow.player.weapon.id) == "weapon.brush", "кисть взята в руки")
+	flow.player._try_attack()
+	for i in 20:
+		await get_tree().physics_frame
+	var brush_dead: bool = not is_instance_valid(brush_target) or brush_target.hp <= 0
+	_check(brush_dead, "кисть убивает ползуна одним ударом")
+	flow.player.next_weapon()
+	_check(String(flow.player.weapon.id) == "weapon.blade", "после удара возвращаемся к клинку")
 
 	# Настроенные ощущения: прыжок выше, падение медленнее, рывок длиннее
 	var jump_h: float = (flow.player.JUMP_VELOCITY * flow.player.JUMP_VELOCITY) / (2.0 * flow.player.GRAVITY)

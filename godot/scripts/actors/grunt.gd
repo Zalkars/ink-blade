@@ -88,12 +88,12 @@ func _touch_player(dx: float) -> void:
 	target.take_damage(touch_damage, 1.0 if dx >= 0.0 else -1.0)
 
 
-func hit(damage: int, from_dir: int) -> void:
+func hit(damage: int, from_dir: int, knock: float = KNOCKBACK) -> void:
 	if dead:
 		return
 	hp -= damage
 	hit_t = HURT_TIME
-	velocity.x = -from_dir * KNOCKBACK
+	velocity.x = -from_dir * knock
 	velocity.y = -180.0
 	if hp <= 0:
 		dead = true

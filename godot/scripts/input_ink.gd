@@ -7,7 +7,7 @@ extends Node
 
 const ACTIONS := [
 	"left", "right", "up", "down",
-	"jump", "attack", "dash", "heal",
+	"jump", "attack", "dash", "heal", "swap",
 	"pause", "back", "restart", "help", "hitboxes", "mute",
 	"fullscreen", "screenshot",
 ]
@@ -15,7 +15,7 @@ const ACTIONS := [
 # Действия, доступные для переназначения (в порядке экрана настроек).
 const BINDABLE := [
 	"left", "right", "up", "down",
-	"jump", "attack", "dash", "heal",
+	"jump", "attack", "dash", "heal", "swap",
 	"pause", "back", "restart", "help", "hitboxes", "mute",
 	"fullscreen", "screenshot",
 ]
@@ -32,6 +32,7 @@ const DEFAULT_KEYBOARD := {
 	"attack": [KEY_J, KEY_X],
 	"dash": [KEY_K, KEY_C, KEY_SHIFT],
 	"heal": [KEY_L, KEY_V],
+	"swap": [KEY_Q, KEY_TAB],
 	"pause": [KEY_ESCAPE],
 	"back": [KEY_ESCAPE],
 	"restart": [KEY_R],
@@ -47,6 +48,7 @@ const DEFAULT_PAD := {
 	"attack": [2, 5],
 	"dash": [1, 4],
 	"heal": [3],
+	"swap": [7],
 	"pause": [9],
 	"back": [1],
 	"restart": [8],
