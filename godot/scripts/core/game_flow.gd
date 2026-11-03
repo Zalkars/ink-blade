@@ -42,7 +42,12 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Engine.physics_ticks_per_second = 120
 	_build_stage()
-	_show_title()
+	# QA-флаг для сборки: сразу в игру, без титула.
+	# Запуск: InkBlade-Windows.exe --headless --quit-after 300 -- --play
+	if "--play" in OS.get_cmdline_user_args():
+		start_run()
+	else:
+		_show_title()
 
 
 func _build_stage() -> void:
@@ -144,6 +149,7 @@ func start_run() -> void:
 	camera.reset_smoothing()
 	hud.bind(player)
 	_autosave(false)
+	print("LEVEL %s: врагов %d" % [level_id, level.enemy_count()])
 
 
 func _clear_level() -> void:
