@@ -42,7 +42,23 @@ func _run() -> void:
 	_check(flow.level != null, "уровень загружен как сцена")
 	_check(flow.player != null, "игрок создан сценой, а не RefCounted")
 	_check(flow.level.enemy_count() == 4, "враги из JSON: %d из 4" % flow.level.enemy_count())
+	_check(flow.level.enemies[0].target == flow.player, "враг получает цель из уровня")
 	_check(flow.level.spawn_point.y > 0.0, "точка спавна из данных")
+
+	# Каталог контента: карточка -> сцена -> настройка
+	_check(int(DB.count()) >= 1, "каталог загружен: %d карточек" % int(DB.count()))
+	var grunt_def: EntityDef = DB.get_def(&"enemy.grunt")
+	_check(grunt_def != null, "карточка enemy.grunt найдена")
+	_check(grunt_def != null and grunt_def.stats != null and grunt_def.stats.max_hp == 2, "статы читаются из карточки")
+	var probe = DB.instantiate(&"enemy.grunt")
+	_check(probe is Grunt and probe.hp == 2 and is_equal_approx(probe.speed, 95.0), "карточка настраивает сцену")
+	probe.free()
+	var strong = DB.instantiate(&"enemy.grunt", {"max_hp": 5})
+	_check(strong != null and strong.hp == 5, "переопределение уровня применяется")
+	strong.free()
+	var weak = DB.instantiate(&"enemy.grunt", {"unknown_field": 1})
+	_check(weak != null and weak.hp == 2, "неизвестное переопределение игнорируется")
+	weak.free()
 
 	# Падение и приземление
 	for i in 90:

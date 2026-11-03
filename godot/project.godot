@@ -14,6 +14,7 @@ boot_splash/image=""
 L10N="*res://scripts/i18n.gd"
 SND="*res://scripts/audio_ink.gd"
 CTL="*res://scripts/input_ink.gd"
+DB="*res://scripts/content/entity_database.gd"
 
 [display]
 window/size/viewport_width=1280

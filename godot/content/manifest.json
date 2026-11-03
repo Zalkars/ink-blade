@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "entities": {
+    "enemy.grunt": {
+      "path": "res://content/entities/enemy_grunt.tres",
+      "type": "EntityDef",
+      "category": 0,
+      "version": 1,
+      "hash": "012fa6a0b66e0a01bc2820d4f3cf53a7861ed3932c14526397214aa57ff80f55"
+    }
+  }
+}

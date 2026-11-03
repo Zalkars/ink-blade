@@ -7,7 +7,6 @@ extends Node2D
 
 signal cleared
 
-const GRUNT := preload("res://scenes/actors/grunt.tscn")
 const DEFAULT_DATA := "res://content/levels/arena_01.json"
 
 const PAPER := Color("#f1e6d0")
@@ -17,8 +16,6 @@ const RIDGE_NEAR := Color("#7d7261")
 const INK_DARK := Color("#17130f")
 const INK_EDGE := Color("#4a4136")
 const RED := Color("#9c1f24")
-
-const ENEMY_LAYER := 4
 
 @export_file("*.json") var data_path := DEFAULT_DATA
 
@@ -64,8 +61,12 @@ func _build() -> void:
 	for plat in data.get("one_ways", []):
 		_add_solid(_rect_of(plat), true)
 
-	for enemy in data.get("enemies", []):
-		_add_enemy(enemy)
+	for spec in data.get("placements", []):
+		_add_enemy(spec)
+
+	# Старый формат: type вместо def_id. Оставлен для чтения прежних уровней.
+	for spec in data.get("enemies", []):
+		_add_enemy(spec)
 
 
 func _rect_of(d: Dictionary) -> Rect2:
@@ -105,42 +106,52 @@ func _add_slab(rect: Rect2, one_way: bool) -> void:
 
 
 func _add_enemy(spec: Dictionary) -> void:
-	var kind := String(spec.get("type", "grunt"))
-	if kind != "grunt":
-		push_warning("level: неизвестный враг " + kind)
+	var def_id := String(spec.get("def_id", spec.get("type", "")))
+	if def_id.is_empty():
+		push_warning("level: у спавна нет def_id")
 		return
-	var grunt: Grunt = GRUNT.instantiate()
-	grunt.position = Vector2(float(spec.get("x", 0)), float(spec.get("y", 600)) - 20.0)
-	grunt.collision_layer = ENEMY_LAYER
-	grunt.collision_mask = 1
-	grunt.add_to_group("enemies")
-	if _player != null:
-		grunt.target = _player
-	grunt.died.connect(_on_enemy_died)
-	add_child(grunt)
-	enemies.append(grunt)
+	# Старый формат хранил короткий тип: grunt -> enemy.grunt.
+	if not def_id.contains("."):
+		def_id = "enemy." + def_id
+	var overrides: Dictionary = spec.get("overrides", {})
+	var node := DB.instantiate(StringName(def_id), overrides)
+	if node == null:
+		return
+	if node is Node2D:
+		(node as Node2D).position = Vector2(float(spec.get("x", 0)), float(spec.get("y", 600))) - Vector2(0.0, 20.0)
+	if "target" in node:
+		node.set("target", _player)
+	node.add_to_group("enemies")
+	if node.has_signal("died"):
+		node.died.connect(_on_enemy_died)
+	add_child(node)
+	enemies.append(node)
 
 
-## Точка входа для debug-консоли: создать врага по типу в мировых координатах.
+## Точка входа для debug-консоли: создать врага по ID карточки.
 func spawn_enemy(kind: String, pos: Vector2) -> bool:
-	if kind != "grunt":
+	var def_id := kind
+	if not def_id.contains("."):
+		def_id = "enemy." + def_id
+	if not DB.has(StringName(def_id)):
 		return false
-	_add_enemy({"type": kind, "x": pos.x, "y": pos.y + 20.0})
+	_add_enemy({"def_id": def_id, "x": pos.x, "y": pos.y})
 	return true
 
 
 func bind_player(p: Player) -> void:
 	_player = p
 	for e in enemies:
-		e.target = p
+		if "target" in e:
+			e.set("target", p)
 
 
 func enemy_count() -> int:
 	return enemies.size()
 
 
-func _on_enemy_died(grunt: Grunt) -> void:
-	enemies.erase(grunt)
+func _on_enemy_died(node: Node) -> void:
+	enemies.erase(node)
 	if enemies.is_empty():
 		cleared.emit()
 

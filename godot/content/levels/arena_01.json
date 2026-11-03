@@ -15,10 +15,10 @@
     { "x": 1110, "y": 292, "w": 250, "h": 18 },
     { "x": 1860, "y": 336, "w": 210, "h": 18 }
   ],
-  "enemies": [
-    { "type": "grunt", "x": 880, "y": 600 },
-    { "type": "grunt", "x": 1360, "y": 600 },
-    { "type": "grunt", "x": 1230, "y": 292 },
-    { "type": "grunt", "x": 1900, "y": 600 }
+  "placements": [
+    { "def_id": "enemy.grunt", "x": 880, "y": 600 },
+    { "def_id": "enemy.grunt", "x": 1360, "y": 600 },
+    { "def_id": "enemy.grunt", "x": 1230, "y": 292 },
+    { "def_id": "enemy.grunt", "x": 1900, "y": 600 }
   ]
 }
