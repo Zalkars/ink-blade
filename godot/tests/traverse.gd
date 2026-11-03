@@ -6,8 +6,8 @@ extends Node
 
 const Flow := preload("res://scripts/core/game_flow.gd")
 
-const TARGET_X := 5900.0
-const MAX_STEPS := 6000
+const TARGET_X := 13900.0
+const MAX_STEPS := 12000
 
 
 func _ready() -> void:
