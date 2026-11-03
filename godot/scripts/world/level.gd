@@ -27,6 +27,8 @@ var enemies: Array = []
 var checkpoints: Array = []
 var checkpoint_nodes: Dictionary = {}
 var killed_ids: Array[String] = []
+var tile_layer: TileMapLayer
+var one_way_cells := 0
 var data: Dictionary = {}
 ## Состояние мира из автосейва: какой чекпоинт пройден и кого уже нет.
 ## Задаётся до add_child(), потому что _ready() сразу строит уровень.
@@ -67,12 +69,7 @@ func _build() -> void:
 		killed_ids.append(String(id))
 
 	_build_checkpoints()
-
-	for solid in data.get("solids", []):
-		_add_solid(_rect_of(solid), false)
-
-	for plat in data.get("one_ways", []):
-		_add_solid(_rect_of(plat), true)
+	_build_tiles()
 
 	var index := 0
 	for spec in data.get("placements", []):
@@ -109,36 +106,35 @@ func _rect_of(d: Dictionary) -> Rect2:
 	return Rect2(float(d.get("x", 0)), float(d.get("y", 0)), float(d.get("w", 0)), float(d.get("h", 0)))
 
 
-func _add_solid(rect: Rect2, one_way: bool) -> void:
-	var body := StaticBody2D.new()
-	body.collision_layer = 1
-	body.collision_mask = 0
-	var cs := CollisionShape2D.new()
-	var shape := RectangleShape2D.new()
-	shape.size = rect.size
-	cs.shape = shape
-	cs.position = rect.position + rect.size * 0.5
-	cs.one_way_collision = one_way
-	if one_way:
-		cs.one_way_collision_margin = 8.0
-	body.add_child(cs)
-	add_child(body)
-	_add_slab(rect, one_way)
+## Геометрия уровня растеризуется в TileMapLayer: коллизия и картинка
+## берутся из одного тайлсета. Прямоугольники в JSON — временный формат
+## авторинга; будущий редактор будет писать клетки напрямую.
+func _build_tiles() -> void:
+	tile_layer = TileMapLayer.new()
+	tile_layer.name = "Tiles"
+	tile_layer.tile_set = InkTileset.build()
+	add_child(tile_layer)
+
+	for solid in data.get("solids", []):
+		_paint_rect(_rect_of(solid), false)
+
+	for plat in data.get("one_ways", []):
+		_paint_rect(_rect_of(plat), true)
 
 
-func _add_slab(rect: Rect2, one_way: bool) -> void:
-	var poly := Polygon2D.new()
-	poly.color = INK_DARK if not one_way else INK_EDGE
-	var pts := PackedVector2Array()
-	var x := rect.position.x
-	while x < rect.end.x:
-		pts.append(Vector2(x, rect.position.y + sin(x * 0.07) * 1.4 - 1.2))
-		x += 24.0
-	pts.append(Vector2(rect.end.x, rect.position.y - 1.2))
-	pts.append(Vector2(rect.end.x, rect.end.y))
-	pts.append(Vector2(rect.position.x, rect.end.y))
-	poly.polygon = pts
-	add_child(poly)
+func _paint_rect(rect: Rect2, one_way: bool) -> void:
+	var tile := float(InkTileset.SIZE)
+	var x0 := int(round(rect.position.x / tile))
+	var y0 := int(round(rect.position.y / tile))
+	var x1 := int(round(rect.end.x / tile))
+	var y1 := int(round(rect.end.y / tile))
+	for ty in range(y0, y1):
+		for tx in range(x0, x1):
+			var atlas := Vector2i(InkTileset.ONE_WAY, 0) if one_way else Vector2i(
+				InkTileset.SOLID_TOP if ty == y0 else InkTileset.SOLID, 0)
+			tile_layer.set_cell(Vector2i(tx, ty), 0, atlas)
+			if one_way:
+				one_way_cells += 1
 
 
 func _add_enemy(spec: Dictionary, index: int = 0) -> void:

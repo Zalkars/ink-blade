@@ -47,6 +47,9 @@ func _run() -> void:
 	_check(flow.level.enemy_count() == 4, "враги из JSON: %d из 4" % flow.level.enemy_count())
 	_check(flow.level.enemies[0].target == flow.player, "враг получает цель из уровня")
 	_check(flow.level.spawn_point.y > 0.0, "точка спавна из данных")
+	_check(flow.level.tile_layer != null and flow.level.tile_layer.get_used_cells().size() > 100,
+		"геометрия в TileMapLayer: %d клеток" % (flow.level.tile_layer.get_used_cells().size() if flow.level.tile_layer != null else 0))
+	_check(flow.level.one_way_cells > 0, "односторонние платформы — тайлы: %d" % flow.level.one_way_cells)
 
 	# Каталог контента: карточка -> сцена -> настройка
 	_check(int(DB.count()) >= 1, "каталог загружен: %d карточек" % int(DB.count()))
@@ -67,6 +70,7 @@ func _run() -> void:
 	for i in 90:
 		await get_tree().physics_frame
 	_check(flow.player.is_on_floor(), "игрок падает и встаёт на землю")
+	_check(absf(flow.player.global_position.y - flow.level.spawn_point.y) < 2.0, "игрок стоит на кромке тайлов")
 
 	# Рывок действительно двигает игрока
 	var x0: float = flow.player.global_position.x
