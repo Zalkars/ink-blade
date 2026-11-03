@@ -89,6 +89,7 @@ level.ch01_01
 | `scene` | `PackedScene` | Комната/чанки, `TileMapLayer` |
 | `placements` | `Array[Placement]` | Кто и где стоит |
 | `checkpoints` | `Array[Checkpoint]` | Точки возрождения |
+| `triggers` | `Array[Trigger]` | Сюжетные сцены на оси X |
 | `camera_limits` | `Rect2` | Границы камеры |
 | `music`, `ambient` | `String` | Аудио |
 | `next_level` | `StringName` | Следующий уровень |
@@ -109,6 +110,58 @@ level.ch01_01
 Чекпоинт в JSON каркаса — `{ "id": "cp_mid", "x": 1300, "y": 600 }`, координаты по ногам. Касание лечит игрока и пишет автосейв; после смерти он появляется здесь.
 
 `def_id` строкой, а не прямой ссылкой на ресурс: уровень остаётся валидируемым, переименование файла не ломает данные, отсутствующая карточка ловится валидатором.
+
+### `Trigger`
+
+| Поле | Тип | Назначение |
+|---|---|---|
+| `id` | `String` | Стабильный ID, попадает в сохранение |
+| `x`, `y` | `float` | Где стоит NPC и где срабатывает сцена |
+| `dialogue` | `String` | ID файла из `content/dialogue` |
+| `npc` | `String` | Кого нарисовать: `scribe` — Переписчик |
+
+Триггер срабатывает один раз, когда игрок доходит до `x`. Уровень только шлёт сигнал `trigger_reached`, а `game_flow` решает, что показать: диалог, катсцену или ничего. Уровень не знает про UI и локализацию.
+
+### Диалог и катсцена
+
+Сценарии лежат отдельно от кода и от текста:
+
+```json
+// content/dialogue/archivist.json
+{
+  "version": 1,
+  "id": "archivist",
+  "lines": [
+    { "speaker": "dialogue.archivist.name", "text": "dialogue.archivist.1" },
+    { "speaker": "dialogue.archivist.name", "text": "dialogue.archivist.2" }
+  ],
+  "grant": "weapon.brush"
+}
+```
+
+```json
+// content/cutscenes/intro.json
+{
+  "version": 1,
+  "id": "intro",
+  "slides": [
+    { "text": "cutscene.intro.1", "art": "city" },
+    { "text": "cutscene.intro.2", "art": "ink" }
+  ]
+}
+```
+
+| Поле | Что значит |
+|---|---|
+| `lines[].speaker` | Ключ локализации с именем говорящего |
+| `lines[].text` | Ключ локализации с репликой |
+| `grant` | ID карточки оружия, которое выдаётся после разговора |
+| `slides[].text` | Ключ локализации со строкой слайда |
+| `slides[].art` | Имя процедурной картинки: `city`, `ink`, `blade`, `hall` |
+
+Текст никогда не лежит в JSON сценария: там только ключи. Поэтому перевод добавляется без правки сценария, а сценарий — без правки перевода.
+
+Диалог и катсцена живут в `CanvasLayer` с `process_mode = ALWAYS`, ставят дерево на паузу и возвращают состояние `PLAY` по сигналу `finished`. Управление в мир в это время не уходит.
 
 `overrides` — только по вайтлисту полей, объявленному в карточке. Иначе через год никто не поймёт, почему конкретный враг на конкретном уровне ведёт себя иначе.
 
@@ -193,6 +246,8 @@ abilities: Array[StringName]
 - `content_version` фиксирует, что чекпоинт не переехал; расхождение — предупреждение, не краш.
 - Миграции — цепочка функций `1→2`, `2→3`; версия повышается только вместе с миграцией.
 
+В срезе реализована упрощённая версия этой схемы: один автосейв, плоский JSON с полями `level`, `checkpoint`, `killed`, `triggers`, `weapons`, `weapon`, `hp`, `enemies_left`, `cleared`. Точные поля и правила описаны в `docs/saves.md`. Слоты и `WorldState` из схемы выше появятся вместе с меню профиля.
+
 ---
 
 ## 8. Валидация
@@ -229,6 +284,10 @@ abilities: Array[StringName]
 | `scripts/actors/sentry.gd` | поведение часового |
 | `scripts/actors/blot.gd` | поведение кляксы и сигнал `split` |
 | `scripts/actors/ink_bolt.gd` | снаряд часового |
+| `scripts/ui/cutscene.gd` | катсцена-слайдшоу из JSON |
+| `scripts/ui/dialogue.gd` | нижняя панель диалога из JSON |
+| `content/cutscenes/intro.json` | вступление, 4 слайда |
+| `content/dialogue/archivist.json` | разговор с Переписчиком, 5 реплик |
 | `content/weapons/blade.tres` | чернильный клинок |
 | `content/weapons/brush.tres` | тяжёлая кисть |
 | `content/aliases.tres` | таблица переименований (пока пустая) |

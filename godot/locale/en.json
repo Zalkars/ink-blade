@@ -161,6 +161,22 @@
     "entity.sentry.name": "SENTRY",
     "entity.blot.name": "BLOT",
 
+    "cutscene.intro.1": "The city took seven days to write.\nOn the eighth, the tide came.",
+    "cutscene.intro.2": "Ink does not kill.\nIt crosses things out.",
+    "cutscene.intro.3": "You have a blade left,\nand one clean page.",
+    "cutscene.intro.4": "Reach the First Stroke\nbefore it is erased.",
+    "cutscene.hint": "%s — next",
+
+    "dialogue.archivist.name": "THE OLD COPYIST",
+    "dialogue.archivist.1": "You are late, Scribe. The tide is already in the Archive.",
+    "dialogue.archivist.2": "The Keeper is no villain. He is a guardian who was broken. He erased his own name — and now erases everything else.",
+    "dialogue.archivist.3": "A blade will not stop him. Take the brush. It hits harder and breaks the seal.",
+    "dialogue.archivist.4": "The seal on his chest is the last place the First Stroke still holds. Strike there.",
+    "dialogue.archivist.5": "Go. I will stay while the ink lasts.",
+    "dialogue.hint": "%s — next",
+
+    "ui.hud.toast.weapon": "RECEIVED: %s",
+
     "DUMMY_DAMAGE": "DAMAGE: %d",
     "KEY_SPACE": "SPACE",
     "KEY_STICK": "STICK",

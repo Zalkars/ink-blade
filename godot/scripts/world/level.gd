@@ -8,6 +8,7 @@ extends Node2D
 signal cleared
 signal checkpoint_reached(id: String, pos: Vector2)
 signal enemy_died(id: String)
+signal trigger_reached(id: String, spec: Dictionary)
 
 const DEFAULT_DATA := "res://content/levels/arena_01.json"
 
@@ -28,6 +29,8 @@ var checkpoints: Array = []
 var checkpoint_nodes: Dictionary = {}
 var killed_ids: Array[String] = []
 var _split_serial := 0
+var triggers: Array = []
+var fired_triggers: Array[String] = []
 var tile_layer: TileMapLayer
 var one_way_cells := 0
 var data: Dictionary = {}
@@ -71,6 +74,7 @@ func _build() -> void:
 
 	_build_checkpoints()
 	_build_tiles()
+	_build_triggers()
 
 	var index := 0
 	for spec in data.get("placements", []):
@@ -81,6 +85,35 @@ func _build() -> void:
 	for spec in data.get("enemies", []):
 		_add_enemy(spec, index)
 		index += 1
+
+
+## Триггеры — точки сюжета. Срабатывают один раз, когда игрок доходит до x.
+## Сам разговор запускает game_flow: уровень не знает про UI.
+func _build_triggers() -> void:
+	for spec in data.get("triggers", []):
+		var id := String(spec.get("id", ""))
+		if id.is_empty():
+			continue
+		triggers.append(spec)
+		if world_state.get("triggers", []).has(id):
+			fired_triggers.append(id)
+		if String(spec.get("npc", "")) == "scribe":
+			var npc := Scribe.new()
+			npc.name = "Scribe_" + id
+			npc.position = Vector2(float(spec.get("x", 0)), float(spec.get("y", 600)))
+			add_child(npc)
+
+
+func _physics_process(_delta: float) -> void:
+	if _player == null or not is_instance_valid(_player):
+		return
+	for spec in triggers:
+		var id := String(spec.get("id", ""))
+		if fired_triggers.has(id):
+			continue
+		if _player.global_position.x >= float(spec.get("x", 0)):
+			fired_triggers.append(id)
+			trigger_reached.emit(id, spec)
 
 
 ## Создаёт метки чекпоинтов и переносит точку входа на пройденную.

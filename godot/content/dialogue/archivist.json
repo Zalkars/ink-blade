@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "archivist",
+  "lines": [
+    { "speaker": "dialogue.archivist.name", "text": "dialogue.archivist.1" },
+    { "speaker": "dialogue.archivist.name", "text": "dialogue.archivist.2" },
+    { "speaker": "dialogue.archivist.name", "text": "dialogue.archivist.3" },
+    { "speaker": "dialogue.archivist.name", "text": "dialogue.archivist.4" },
+    { "speaker": "dialogue.archivist.name", "text": "dialogue.archivist.5" }
+  ],
+  "grant": "weapon.brush"
+}

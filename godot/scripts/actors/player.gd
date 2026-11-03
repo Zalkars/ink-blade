@@ -74,9 +74,66 @@ var _spawn := Vector2.ZERO
 
 func _ready() -> void:
 	_spawn = global_position
-	weapons = WDB.all()
-	_equip(0)
+	# На старте открыт только клинок: кисть выдаёт Переписчик.
+	var all := WDB.all()
+	if not all.is_empty():
+		unlock_weapon(String(all[0].id), false)
 	hp_changed.emit(hp, MAX_HP)
+
+
+## Открывает оружие по карточке. Возвращает false, если карточки нет
+## или оружие уже открыто — тогда HUD не показывает ложную награду.
+func unlock_weapon(id: String, equip := true) -> bool:
+	var def := WDB.get_weapon(StringName(id))
+	if def == null:
+		push_warning("player: нет карточки оружия " + id)
+		return false
+	for w in weapons:
+		if String(w.id) == id:
+			return false
+	weapons.append(def)
+	weapons.sort_custom(func(a: WeaponDef, b: WeaponDef) -> bool:
+		return a.order < b.order
+	)
+	if equip or weapon == null:
+		_equip(weapons.find(def))
+	return true
+
+
+func has_weapon(id: String) -> bool:
+	for w in weapons:
+		if String(w.id) == id:
+			return true
+	return false
+
+
+func weapon_ids() -> Array[String]:
+	var out: Array[String] = []
+	for w in weapons:
+		out.append(String(w.id))
+	return out
+
+
+func current_weapon_id() -> String:
+	return String(weapon.id) if weapon != null else ""
+
+
+## Восстанавливает открытый набор из сохранения и берёт прежнее оружие.
+func restore_weapons(ids: Array, current: String = "") -> void:
+	for id in ids:
+		unlock_weapon(String(id), false)
+	if not current.is_empty() and equip_weapon(current):
+		return
+	if not weapons.is_empty():
+		_equip(0)
+
+
+func equip_weapon(id: String) -> bool:
+	for i in weapons.size():
+		if String(weapons[i].id) == id:
+			_equip(i)
+			return true
+	return false
 
 
 ## Берёт оружие по порядку карточек. Если каталог пуст, остаётся встроенный клинок.

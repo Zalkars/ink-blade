@@ -14,6 +14,8 @@ const FAINT := Color(0.09, 0.07, 0.06, 0.45)
 var player: Player
 var debug_on := false
 var hint := ""
+var toast := ""
+var toast_t := 0.0
 
 
 func _ready() -> void:
@@ -28,7 +30,16 @@ func _ready() -> void:
 	])
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if toast_t > 0.0:
+		toast_t = maxf(0.0, toast_t - delta)
+	queue_redraw()
+
+
+## Короткое сообщение поверх игры: «получено оружие», важная находка.
+func show_toast(text: String) -> void:
+	toast = text
+	toast_t = 3.5
 	queue_redraw()
 
 
@@ -41,6 +52,9 @@ func _draw() -> void:
 		_draw_hearts()
 		_draw_dash()
 		_draw_weapon()
+
+	if toast_t > 0.0 and not toast.is_empty():
+		_draw_toast()
 
 	if not hint.is_empty():
 		var strip := Rect2(0.0, size.y - 46.0, size.x, 46.0)
@@ -95,6 +109,16 @@ func _draw_weapon() -> void:
 	for i in count:
 		var c := Vector2(right - float(count - 1 - i) * 16.0, 78.0)
 		draw_circle(c, 4.0, RED if i == player.weapon_index else Color(INK, 0.2))
+
+
+func _draw_toast() -> void:
+	var a := clampf(toast_t / 0.6, 0.0, 1.0)
+	var w := 540.0
+	var x := (size.x - w) * 0.5
+	draw_rect(Rect2(x, 96.0, w, 40.0), Color(PAPER, 0.92 * a))
+	draw_rect(Rect2(x, 96.0, w, 2.0), Color(RED, a))
+	draw_string(FONT_BOLD, Vector2(x, 123.0), toast,
+		HORIZONTAL_ALIGNMENT_CENTER, w, 16, Color(INK, 0.92 * a))
 
 
 func _draw_debug() -> void:

@@ -85,6 +85,12 @@ static func migrate(data: Dictionary) -> Dictionary:
 		if typeof(out.get("killed")) != TYPE_ARRAY:
 			out["killed"] = []
 		out["version"] = 2
+	if typeof(out.get("triggers")) != TYPE_ARRAY:
+		out["triggers"] = []
+	if typeof(out.get("weapons")) != TYPE_ARRAY:
+		out["weapons"] = []
+	if not out.has("weapon"):
+		out["weapon"] = ""
 	return out
 
 

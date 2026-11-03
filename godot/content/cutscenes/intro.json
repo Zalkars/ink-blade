@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "intro",
+  "slides": [
+    { "text": "cutscene.intro.1", "art": "city" },
+    { "text": "cutscene.intro.2", "art": "ink" },
+    { "text": "cutscene.intro.3", "art": "blade" },
+    { "text": "cutscene.intro.4", "art": "hall" }
+  ]
+}

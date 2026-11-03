@@ -37,6 +37,14 @@ func _ready() -> void:
 	for i in MAX_STEPS:
 		await get_tree().physics_frame
 		step = i
+		# Сюжетная сцена ставит игру на паузу: закрываем её и идём дальше,
+		# иначе проверка геометрии застрянет на триггере в Архиве.
+		if flow.dialogue.visible:
+			flow.dialogue.advance()
+			continue
+		if flow.cutscene.visible:
+			flow.cutscene.advance()
+			continue
 		if not is_instance_valid(p):
 			break
 		max_x = maxf(max_x, p.global_position.x)

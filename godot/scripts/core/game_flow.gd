@@ -9,6 +9,8 @@ const TITLE_SCENE := preload("res://scenes/ui/title.tscn")
 const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
 const OVERLAY_SCENE := preload("res://scenes/ui/overlay.tscn")
 const CONSOLE_SCENE := preload("res://scenes/ui/console.tscn")
+const CUTSCENE_SCENE := preload("res://scenes/ui/cutscene.tscn")
+const DIALOGUE_SCENE := preload("res://scenes/ui/dialogue.tscn")
 const PLAYER_SCENE := preload("res://scenes/actors/player.tscn")
 
 const LEVELS := {
@@ -17,7 +19,7 @@ const LEVELS := {
 }
 const FIRST_LEVEL := "ch01_hall"
 
-enum State { TITLE, PLAY, PAUSE, DEAD, CLEARED }
+enum State { TITLE, PLAY, PAUSE, DEAD, CLEARED, CUTSCENE, DIALOGUE }
 
 const OVERLAY_PAUSE := 0
 const OVERLAY_DEAD := 1
@@ -32,6 +34,8 @@ var title_screen: Control
 var hud: Control
 var overlay: Control
 var console: Control
+var cutscene: Control
+var dialogue: Control
 
 var level: Level
 var player: Player
@@ -79,9 +83,17 @@ func _build_stage() -> void:
 	ui.add_child(overlay)
 	overlay.chosen.connect(_on_overlay_choice)
 
+	cutscene = CUTSCENE_SCENE.instantiate()
+	ui.add_child(cutscene)
+	cutscene.finished.connect(_on_cutscene_finished)
+
+	dialogue = DIALOGUE_SCENE.instantiate()
+	ui.add_child(dialogue)
+	dialogue.finished.connect(_on_dialogue_finished)
+
 	title_screen = TITLE_SCENE.instantiate()
 	ui.add_child(title_screen)
-	title_screen.start_pressed.connect(start_run)
+	title_screen.start_pressed.connect(_on_start_pressed)
 	title_screen.continue_pressed.connect(continue_run)
 	title_screen.quit_pressed.connect(_quit)
 
@@ -113,7 +125,7 @@ func _physics_process(delta: float) -> void:
 				_pause()
 			elif CTL.pressed("restart"):
 				start_run()
-		State.PAUSE, State.DEAD, State.CLEARED:
+		State.PAUSE, State.DEAD, State.CLEARED, State.CUTSCENE, State.DIALOGUE:
 			pass
 
 
@@ -123,8 +135,10 @@ func _follow_player() -> void:
 	camera.global_position = player.global_position + Vector2(0.0, -40.0)
 
 
-func start_run() -> void:
-	_start_level({})
+## Новая игра. with_intro = true только при запуске с титула:
+## перезапуск из паузы и продолжение с чекпоинта катсцену не повторяют.
+func start_run(with_intro := false) -> void:
+	_start_level({}, with_intro)
 
 
 ## Продолжение с автосейва: пройденный чекпоинт, живые враги, здоровье.
@@ -136,10 +150,12 @@ func continue_run() -> void:
 	_start_level(SaveGame.migrate(save))
 
 
-func _start_level(save: Dictionary) -> void:
+func _start_level(save: Dictionary, with_intro := false) -> void:
 	get_tree().paused = false
 	_clear_level()
 	overlay.close()
+	cutscene.close()
+	dialogue.close()
 	title_screen.visible = false
 	hud.visible = true
 	hud.debug_on = false
@@ -155,6 +171,7 @@ func _start_level(save: Dictionary) -> void:
 	level.cleared.connect(_on_cleared)
 	level.checkpoint_reached.connect(_on_checkpoint)
 	level.enemy_died.connect(_on_enemy_died)
+	level.trigger_reached.connect(_on_trigger)
 
 	var lim := level.camera_limits()
 	camera.limit_left = lim["left"]
@@ -166,6 +183,9 @@ func _start_level(save: Dictionary) -> void:
 	player.global_position = level.resume_position()
 	level.add_child(player)
 	player.died.connect(_on_player_died)
+	var saved_weapons = save.get("weapons", [])
+	if typeof(saved_weapons) == TYPE_ARRAY and not saved_weapons.is_empty():
+		player.restore_weapons(saved_weapons, String(save.get("weapon", "")))
 	var hp := int(save.get("hp", player.MAX_HP))
 	player.hp = clampi(hp, 1, player.MAX_HP)
 	player.hp_changed.emit(player.hp, player.MAX_HP)
@@ -177,6 +197,8 @@ func _start_level(save: Dictionary) -> void:
 	_autosave(false)
 	print("LEVEL %s: врагов %d, чекпоинт %s" % [
 		level_id, level.enemy_count(), checkpoint_id if not checkpoint_id.is_empty() else "вход"])
+	if with_intro:
+		play_cutscene("intro")
 
 
 func _clear_level() -> void:
@@ -198,11 +220,18 @@ func _resume() -> void:
 	overlay.close()
 
 
+## Титул: новая игра начинается со вступления.
+func _on_start_pressed() -> void:
+	start_run(true)
+
+
 func _show_title() -> void:
 	get_tree().paused = false
 	_clear_level()
 	hud.visible = false
 	overlay.close()
+	cutscene.close()
+	dialogue.close()
 	title_screen.refresh()
 	title_screen.visible = true
 	state = State.TITLE
@@ -226,6 +255,50 @@ func _on_checkpoint(id: String, _pos: Vector2) -> void:
 
 ## Мир помнит убитых: после смерти они не возвращаются.
 func _on_enemy_died(_id: String) -> void:
+	_autosave(false)
+
+
+## Триггер уже записан в fired_triggers, поэтому сохраняем до разговора:
+## если игрок закроет игру во время диалога, сцена не повторится.
+func _on_trigger(_id: String, spec: Dictionary) -> void:
+	_autosave(false)
+	var dialogue_id := String(spec.get("dialogue", ""))
+	if not dialogue_id.is_empty():
+		play_dialogue(dialogue_id)
+
+
+func play_cutscene(id: String) -> bool:
+	if not cutscene.play(id):
+		return false
+	state = State.CUTSCENE
+	get_tree().paused = true
+	hud.visible = false
+	return true
+
+
+func play_dialogue(id: String) -> bool:
+	if not dialogue.play(id):
+		return false
+	state = State.DIALOGUE
+	get_tree().paused = true
+	hud.visible = false
+	return true
+
+
+func _on_cutscene_finished() -> void:
+	state = State.PLAY
+	get_tree().paused = false
+	hud.visible = true
+
+
+func _on_dialogue_finished(_id: String, grant: String) -> void:
+	if not grant.is_empty() and player != null:
+		var def := WDB.get_weapon(StringName(grant))
+		if def != null and player.unlock_weapon(grant, true):
+			hud.show_toast(L10N.t("ui.hud.toast.weapon", [L10N.t(def.display_name_key)]))
+	state = State.PLAY
+	get_tree().paused = false
+	hud.visible = true
 	_autosave(false)
 
 
@@ -255,6 +328,9 @@ func _autosave(cleared: bool) -> void:
 		"level": level_id,
 		"checkpoint": checkpoint_id,
 		"killed": level.killed_ids.duplicate(),
+		"triggers": level.fired_triggers.duplicate(),
+		"weapons": player.weapon_ids(),
+		"weapon": player.current_weapon_id(),
 		"hp": player.hp,
 		"enemies_left": level.enemy_count(),
 		"cleared": cleared,

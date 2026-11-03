@@ -56,11 +56,47 @@ func _run() -> void:
 		"геометрия в TileMapLayer: %d клеток" % (flow.level.tile_layer.get_used_cells().size() if flow.level.tile_layer != null else 0))
 	_check(flow.level.one_way_cells > 0, "односторонние платформы — тайлы: %d" % flow.level.one_way_cells)
 
-	# Оружие: карточки, стартовый клинок, переключение на кисть
+	# Оружие: карточки, стартовый клинок, кисть выдаётся по сюжету
 	_check(int(WDB.count()) >= 2, "каталог оружия: %d карточки" % int(WDB.count()))
 	_check(flow.player.weapon != null and String(flow.player.weapon.id) == "weapon.blade",
 		"стартовое оружие — клинок")
+	_check(flow.player.weapons.size() == 1 and not flow.player.has_weapon("weapon.brush"),
+		"на старте открыт только клинок")
+	flow.player.next_weapon()
+	_check(String(flow.player.weapon.id) == "weapon.blade", "без кисти переключение ничего не меняет")
 	var blade_damage: int = flow.player.weapon.damage
+
+	# Катсцена вступления: слайды из JSON, пауза, возврат в игру
+	_check(flow.play_cutscene("intro"), "вступление читается из JSON")
+	_check(flow.state == Flow.State.CUTSCENE and get_tree().paused and flow.cutscene.visible,
+		"катсцена ставит игру на паузу")
+	_check(flow.cutscene.slide_count() >= 4, "слайдов вступления: %d" % flow.cutscene.slide_count())
+	for i in 8:
+		if not flow.cutscene.visible:
+			break
+		flow.cutscene.advance()
+		await get_tree().physics_frame
+	_check(not flow.cutscene.visible and flow.state == Flow.State.PLAY and not get_tree().paused,
+		"катсцена возвращает в игру")
+
+	# Диалог Переписчика: пауза, реплики, награда
+	_check(flow.play_dialogue("archivist"), "диалог читается из JSON")
+	_check(flow.state == Flow.State.DIALOGUE and get_tree().paused and flow.dialogue.visible,
+		"диалог ставит игру на паузу")
+	var archivist_lines: int = flow.dialogue.line_count()
+	_check(archivist_lines >= 4, "реплик Переписчика: %d" % archivist_lines)
+	for i in 10:
+		if not flow.dialogue.visible:
+			break
+		flow.dialogue.advance()
+		await get_tree().physics_frame
+	_check(not flow.dialogue.visible and flow.state == Flow.State.PLAY and not get_tree().paused,
+		"диалог возвращает в игру")
+	_check(flow.player.has_weapon("weapon.brush"), "после разговора кисть открыта")
+	_check(flow.player.weapons.size() == 2, "в руках два оружия")
+	_check(flow.hud.toast.contains(L10N.t("weapon.brush.name")), "HUD сообщает о награде")
+
+	flow.player.equip_weapon("weapon.blade")
 	flow.player.next_weapon()
 	_check(String(flow.player.weapon.id) == "weapon.brush", "переключение на кисть")
 	_check(flow.player.weapon.damage > blade_damage, "кисть бьёт сильнее клинка")
@@ -131,6 +167,25 @@ func _run() -> void:
 	_check(flow.level.enemy_count() == blot_before_spawn,
 		"после деления и добивания врагов снова %d" % flow.level.enemy_count())
 
+	# Триггер в Архиве: доводит до Переписчика и запускает диалог
+	flow.level.fired_triggers.clear()
+	flow.player.global_position = Vector2(3200.0, 500.0)
+	flow.player.velocity = Vector2.ZERO
+	await get_tree().physics_frame
+	_check(not flow.dialogue.visible, "до триггера диалог закрыт")
+	flow.player.global_position = Vector2(3280.0, 500.0)
+	for i in 3:
+		await get_tree().physics_frame
+	_check(flow.state == Flow.State.DIALOGUE and flow.dialogue.visible,
+		"триггер в Архиве запускает диалог")
+	_check(flow.level.fired_triggers.has("archivist"), "триггер помечен пройденным")
+	for i in 10:
+		if not flow.dialogue.visible:
+			break
+		flow.dialogue.advance()
+		await get_tree().physics_frame
+	_check(flow.state == Flow.State.PLAY, "после триггера игра продолжается")
+
 	# Падение и приземление
 	for i in 90:
 		await get_tree().physics_frame
@@ -174,6 +229,7 @@ func _run() -> void:
 	var target_hp: int = target.hp
 	flow.player.attack_cd = 0.0
 	flow.player.facing = 1
+	flow.player.equip_weapon("weapon.blade")
 	flow.player._try_attack()
 	await get_tree().physics_frame
 	_check(target.hp < target_hp, "атака снимает здоровье врагу (%d -> %d)" % [target_hp, target.hp])
@@ -183,7 +239,7 @@ func _run() -> void:
 	flow.player.global_position = brush_target.global_position + Vector2(-40.0, -40.0)
 	flow.player.facing = 1
 	flow.player.attack_cd = 0.0
-	flow.player.next_weapon()
+	flow.player.equip_weapon("weapon.brush")
 	_check(String(flow.player.weapon.id) == "weapon.brush", "кисть взята в руки")
 	flow.player._try_attack()
 	for i in 20:
@@ -247,6 +303,8 @@ func _run() -> void:
 	_check(flow.player.global_position.distance_to(flow.level.checkpoint_position('cp_02')) < 2.0, "игрок появляется на чекпоинте")
 	_check(flow.level.enemy_count() == alive_before, "после продолжения врагов столько же: %d" % flow.level.enemy_count())
 	_check(flow.level.killed_ids.has("e1"), "убитый враг остаётся мёртвым")
+	_check(flow.player.has_weapon("weapon.brush"), "после продолжения кисть остаётся")
+	_check(flow.level.fired_triggers.has("archivist"), "пройденный триггер не срабатывает снова")
 	_check(flow.player.hp == flow.player.MAX_HP, "после продолжения здоровье полное")
 
 	# Сохранение
