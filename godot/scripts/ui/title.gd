@@ -17,6 +17,7 @@ const GRAY := Color(0.09, 0.07, 0.06, 0.55)
 
 var selected := 0
 var items: Array[String] = []
+var actions: Array[String] = []
 var _wob := 0.0
 
 
@@ -29,25 +30,29 @@ func _ready() -> void:
 ## Пункт «ПРОДОЛЖИТЬ» появляется только когда есть незачищенный автосейв.
 func refresh() -> void:
 	items.clear()
+	actions.clear()
 	var save := SaveGame.read_slot(SaveGame.AUTOSAVE)
 	if not save.is_empty() and not bool(save.get("cleared", false)):
-		items.append("ПРОДОЛЖИТЬ")
-	items.append("ИГРАТЬ")
-	items.append("ВЫХОД")
-	selected = clampi(selected, 0, items.size() - 1)
+		actions.append("continue")
+		items.append(L10N.t("ui.title.continue"))
+	actions.append("play")
+	items.append(L10N.t("ui.title.play"))
+	actions.append("quit")
+	items.append(L10N.t("ui.title.quit"))
+	selected = clampi(selected, 0, actions.size() - 1)
 
 
 func _physics_process(delta: float) -> void:
 	_wob += delta
 	if CTL.pressed("down"):
-		selected = (selected + 1) % items.size()
+		selected = (selected + 1) % actions.size()
 	if CTL.pressed("up"):
-		selected = (selected + items.size() - 1) % items.size()
+		selected = (selected + actions.size() - 1) % actions.size()
 	if CTL.confirm():
-		match items[selected]:
-			"ПРОДОЛЖИТЬ":
+		match actions[selected]:
+			"continue":
 				continue_pressed.emit()
-			"ИГРАТЬ":
+			"play":
 				start_pressed.emit()
 			_:
 				quit_pressed.emit()
@@ -59,8 +64,8 @@ func _draw() -> void:
 	draw_circle(Vector2(size.x * 0.78, 180.0), 128.0, Color(RED, 0.9))
 	draw_circle(Vector2(size.x * 0.78, 180.0), 132.0, Color(RED, 0.2))
 
-	draw_string(FONT_TITLE, Vector2(88.0, 200.0), "ЧЕРНИЛЬНЫЙ", HORIZONTAL_ALIGNMENT_LEFT, -1, 62, INK)
-	draw_string(FONT_TITLE, Vector2(84.0, 320.0), "КЛИНОК", HORIZONTAL_ALIGNMENT_LEFT, -1, 112, INK)
+	draw_string(FONT_TITLE, Vector2(88.0, 200.0), L10N.t("TITLE_LINE1"), HORIZONTAL_ALIGNMENT_LEFT, -1, 62, INK)
+	draw_string(FONT_TITLE, Vector2(84.0, 320.0), L10N.t("TITLE_LINE2"), HORIZONTAL_ALIGNMENT_LEFT, -1, 112, INK)
 
 	var pts := PackedVector2Array()
 	var x := 88.0
@@ -69,7 +74,7 @@ func _draw() -> void:
 		x += 8.0
 	draw_polyline(pts, RED, 4.0)
 
-	draw_string(FONT_TEXT, Vector2(92.0, 372.0), "ТРЕНИРОВОЧНАЯ ЗАЛА · КАРКАС", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, GRAY)
+	draw_string(FONT_TEXT, Vector2(92.0, 372.0), L10N.t("ui.title.subtitle"), HORIZONTAL_ALIGNMENT_LEFT, -1, 17, GRAY)
 
 	for i in items.size():
 		var y := 470.0 + i * 62.0
@@ -86,8 +91,8 @@ func _draw() -> void:
 		draw_string(FONT_BOLD, Vector2(104.0, y), items[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 30, INK if on else Color(INK, 0.55))
 
 	draw_string(FONT_TEXT, Vector2(88.0, size.y - 40.0),
-		"%s / %s — выбор   ·   %s — подтвердить   ·   %s — отладка" % [
-			CTL.label_key("up"), CTL.label_key("down"), CTL.label_key("jump"), CTL.label_key("help")],
+		L10N.t("ui.title.hint", [
+			CTL.label_key("up"), CTL.label_key("down"), CTL.label_key("jump"), CTL.label_key("help")]),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GRAY)
 
-	draw_string(FONT_TEXT, Vector2(size.x - 210.0, size.y - 40.0), "каркас · v0.1", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GRAY)
+	draw_string(FONT_TEXT, Vector2(size.x - 210.0, size.y - 40.0), L10N.t("ui.title.version"), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GRAY)

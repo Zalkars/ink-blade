@@ -188,7 +188,7 @@ func _clear_level() -> void:
 func _pause() -> void:
 	state = State.PAUSE
 	get_tree().paused = true
-	overlay.open(OVERLAY_PAUSE, "зал: %s" % level.data.get("name", level_id))
+	overlay.open(OVERLAY_PAUSE, L10N.t("ui.overlay.subtitle", [_level_name()]))
 
 
 func _resume() -> void:
@@ -231,14 +231,20 @@ func _on_enemy_died(_id: String) -> void:
 func _on_player_died() -> void:
 	state = State.DEAD
 	get_tree().paused = true
-	overlay.open(OVERLAY_DEAD, "зал: %s" % level.data.get("name", level_id))
+	overlay.open(OVERLAY_DEAD, L10N.t("ui.overlay.subtitle", [_level_name()]))
 
 
 func _on_cleared() -> void:
 	state = State.CLEARED
 	_autosave(true)
 	get_tree().paused = true
-	overlay.open(OVERLAY_CLEARED, "зал очищен, прогресс записан")
+	overlay.open(OVERLAY_CLEARED, L10N.t("ui.cleared.subtitle"))
+
+
+func _level_name() -> String:
+	if level == null:
+		return level_id
+	return String(level.data.get("name", level_id))
 
 
 func _autosave(cleared: bool) -> void:
@@ -258,19 +264,19 @@ func _on_overlay_choice(item: String) -> void:
 	match state:
 		State.PAUSE:
 			match item:
-				"ПРОДОЛЖИТЬ":
+				"resume":
 					_resume()
-				"ЗАНОВО":
+				"restart":
 					start_run()
-				"В МЕНЮ":
+				"menu":
 					_show_title()
 		State.DEAD:
-			if item == "С ЧЕКПОИНТА":
+			if item == "checkpoint":
 				continue_run()
 			else:
 				_show_title()
 		State.CLEARED:
-			if item == "В МЕНЮ":
+			if item == "menu":
 				_show_title()
 			else:
 				start_run()

@@ -18,13 +18,13 @@ var hint := ""
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hint = "%s — бег   ·   %s — прыжок   ·   %s — рывок   ·   %s — удар   ·   %s — пауза" % [
+	hint = L10N.t("ui.hud.hint", [
 		CTL.label_move(),
 		CTL.label_key("jump"),
 		CTL.label_key("dash"),
 		CTL.label_key("attack"),
 		CTL.label_key("pause"),
-	]
+	])
 
 
 func _process(_delta: float) -> void:
@@ -76,7 +76,7 @@ func _draw_dash() -> void:
 	var pos := Vector2(40.0, 70.0)
 	draw_rect(Rect2(pos, Vector2(96.0, 5.0)), Color(INK, 0.18))
 	draw_rect(Rect2(pos, Vector2(96.0 * ready, 5.0)), RED if ready >= 1.0 else Color(RED, 0.55))
-	draw_string(FONT_TEXT, pos + Vector2(106.0, 7.0), "РЫВОК", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, FAINT)
+	draw_string(FONT_TEXT, pos + Vector2(106.0, 7.0), L10N.t("ui.hud.dash"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, FAINT)
 
 
 func _draw_debug() -> void:

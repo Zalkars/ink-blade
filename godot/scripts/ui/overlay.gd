@@ -2,8 +2,9 @@ extends Control
 
 ## Одно окно на три состояния: пауза, смерть, зал очищен.
 ## Живёт в CanvasLayer с process_mode = ALWAYS, поэтому работает и на паузе.
+## Наружу отдаёт действие, а не текст: перевод можно менять без правок логики.
 
-signal chosen(item: String)
+signal chosen(action: String)
 
 enum Mode { PAUSE, DEAD, CLEARED }
 
@@ -18,7 +19,8 @@ const PAPER := Color("#f1e6d0")
 var mode := Mode.PAUSE
 var heading := ""
 var sub := ""
-var items: Array = []
+var actions: Array[String] = []
+var labels: Array[String] = []
 var selected := 0
 
 
@@ -33,16 +35,34 @@ func open(m: int, subtitle: String = "") -> void:
 	sub = subtitle
 	match m:
 		Mode.PAUSE:
-			heading = "ПАУЗА"
-			items = ["ПРОДОЛЖИТЬ", "ЗАНОВО", "В МЕНЮ"]
+			heading = L10N.t("ui.pause.title")
+			_set_items([
+				["resume", "ui.pause.resume"],
+				["restart", "ui.pause.restart"],
+				["menu", "ui.pause.menu"],
+			])
 		Mode.DEAD:
-			heading = "ВЫ ПОГИБЛИ"
-			items = ["С ЧЕКПОИНТА", "В МЕНЮ"]
+			heading = L10N.t("ui.death.title")
+			_set_items([
+				["checkpoint", "ui.death.checkpoint"],
+				["menu", "ui.death.menu"],
+			])
 		Mode.CLEARED:
-			heading = "ЗАЛ ОЧИЩЕН"
-			items = ["В МЕНЮ", "ЗАНОВО"]
+			heading = L10N.t("ui.cleared.title")
+			_set_items([
+				["menu", "ui.cleared.menu"],
+				["restart", "ui.cleared.restart"],
+			])
 	visible = true
 	queue_redraw()
+
+
+func _set_items(rows: Array) -> void:
+	actions.clear()
+	labels.clear()
+	for row in rows:
+		actions.append(String(row[0]))
+		labels.append(L10N.t(String(row[1])))
 
 
 func close() -> void:
@@ -53,14 +73,14 @@ func _physics_process(_delta: float) -> void:
 	if not visible:
 		return
 	if CTL.pressed("down"):
-		selected = (selected + 1) % items.size()
+		selected = (selected + 1) % actions.size()
 	if CTL.pressed("up"):
-		selected = (selected + items.size() - 1) % items.size()
+		selected = (selected + actions.size() - 1) % actions.size()
 	if mode == Mode.PAUSE and CTL.pressed("back"):
-		chosen.emit("ПРОДОЛЖИТЬ")
+		chosen.emit("resume")
 		return
 	if CTL.confirm():
-		chosen.emit(items[selected])
+		chosen.emit(actions[selected])
 	queue_redraw()
 
 
@@ -72,14 +92,13 @@ func _draw() -> void:
 	if not sub.is_empty():
 		draw_string(FONT_TEXT, Vector2(0.0, 288.0), sub, HORIZONTAL_ALIGNMENT_CENTER, size.x, 17, Color(INK, 0.6))
 
-	for i in items.size():
+	for i in labels.size():
 		var y := 366.0 + i * 52.0
 		var on := i == selected
 		if on:
 			draw_line(Vector2(size.x * 0.5 - 150.0, y + 10.0), Vector2(size.x * 0.5 + 150.0, y + 8.0), RED, 2.5)
-		draw_string(FONT_BOLD, Vector2(0.0, y), items[i], HORIZONTAL_ALIGNMENT_CENTER, size.x, 26, INK if on else Color(INK, 0.5))
+		draw_string(FONT_BOLD, Vector2(0.0, y), labels[i], HORIZONTAL_ALIGNMENT_CENTER, size.x, 26, INK if on else Color(INK, 0.5))
 
 	draw_string(FONT_TEXT, Vector2(0.0, size.y - 36.0),
-		"%s / %s — выбор   ·   %s — подтвердить" % [
-			CTL.label_key("up"), CTL.label_key("down"), CTL.label_key("jump")],
+		L10N.t("ui.overlay.hint", [CTL.label_key("up"), CTL.label_key("down"), CTL.label_key("jump")]),
 		HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, Color(INK, 0.5))
