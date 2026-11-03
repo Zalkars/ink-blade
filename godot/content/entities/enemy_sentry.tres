@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="EntityDef" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/content/entity_def.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/content/entity_stats.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/content/ai_profile.gd" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/actors/sentry.tscn" id="4"]
+
+[sub_resource type="Resource" id="Stats_sentry"]
+script = ExtResource("2")
+max_hp = 3
+damage = 1
+speed = 130.0
+aggression_radius = 720.0
+telegraph_time = 0.4
+
+[sub_resource type="Resource" id="AI_sentry"]
+script = ExtResource("3")
+kind = 2
+params = {}
+
+[resource]
+script = ExtResource("1")
+id = &"enemy.sentry"
+display_name_key = "entity.sentry.name"
+scene = ExtResource("4")
+tags = PackedStringArray("air", "ranged")
+stats = SubResource("Stats_sentry")
+ai_profile = SubResource("AI_sentry")
+version = 1

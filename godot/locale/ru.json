@@ -157,6 +157,10 @@
     "weapon.blade.name": "ЧЕРНИЛЬНЫЙ КЛИНОК",
     "weapon.brush.name": "ТЯЖЁЛАЯ КИСТЬ",
 
+    "entity.grunt.name": "ПОЛЗУН",
+    "entity.sentry.name": "ЧАСОВОЙ",
+    "entity.blot.name": "КЛЯКСА",
+
     "DUMMY_DAMAGE": "УРОН: %d",
     "KEY_SPACE": "ПРОБЕЛ",
     "KEY_STICK": "СТИК",

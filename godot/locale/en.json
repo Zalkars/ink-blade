@@ -157,6 +157,10 @@
     "weapon.blade.name": "INK BLADE",
     "weapon.brush.name": "HEAVY BRUSH",
 
+    "entity.grunt.name": "CRAWLER",
+    "entity.sentry.name": "SENTRY",
+    "entity.blot.name": "BLOT",
+
     "DUMMY_DAMAGE": "DAMAGE: %d",
     "KEY_SPACE": "SPACE",
     "KEY_STICK": "STICK",

@@ -1,12 +1,33 @@
 {
   "schema": 1,
   "entities": {
+    "enemy.blot": {
+      "path": "res://content/entities/enemy_blot.tres",
+      "type": "EntityDef",
+      "category": 0,
+      "version": 1,
+      "hash": "e876bd065ca23a45d2a2d23b4ab687def5c6fe7fb9b3de606b75dd9141bf21d8"
+    },
+    "enemy.blot_small": {
+      "path": "res://content/entities/enemy_blot_small.tres",
+      "type": "EntityDef",
+      "category": 0,
+      "version": 1,
+      "hash": "600a79b037cdc5c6f1ecdf6b417e4df6d3b467e00c8b90bfbc168ea2e1b25188"
+    },
     "enemy.grunt": {
       "path": "res://content/entities/enemy_grunt.tres",
       "type": "EntityDef",
       "category": 0,
       "version": 1,
       "hash": "012fa6a0b66e0a01bc2820d4f3cf53a7861ed3932c14526397214aa57ff80f55"
+    },
+    "enemy.sentry": {
+      "path": "res://content/entities/enemy_sentry.tres",
+      "type": "EntityDef",
+      "category": 0,
+      "version": 1,
+      "hash": "94a1054bc782647abedf5138ddb87edebb0f605262f32842b051702257967ee4"
     }
   },
   "weapons": {

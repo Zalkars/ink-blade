@@ -222,7 +222,13 @@ abilities: Array[StringName]
 | `scripts/content/loot_entry.gd` | `LootEntry` — добыча |
 | `scripts/content/content_aliases.gd` | `ContentAliases` — переименования ID |
 | `scripts/content/entity_database.gd` | автозагрузка `DB` |
-| `content/entities/enemy_grunt.tres` | первая карточка |
+| `content/entities/enemy_grunt.tres` | ползун: идёт к игроку, бьёт касанием |
+| `content/entities/enemy_sentry.tres` | часовой: висит, стреляет болтами |
+| `content/entities/enemy_blot.tres` | клякса: прыгает, делится при смерти |
+| `content/entities/enemy_blot_small.tres` | малая клякса: то же тело, 1 HP, не делится |
+| `scripts/actors/sentry.gd` | поведение часового |
+| `scripts/actors/blot.gd` | поведение кляксы и сигнал `split` |
+| `scripts/actors/ink_bolt.gd` | снаряд часового |
 | `content/weapons/blade.tres` | чернильный клинок |
 | `content/weapons/brush.tres` | тяжёлая кисть |
 | `content/aliases.tres` | таблица переименований (пока пустая) |
@@ -236,6 +242,12 @@ abilities: Array[StringName]
 | `tools/build_tileset.gd` | генератор `assets/tiles/ink_tiles.png` |
 
 `DB` в редакторе и при обычном запуске читает папку `content/entities`, а в экспортированной сборке — `manifest.json`. Пути разные, API один.
+
+### Клякса и деление
+
+Клякса при смерти шлёт `split(pos, def_id)` **до** `died`, чтобы уровень успел создать детей раньше, чем проверит «зал очищен». Уровень создаёт двух малых клякс с `overrides: { "generation": 1 }`; поле `generation` объявлено в `overridable` карточки. Малая клякса не делится, потому что `generation > 0`.
+
+Уровень считает детей обычными врагами: они в группе `enemies`, попадают в `enemy_count()` и переживают только текущую загрузку. Их ID вида `split_<n>` в сохранение не входят — при перезагрузке родитель уже мёртв и дети не нужны.
 
 ### Тайлы
 

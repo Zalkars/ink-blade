@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="EntityDef" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/content/entity_def.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/content/entity_stats.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/content/ai_profile.gd" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/actors/blot.tscn" id="4"]
+
+[sub_resource type="Resource" id="Stats_blot_small"]
+script = ExtResource("2")
+max_hp = 1
+damage = 1
+speed = 190.0
+aggression_radius = 560.0
+telegraph_time = 0.0
+
+[sub_resource type="Resource" id="AI_blot_small"]
+script = ExtResource("3")
+kind = 1
+params = {}
+
+[resource]
+script = ExtResource("1")
+id = &"enemy.blot_small"
+display_name_key = "entity.blot.name"
+scene = ExtResource("4")
+tags = PackedStringArray("ground", "melee", "spawned")
+stats = SubResource("Stats_blot_small")
+ai_profile = SubResource("AI_blot_small")
+overridable = PackedStringArray("max_hp", "damage", "speed", "generation")
+version = 1

@@ -83,6 +83,54 @@ func _run() -> void:
 	_check(weak != null and weak.hp == 2, "неизвестное переопределение игнорируется")
 	weak.free()
 
+	# Враги этапа: часовой стреляет, клякса делится на малых
+	_check(int(DB.count()) >= 4, "каталог врагов: %d карточек" % int(DB.count()))
+	_check(DB.has(&"enemy.sentry") and DB.has(&"enemy.blot") and DB.has(&"enemy.blot_small"),
+		"карточки часового и кляксы на месте")
+
+	var sentry_pos: Vector2 = flow.player.global_position + Vector2(120.0, -80.0)
+	_check(flow.level.spawn_enemy("sentry", sentry_pos), "часовой создаётся по ID")
+	await get_tree().physics_frame
+	var sentry_node = flow.level.enemies[flow.level.enemies.size() - 1]
+	_check(sentry_node is Sentry and sentry_node.target == flow.player, "часовой видит игрока")
+	sentry_node.shoot_t = 0.0
+	for i in 3:
+		await get_tree().physics_frame
+	var bolt_found := false
+	for child in flow.level.get_children():
+		if child is InkBolt:
+			bolt_found = true
+			child.queue_free()
+	_check(bolt_found, "часовой стреляет чернильным болтом")
+	sentry_node.hit(999, 1)
+	await get_tree().physics_frame
+
+	var blot_before_spawn: int = flow.level.enemy_count()
+	_check(flow.level.spawn_enemy("blot", flow.player.global_position + Vector2(260.0, 0.0)),
+		"клякса создаётся по ID")
+	await get_tree().physics_frame
+	var blot_node = flow.level.enemies[flow.level.enemies.size() - 1]
+	var blot_before: int = flow.level.enemy_count()
+	blot_node.hit(999, 1)
+	await get_tree().physics_frame
+	_check(flow.level.enemy_count() == blot_before + 1,
+		"клякса делится на двух малых (%d -> %d)" % [blot_before, flow.level.enemy_count()])
+	var small_ok := false
+	for i in 2:
+		var child = flow.level.enemies[flow.level.enemies.size() - 1 - i]
+		if child is Blot and child.generation == 1:
+			small_ok = true
+	_check(small_ok, "малые кляксы помечены поколением 1")
+
+	# Убираем детей, чтобы дальше считать врагов только из данных уровня.
+	for i in 2:
+		var kid = flow.level.enemies[flow.level.enemies.size() - 1]
+		if kid is Blot:
+			kid.hit(999, 1)
+	await get_tree().physics_frame
+	_check(flow.level.enemy_count() == blot_before_spawn,
+		"после деления и добивания врагов снова %d" % flow.level.enemy_count())
+
 	# Падение и приземление
 	for i in 90:
 		await get_tree().physics_frame

@@ -28,6 +28,14 @@ func _ready() -> void:
 	await _wait(4)
 	await _shot("skeleton-play")
 
+	flow.console.open()
+	flow.console.execute("warp 700 500")
+	flow.console.execute("spawn sentry 900 420")
+	flow.console.execute("spawn blot 1060 576")
+	flow.console.close()
+	await _wait(60)
+	await _shot("skeleton-enemies")
+
 	flow._pause()
 	await _wait(4)
 	await _shot("skeleton-pause")

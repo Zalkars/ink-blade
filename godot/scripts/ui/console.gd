@@ -224,11 +224,22 @@ func _cmd_spawn(args: Array) -> String:
 func _cmd_kill() -> String:
 	if flow == null:
 		return _reply("игра не запущена")
-	var found := get_tree().get_nodes_in_group("enemies")
-	for e in found:
-		if e.has_method("hit"):
-			e.hit(999, 1)
-	return _reply("убрано врагов: %d" % found.size())
+	var killed := 0
+	# Клякса при смерти создаёт детей в том же вызове hit(),
+	# поэтому проходим группу повторно, пока живые не кончатся.
+	for sweep in 8:
+		var found := get_tree().get_nodes_in_group("enemies")
+		var alive := 0
+		for e in found:
+			if not is_instance_valid(e) or e.is_queued_for_deletion():
+				continue
+			alive += 1
+			if e.has_method("hit"):
+				e.hit(999, 1)
+				killed += 1
+		if alive == 0:
+			break
+	return _reply("убрано врагов: %d" % killed)
 
 
 func _player():

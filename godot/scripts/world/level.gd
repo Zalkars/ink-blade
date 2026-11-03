@@ -27,6 +27,7 @@ var enemies: Array = []
 var checkpoints: Array = []
 var checkpoint_nodes: Dictionary = {}
 var killed_ids: Array[String] = []
+var _split_serial := 0
 var tile_layer: TileMapLayer
 var one_way_cells := 0
 var data: Dictionary = {}
@@ -160,8 +161,27 @@ func _add_enemy(spec: Dictionary, index: int = 0) -> void:
 	node.add_to_group("enemies")
 	if node.has_signal("died"):
 		node.died.connect(_on_enemy_died)
+	# Клякса просит уровень создать детей ДО сигнала смерти,
+	# иначе «зал очищен» сработает раньше, чем появятся малые.
+	if node.has_signal("split"):
+		node.split.connect(_on_enemy_split)
 	add_child(node)
 	enemies.append(node)
+
+
+## Делит кляксу на двух малых. Дети — обычные враги уровня: их можно бить,
+## они попадают в группу enemies и учитываются в enemy_count().
+func _on_enemy_split(pos: Vector2, def_id: StringName) -> void:
+	for i in 2:
+		_split_serial += 1
+		var offset := -12.0 if i == 0 else 12.0
+		_add_enemy({
+			"id": "split_%d" % _split_serial,
+			"def_id": String(def_id),
+			"x": pos.x + offset,
+			"y": pos.y + 20.0,
+			"overrides": {"generation": 1},
+		})
 
 
 ## Точка входа для debug-консоли: создать врага по ID карточки.
