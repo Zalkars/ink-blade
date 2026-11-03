@@ -194,6 +194,7 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	camera.global_position = player.global_position + Vector2(0.0, -40.0)
 	camera.reset_smoothing()
 	hud.bind(player)
+	hud.bind_boss(level.boss)
 	_autosave(false)
 	print("LEVEL %s: врагов %d, чекпоинт %s" % [
 		level_id, level.enemy_count(), checkpoint_id if not checkpoint_id.is_empty() else "вход"])

@@ -167,6 +167,61 @@ func _run() -> void:
 	_check(flow.level.enemy_count() == blot_before_spawn,
 		"после деления и добивания врагов снова %d" % flow.level.enemy_count())
 
+	# Босс: карточка, закрытая и открытая печать, вторая фаза, смерть
+	_check(DB.has(&"boss.keeper"), "карточка босса в каталоге")
+	var keeper: Keeper = flow.level.boss
+	_check(keeper != null and keeper is Keeper, "босс стоит на арене уровнем")
+	_check(keeper != null and keeper.max_hp == 40, "у босса 40 HP из карточки")
+	keeper.engaged = true
+	keeper.attack_cd = 999.0
+	var boss_hp: int = keeper.hp
+	keeper.hit(1, 1)
+	_check(keeper.hp == boss_hp, "закрытая печать гасит удар")
+	keeper.open_seal(5.0)
+	keeper.hit(1, 1)
+	_check(keeper.hp == boss_hp - 1, "открытая печать принимает урон клинка")
+	keeper.open_seal(5.0)
+	var before_brush: int = keeper.hp
+	keeper.hit(3, 1)
+	_check(before_brush - keeper.hp == 4, "кисть по открытой печати снимает 4")
+	# Призыв клякс в первой фазе.
+	var before_summon: int = flow.level.enemy_count()
+	keeper.state = Keeper.State.STALK
+	keeper.attack_cd = 0.0
+	keeper.summon_cd = 0.0
+	for i in 110:
+		await get_tree().physics_frame
+		if flow.level.enemy_count() >= before_summon + 2:
+			break
+	_check(flow.level.enemy_count() == before_summon + 2, "босс призывает двух клякс")
+	# Удар сверху открывает печать, когда капля доходит до пола.
+	keeper.state = Keeper.State.STALK
+	keeper.attack_cd = 999.0
+	keeper.seal_open = false
+	keeper.seal_t = 0.0
+	keeper.slam_x = keeper.global_position.x
+	keeper._slam()
+	var seal_opened := false
+	for i in 220:
+		await get_tree().physics_frame
+		if keeper.seal_open:
+			seal_opened = true
+			break
+	_check(seal_opened, "удар сверху открывает печать")
+	# Доводим до половины и ждём переход во вторую фазу.
+	keeper.hp = keeper.max_hp / 2 + 1
+	keeper.open_seal(5.0)
+	keeper.hit(1, 1)
+	_check(keeper.state == Keeper.State.STAGGER, "на половине здоровья босс переходит в слом")
+	for i in 160:
+		await get_tree().physics_frame
+	_check(keeper.phase == 2, "после слома начинается вторая фаза")
+	keeper.open_seal(5.0)
+	keeper.hit(999, 1)
+	_check(keeper.dead, "босс умирает от добивающего удара")
+	await get_tree().physics_frame
+	_check(not is_instance_valid(keeper), "тело босса убирается из сцены")
+
 	# Триггер в Архиве: доводит до Переписчика и запускает диалог
 	flow.level.fired_triggers.clear()
 	flow.player.global_position = Vector2(3200.0, 500.0)

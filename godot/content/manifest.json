@@ -1,6 +1,13 @@
 {
   "schema": 1,
   "entities": {
+    "boss.keeper": {
+      "path": "res://content/entities/boss_keeper.tres",
+      "type": "EntityDef",
+      "category": 1,
+      "version": 1,
+      "hash": "a6009cf6704b1478d0f2bca9745ecb07f4488c73d260fd4ebd4ba346aaf56df8"
+    },
     "enemy.blot": {
       "path": "res://content/entities/enemy_blot.tres",
       "type": "EntityDef",

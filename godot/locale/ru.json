@@ -160,6 +160,7 @@
     "entity.grunt.name": "ПОЛЗУН",
     "entity.sentry.name": "ЧАСОВОЙ",
     "entity.blot.name": "КЛЯКСА",
+    "entity.keeper.name": "ХРАНИТЕЛЬ ПЕРВОГО ВЗМАХА",
 
     "cutscene.intro.1": "Город писали семь дней.\nНа восьмой пришёл прилив.",
     "cutscene.intro.2": "Чернила не убивают.\nОни вычёркивают.",
@@ -176,6 +177,8 @@
     "dialogue.hint": "%s — дальше",
 
     "ui.hud.toast.weapon": "ПОЛУЧЕНО: %s",
+    "ui.hud.boss.phase": "ФАЗА %d",
+    "ui.hud.boss.seal_open": "ПЕЧАТЬ ОТКРЫТА",
 
     "DUMMY_DAMAGE": "УРОН: %d",
     "KEY_SPACE": "ПРОБЕЛ",

@@ -12,6 +12,7 @@ const PAPER := Color("#f1e6d0")
 const FAINT := Color(0.09, 0.07, 0.06, 0.45)
 
 var player: Player
+var boss: Keeper
 var debug_on := false
 var hint := ""
 var toast := ""
@@ -47,11 +48,18 @@ func bind(p: Player) -> void:
 	player = p
 
 
+func bind_boss(b: Keeper) -> void:
+	boss = b
+
+
 func _draw() -> void:
 	if player != null:
 		_draw_hearts()
 		_draw_dash()
 		_draw_weapon()
+
+	if boss != null and is_instance_valid(boss) and boss.engaged and not boss.dead:
+		_draw_boss()
 
 	if toast_t > 0.0 and not toast.is_empty():
 		_draw_toast()
@@ -109,6 +117,26 @@ func _draw_weapon() -> void:
 	for i in count:
 		var c := Vector2(right - float(count - 1 - i) * 16.0, 78.0)
 		draw_circle(c, 4.0, RED if i == player.weapon_index else Color(INK, 0.2))
+
+
+## Полоса босса: имя, здоровье, фаза и состояние печати.
+func _draw_boss() -> void:
+	var w := 560.0
+	var x := (size.x - w) * 0.5
+	var y := 18.0
+	draw_string(FONT_BOLD, Vector2(x, y + 2.0), L10N.t("entity.keeper.name"),
+		HORIZONTAL_ALIGNMENT_CENTER, w, 15, Color(INK, 0.85))
+	draw_rect(Rect2(x, y + 10.0, w, 10.0), Color(INK, 0.18))
+	var frac := clampf(float(boss.hp) / float(maxi(1, boss.max_hp)), 0.0, 1.0)
+	draw_rect(Rect2(x, y + 10.0, w * frac, 10.0), RED)
+	draw_line(Vector2(x + w * 0.5, y + 10.0), Vector2(x + w * 0.5, y + 20.0),
+		Color(PAPER, 0.8), 2.0)
+	draw_string(FONT_TEXT, Vector2(x + w + 10.0, y + 19.0),
+		L10N.t("ui.hud.boss.phase", [boss.phase]),
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 11, FAINT)
+	if boss.seal_open:
+		draw_string(FONT_BOLD, Vector2(x, y + 36.0), L10N.t("ui.hud.boss.seal_open"),
+			HORIZONTAL_ALIGNMENT_CENTER, w, 11, RED)
 
 
 func _draw_toast() -> void:

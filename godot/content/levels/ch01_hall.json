@@ -105,6 +105,6 @@
 
     { "id": "e28", "def_id": "enemy.grunt", "x": 11840, "y": 576 },
     { "id": "e29", "def_id": "enemy.grunt", "x": 12672, "y": 576 },
-    { "id": "e30", "def_id": "enemy.grunt", "x": 13504, "y": 576 }
+    { "id": "e30", "def_id": "boss.keeper", "x": 13504, "y": 576 }
   ]
 }

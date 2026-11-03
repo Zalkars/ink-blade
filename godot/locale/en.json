@@ -160,6 +160,7 @@
     "entity.grunt.name": "CRAWLER",
     "entity.sentry.name": "SENTRY",
     "entity.blot.name": "BLOT",
+    "entity.keeper.name": "KEEPER OF THE FIRST STROKE",
 
     "cutscene.intro.1": "The city took seven days to write.\nOn the eighth, the tide came.",
     "cutscene.intro.2": "Ink does not kill.\nIt crosses things out.",
@@ -176,6 +177,8 @@
     "dialogue.hint": "%s — next",
 
     "ui.hud.toast.weapon": "RECEIVED: %s",
+    "ui.hud.boss.phase": "PHASE %d",
+    "ui.hud.boss.seal_open": "SEAL OPEN",
 
     "DUMMY_DAMAGE": "DAMAGE: %d",
     "KEY_SPACE": "SPACE",

@@ -1,0 +1,15 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/actors/keeper.gd" id="1_keeper"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_keeper"]
+size = Vector2(56, 104)
+
+[node name="Keeper" type="CharacterBody2D"]
+collision_layer = 4
+collision_mask = 1
+script = ExtResource("1_keeper")
+
+[node name="Body" type="CollisionShape2D" parent="."]
+position = Vector2(0, -32)
+shape = SubResource("RectangleShape2D_keeper")

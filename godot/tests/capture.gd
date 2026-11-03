@@ -38,6 +38,9 @@ func _ready() -> void:
 	for i in 6:
 		flow.dialogue.advance()
 	await _wait(2)
+	# Ручной диалог не помечает триггер: иначе warp через Архив запустит его снова.
+	if not flow.level.fired_triggers.has("archivist"):
+		flow.level.fired_triggers.append("archivist")
 
 	flow.console.open()
 	flow.console.execute("warp 700 500")
@@ -46,6 +49,17 @@ func _ready() -> void:
 	flow.console.close()
 	await _wait(60)
 	await _shot("skeleton-enemies")
+
+	# Босс: арена, полоса здоровья и открытая печать.
+	flow.console.open()
+	flow.console.execute("warp 13000 520")
+	flow.console.close()
+	await _wait(70)
+	var keeper = flow.level.boss
+	if keeper != null and is_instance_valid(keeper):
+		keeper.open_seal(3.0)
+	await _wait(6)
+	await _shot("skeleton-boss")
 
 	flow._pause()
 	await _wait(4)

@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="EntityDef" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/content/entity_def.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/content/entity_stats.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/content/ai_profile.gd" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/actors/keeper.tscn" id="4"]
+
+[sub_resource type="Resource" id="Stats_keeper"]
+script = ExtResource("2")
+max_hp = 40
+damage = 1
+speed = 70.0
+aggression_radius = 620.0
+telegraph_time = 0.55
+
+[sub_resource type="Resource" id="AI_keeper"]
+script = ExtResource("3")
+kind = 4
+params = {}
+
+[resource]
+script = ExtResource("1")
+id = &"boss.keeper"
+display_name_key = "entity.keeper.name"
+category = 1
+scene = ExtResource("4")
+tags = PackedStringArray("boss", "ground", "melee", "seal")
+stats = SubResource("Stats_keeper")
+ai_profile = SubResource("AI_keeper")
+overridable = PackedStringArray("max_hp", "damage", "speed")
+version = 1

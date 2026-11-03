@@ -235,6 +235,10 @@ func _cmd_kill() -> String:
 				continue
 			alive += 1
 			if e.has_method("hit"):
+				# У босса урон принимает только открытая печать:
+				# для debug-команды открываем её принудительно.
+				if e.has_method("open_seal"):
+					e.open_seal(5.0)
 				e.hit(999, 1)
 				killed += 1
 		if alive == 0:

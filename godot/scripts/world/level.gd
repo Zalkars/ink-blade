@@ -29,8 +29,10 @@ var checkpoints: Array = []
 var checkpoint_nodes: Dictionary = {}
 var killed_ids: Array[String] = []
 var _split_serial := 0
+var _summon_serial := 0
 var triggers: Array = []
 var fired_triggers: Array[String] = []
+var boss: Keeper
 var tile_layer: TileMapLayer
 var one_way_cells := 0
 var data: Dictionary = {}
@@ -198,6 +200,10 @@ func _add_enemy(spec: Dictionary, index: int = 0) -> void:
 	# иначе «зал очищен» сработает раньше, чем появятся малые.
 	if node.has_signal("split"):
 		node.split.connect(_on_enemy_split)
+	if node is Keeper:
+		boss = node
+		if node.has_signal("summon"):
+			node.summon.connect(_on_boss_summon)
 	add_child(node)
 	enemies.append(node)
 
@@ -214,6 +220,19 @@ func _on_enemy_split(pos: Vector2, def_id: StringName) -> void:
 			"x": pos.x + offset,
 			"y": pos.y + 20.0,
 			"overrides": {"generation": 1},
+		})
+
+
+## Босс призывает клякс. Они обычные враги уровня и не попадают в сохранение:
+## после смерти игрока бой начинается заново с полным набором.
+func _on_boss_summon(pos: Vector2, def_id: StringName, count: int) -> void:
+	for i in count:
+		_summon_serial += 1
+		_add_enemy({
+			"id": "summon_%d" % _summon_serial,
+			"def_id": String(def_id),
+			"x": pos.x,
+			"y": pos.y,
 		})
 
 
@@ -276,6 +295,13 @@ func _on_enemy_died(node: Node) -> void:
 	if not placement_id.is_empty() and not killed_ids.has(placement_id):
 		killed_ids.append(placement_id)
 	enemies.erase(node)
+	# Смерть босса заканчивает бой: призванные кляксы не должны держать зал.
+	# Остальные расстановки уровня остаются на своих местах.
+	if node is Keeper:
+		for e in enemies.duplicate():
+			if is_instance_valid(e) and String(e.get_meta("placement_id", "")).begins_with("summon_"):
+				enemies.erase(e)
+				e.queue_free()
 	enemy_died.emit(placement_id)
 	if enemies.is_empty():
 		cleared.emit()
