@@ -135,5 +135,30 @@ func _run() -> void:
 	_check(flow.state == Flow.State.PLAY, "перезапуск возвращает в игру")
 	_check(flow.player.hp == flow.player.MAX_HP, "после перезапуска здоровье полное")
 
+	# Debug-консоль: команды меняют мир и не ломают паузу
+	_check(flow.console != null and not flow.console.visible, "консоль скрыта по умолчанию")
+	flow.console.open()
+	_check(get_tree().paused, "открытая консоль ставит игру на паузу")
+	flow.console.close()
+	_check(not get_tree().paused, "закрытая консоль снимает паузу")
+
+	flow.console.execute("warp 520 400")
+	_check(flow.player.global_position.distance_to(Vector2(520.0, 400.0)) < 1.0, "warp переносит игрока")
+
+	flow.player.hp = 1
+	flow.console.execute("give hp")
+	_check(flow.player.hp == flow.player.MAX_HP, "give hp восстанавливает здоровье")
+
+	var before_spawn: int = flow.level.enemy_count()
+	flow.console.execute("spawn grunt")
+	_check(flow.level.enemy_count() == before_spawn + 1, "spawn добавляет врага")
+
+	flow.console.execute("kill")
+	await get_tree().physics_frame
+	_check(flow.level.enemy_count() == 0, "kill убирает всех врагов")
+
+	var fps_reply: String = flow.console.execute("fps")
+	_check(fps_reply.contains("fps"), "fps печатает метрики")
+
 	flow.queue_free()
 	await get_tree().process_frame

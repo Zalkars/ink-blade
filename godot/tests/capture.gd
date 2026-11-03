@@ -32,6 +32,16 @@ func _ready() -> void:
 	await _wait(4)
 	await _shot("skeleton-pause")
 
+	flow._resume()
+	flow.console.open()
+	flow.console.execute("help")
+	flow.console.execute("warp 900 480")
+	flow.console.execute("spawn grunt")
+	flow.console.execute("fps")
+	await _wait(4)
+	await _shot("skeleton-console")
+	flow.console.close()
+
 	get_tree().quit()
 
 

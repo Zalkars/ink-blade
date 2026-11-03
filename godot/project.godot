@@ -4,7 +4,7 @@ config_version=5
 
 [application]
 config/name="Ink Blade"
-run/main_scene="res://main.tscn"
+run/main_scene="res://scenes/flow/game_flow.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://assets/icon.svg"
 boot_splash/bg_color=Color(0.937255, 0.894118, 0.8, 1)

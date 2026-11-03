@@ -8,6 +8,7 @@ extends Node2D
 const TITLE_SCENE := preload("res://scenes/ui/title.tscn")
 const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
 const OVERLAY_SCENE := preload("res://scenes/ui/overlay.tscn")
+const CONSOLE_SCENE := preload("res://scenes/ui/console.tscn")
 const PLAYER_SCENE := preload("res://scenes/actors/player.tscn")
 
 const LEVELS := {
@@ -29,10 +30,12 @@ var ui: CanvasLayer
 var title_screen: Control
 var hud: Control
 var overlay: Control
+var console: Control
 
 var level: Level
 var player: Player
 var level_id := FIRST_LEVEL
+var _console_guard := 0
 
 
 func _ready() -> void:
@@ -74,6 +77,12 @@ func _build_stage() -> void:
 	title_screen.start_pressed.connect(start_run)
 	title_screen.quit_pressed.connect(_quit)
 
+	console = CONSOLE_SCENE.instantiate()
+	console.flow = self
+	ui.add_child(console)
+	console.opened.connect(_on_console_toggled)
+	console.closed.connect(_on_console_toggled)
+
 
 func _physics_process(delta: float) -> void:
 	# Единственная точка, где обновляется ввод. Все читают его после этого кадра.
@@ -81,6 +90,11 @@ func _physics_process(delta: float) -> void:
 
 	if CTL.pressed("help"):
 		hud.debug_on = not hud.debug_on
+
+	# Кадр открытия/закрытия консоли не должен заодно ставить игру на паузу.
+	if _console_guard > 0:
+		_console_guard -= 1
+		return
 
 	match state:
 		State.TITLE:
@@ -210,3 +224,8 @@ func _on_overlay_choice(item: String) -> void:
 
 func _quit() -> void:
 	get_tree().quit()
+
+
+func _on_console_toggled() -> void:
+	# Открытие и закрытие консоли не считается нажатием паузы.
+	_console_guard = 2

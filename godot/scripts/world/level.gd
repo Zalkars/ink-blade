@@ -121,6 +121,14 @@ func _add_enemy(spec: Dictionary) -> void:
 	enemies.append(grunt)
 
 
+## Точка входа для debug-консоли: создать врага по типу в мировых координатах.
+func spawn_enemy(kind: String, pos: Vector2) -> bool:
+	if kind != "grunt":
+		return false
+	_add_enemy({"type": kind, "x": pos.x, "y": pos.y + 20.0})
+	return true
+
+
 func bind_player(p: Player) -> void:
 	_player = p
 	for e in enemies:

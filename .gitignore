@@ -26,3 +26,6 @@ native/InkBlade/snapshots/
 .godot/
 *.apk
 *.aab
+
+# local opencode session export
+ses_*.json
