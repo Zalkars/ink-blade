@@ -6,6 +6,8 @@ extends Node2D
 ## Следующий шаг — TileMapLayer вместо прямоугольников, схема уже под это написана.
 
 signal cleared
+signal checkpoint_reached(id: String, pos: Vector2)
+signal enemy_died(id: String)
 
 const DEFAULT_DATA := "res://content/levels/arena_01.json"
 
@@ -22,7 +24,13 @@ const RED := Color("#9c1f24")
 var spawn_point := Vector2.ZERO
 var bounds := Rect2(0.0, 0.0, 2560.0, 720.0)
 var enemies: Array = []
+var checkpoints: Array = []
+var checkpoint_nodes: Dictionary = {}
+var killed_ids: Array[String] = []
 var data: Dictionary = {}
+## Состояние мира из автосейва: какой чекпоинт пройден и кого уже нет.
+## Задаётся до add_child(), потому что _ready() сразу строит уровень.
+var world_state: Dictionary = {}
 
 var _player: Player
 
@@ -55,18 +63,46 @@ func _build() -> void:
 		# Точка спавна задаётся по ногам, актёр стоит центром.
 		spawn_point = Vector2(float(s.get("x", 120)), float(s.get("y", 600)) - 23.0)
 
+	for id in world_state.get("killed", []):
+		killed_ids.append(String(id))
+
+	_build_checkpoints()
+
 	for solid in data.get("solids", []):
 		_add_solid(_rect_of(solid), false)
 
 	for plat in data.get("one_ways", []):
 		_add_solid(_rect_of(plat), true)
 
+	var index := 0
 	for spec in data.get("placements", []):
-		_add_enemy(spec)
+		_add_enemy(spec, index)
+		index += 1
 
 	# Старый формат: type вместо def_id. Оставлен для чтения прежних уровней.
 	for spec in data.get("enemies", []):
-		_add_enemy(spec)
+		_add_enemy(spec, index)
+		index += 1
+
+
+## Создаёт метки чекпоинтов и переносит точку входа на пройденную.
+func _build_checkpoints() -> void:
+	var saved_id := String(world_state.get("checkpoint", ""))
+	var list: Array = data.get("checkpoints", [])
+	for i in list.size():
+		var c: Dictionary = list[i]
+		var cp_id := String(c.get("id", "cp_%d" % i))
+		var feet := Vector2(float(c.get("x", 0)), float(c.get("y", 0)))
+		var node := Checkpoint.new()
+		node.name = "Checkpoint_" + cp_id
+		node.setup(cp_id, feet)
+		node.reached.connect(_on_checkpoint_reached)
+		add_child(node)
+		checkpoints.append(node)
+		checkpoint_nodes[cp_id] = node
+		if cp_id == saved_id:
+			node.activate()
+			spawn_point = feet - Vector2(0.0, 23.0)
 
 
 func _rect_of(d: Dictionary) -> Rect2:
@@ -105,7 +141,10 @@ func _add_slab(rect: Rect2, one_way: bool) -> void:
 	add_child(poly)
 
 
-func _add_enemy(spec: Dictionary) -> void:
+func _add_enemy(spec: Dictionary, index: int = 0) -> void:
+	var placement_id := String(spec.get("id", "auto_%d" % index))
+	if killed_ids.has(placement_id):
+		return
 	var def_id := String(spec.get("def_id", spec.get("type", "")))
 	if def_id.is_empty():
 		push_warning("level: у спавна нет def_id")
@@ -117,6 +156,7 @@ func _add_enemy(spec: Dictionary) -> void:
 	var node := DB.instantiate(StringName(def_id), overrides)
 	if node == null:
 		return
+	node.set_meta("placement_id", placement_id)
 	if node is Node2D:
 		(node as Node2D).position = Vector2(float(spec.get("x", 0)), float(spec.get("y", 600))) - Vector2(0.0, 20.0)
 	if "target" in node:
@@ -135,7 +175,12 @@ func spawn_enemy(kind: String, pos: Vector2) -> bool:
 		def_id = "enemy." + def_id
 	if not DB.has(StringName(def_id)):
 		return false
-	_add_enemy({"def_id": def_id, "x": pos.x, "y": pos.y})
+	_add_enemy({
+		"id": "spawn_%d" % Time.get_ticks_usec(),
+		"def_id": def_id,
+		"x": pos.x,
+		"y": pos.y,
+	})
 	return true
 
 
@@ -150,8 +195,39 @@ func enemy_count() -> int:
 	return enemies.size()
 
 
+func checkpoint_count() -> int:
+	return checkpoints.size()
+
+
+## Позиция центра тела на чекпоинте: по ней игрок появляется после смерти.
+func checkpoint_position(id: String) -> Vector2:
+	var node = checkpoint_nodes.get(id, null)
+	if node == null:
+		return Vector2.ZERO
+	return node.position + Vector2(0.0, Checkpoint.FOOT_OFFSET) - Vector2(0.0, 23.0)
+
+
+func activate_checkpoint(id: String) -> void:
+	var node = checkpoint_nodes.get(id, null)
+	if node != null:
+		node.activate()
+
+
+## Куда ставить игрока при старте: точка входа или пройденный чекпоинт.
+func resume_position() -> Vector2:
+	return spawn_point
+
+
+func _on_checkpoint_reached(id: String, pos: Vector2) -> void:
+	checkpoint_reached.emit(id, pos)
+
+
 func _on_enemy_died(node: Node) -> void:
+	var placement_id := String(node.get_meta("placement_id", ""))
+	if not placement_id.is_empty() and not killed_ids.has(placement_id):
+		killed_ids.append(placement_id)
 	enemies.erase(node)
+	enemy_died.emit(placement_id)
 	if enemies.is_empty():
 		cleared.emit()
 

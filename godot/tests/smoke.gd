@@ -29,12 +29,15 @@ func _check(ok: bool, what: String) -> void:
 
 
 func _run() -> void:
+	SaveGame.erase_slot(SaveGame.AUTOSAVE)
+	SaveGame.erase_slot("smoke")
 	var flow = preload("res://scenes/flow/game_flow.tscn").instantiate()
 	add_child(flow)
 	await get_tree().process_frame
 
 	_check(int(Engine.physics_ticks_per_second) == 120, "тик физики 120 Гц")
 	_check(flow.title_screen != null and flow.title_screen.visible, "стартовый экран — титул")
+	_check(flow.title_screen.items == ["ИГРАТЬ", "ВЫХОД"], "без автосейва нет пункта «Продолжить»")
 
 	flow.start_run()
 	await get_tree().physics_frame
@@ -125,6 +128,37 @@ func _run() -> void:
 	flow.player.take_damage(1, 1.0)
 	flow.player.take_damage(1, 1.0)
 	_check(flow.player.hp == hp0 - 1, "неуязвимость гасит второй удар подряд")
+
+	# Чекпоинт: касание запоминает точку, лечит и пишет автосейв
+	_check(flow.level.checkpoint_count() == 3, "чекпоинты из JSON: %d из 3" % flow.level.checkpoint_count())
+	var cp_pos: Vector2 = flow.level.checkpoint_position("cp_mid")
+	flow.player.global_position = cp_pos
+	flow.player.velocity = Vector2.ZERO
+	for i in 4:
+		await get_tree().physics_frame
+	_check(flow.checkpoint_id == "cp_mid", "касание чекпоинта запоминает его")
+	_check(flow.player.hp == flow.player.MAX_HP, "чекпоинт восстанавливает здоровье")
+	var cp_save: Dictionary = SaveGame.read_slot(SaveGame.AUTOSAVE)
+	_check(String(cp_save.get("checkpoint", "")) == "cp_mid", "автосейв хранит чекпоинт")
+	var killed_saved: Array = cp_save.get("killed", [])
+	_check(killed_saved.has("e1"), "автосейв хранит убитых врагов")
+	flow.title_screen.refresh()
+	_check(flow.title_screen.items.has("ПРОДОЛЖИТЬ"), "с автосейвом появляется пункт «Продолжить»")
+
+	# Смерть и продолжение: игрок возвращается на чекпоинт, убитый враг не оживает
+	var alive_before: int = flow.level.enemy_count()
+	flow.player.iframes = 0.0
+	flow.player.take_damage(99, 1.0)
+	await get_tree().physics_frame
+	_check(flow.state == Flow.State.DEAD, "смерть на чекпоинте переводит в DEAD")
+	flow.continue_run()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_check(flow.state == Flow.State.PLAY, "продолжение возвращает в игру")
+	_check(flow.player.global_position.distance_to(flow.level.checkpoint_position('cp_mid')) < 2.0, "игрок появляется на чекпоинте")
+	_check(flow.level.enemy_count() == alive_before, "после продолжения врагов столько же: %d" % flow.level.enemy_count())
+	_check(flow.level.killed_ids.has("e1"), "убитый враг остаётся мёртвым")
+	_check(flow.player.hp == flow.player.MAX_HP, "после продолжения здоровье полное")
 
 	# Сохранение
 	var ok_write: bool = SaveGame.write_slot("smoke", {"level": "arena_01", "hp": 3})

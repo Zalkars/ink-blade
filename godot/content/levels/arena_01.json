@@ -4,6 +4,11 @@
   "name": "ЗАЛ ПЕРВОГО ВЗМАХА",
   "bounds": { "x": 0, "y": 0, "w": 2560, "h": 720 },
   "spawn": { "x": 140, "y": 600 },
+  "checkpoints": [
+    { "id": "cp_start", "x": 140, "y": 600 },
+    { "id": "cp_mid", "x": 1300, "y": 600 },
+    { "id": "cp_end", "x": 2240, "y": 600 }
+  ],
   "solids": [
     { "x": 0, "y": 600, "w": 2560, "h": 120 },
     { "x": 400, "y": 468, "w": 260, "h": 22 },
@@ -16,9 +21,9 @@
     { "x": 1860, "y": 336, "w": 210, "h": 18 }
   ],
   "placements": [
-    { "def_id": "enemy.grunt", "x": 880, "y": 600 },
-    { "def_id": "enemy.grunt", "x": 1360, "y": 600 },
-    { "def_id": "enemy.grunt", "x": 1230, "y": 292 },
-    { "def_id": "enemy.grunt", "x": 1900, "y": 600 }
+    { "id": "e1", "def_id": "enemy.grunt", "x": 880, "y": 600 },
+    { "id": "e2", "def_id": "enemy.grunt", "x": 1360, "y": 600 },
+    { "id": "e3", "def_id": "enemy.grunt", "x": 1230, "y": 292 },
+    { "id": "e4", "def_id": "enemy.grunt", "x": 1900, "y": 600 }
   ]
 }

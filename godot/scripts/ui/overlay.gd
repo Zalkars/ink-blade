@@ -37,7 +37,7 @@ func open(m: int, subtitle: String = "") -> void:
 			items = ["ПРОДОЛЖИТЬ", "ЗАНОВО", "В МЕНЮ"]
 		Mode.DEAD:
 			heading = "ВЫ ПОГИБЛИ"
-			items = ["ЗАНОВО", "В МЕНЮ"]
+			items = ["С ЧЕКПОИНТА", "В МЕНЮ"]
 		Mode.CLEARED:
 			heading = "ЗАЛ ОЧИЩЕН"
 			items = ["В МЕНЮ", "ЗАНОВО"]

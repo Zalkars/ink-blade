@@ -1,11 +1,11 @@
 class_name SaveGame
 extends RefCounted
 
-## Заготовка сохранений: слотовая схема с самого начала, JSON в user://saves.
+## Сохранения: слотовая схема с самого начала, JSON в user://saves.
 ## В каркасе работает один автосейв; ручные слоты включатся вместе с меню профиля.
 ## Запись атомарная: tmp -> rename, предыдущая версия уходит в .bak.
 
-const VERSION := 1
+const VERSION := 2
 const DIR := "user://saves"
 const AUTOSAVE := "auto"
 
@@ -72,6 +72,20 @@ static func read_slot(slot: String) -> Dictionary:
 
 static func has_slot(slot: String) -> bool:
 	return FileAccess.file_exists(_slot_path(slot))
+
+
+## Приводит старый слот к текущей схеме. Новые поля получают безопасные значения,
+## поэтому сейв версии 1 (без чекпоинта) продолжает читаться.
+static func migrate(data: Dictionary) -> Dictionary:
+	var out := data.duplicate(true)
+	var version := int(out.get("version", 1))
+	if version < 2:
+		if not out.has("checkpoint"):
+			out["checkpoint"] = ""
+		if typeof(out.get("killed")) != TYPE_ARRAY:
+			out["killed"] = []
+		out["version"] = 2
+	return out
 
 
 static func erase_slot(slot: String) -> void:

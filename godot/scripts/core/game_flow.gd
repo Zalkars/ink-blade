@@ -35,6 +35,7 @@ var console: Control
 var level: Level
 var player: Player
 var level_id := FIRST_LEVEL
+var checkpoint_id := ""
 var _console_guard := 0
 
 
@@ -80,6 +81,7 @@ func _build_stage() -> void:
 	title_screen = TITLE_SCENE.instantiate()
 	ui.add_child(title_screen)
 	title_screen.start_pressed.connect(start_run)
+	title_screen.continue_pressed.connect(continue_run)
 	title_screen.quit_pressed.connect(_quit)
 
 	console = CONSOLE_SCENE.instantiate()
@@ -121,6 +123,19 @@ func _follow_player() -> void:
 
 
 func start_run() -> void:
+	_start_level({})
+
+
+## Продолжение с автосейва: пройденный чекпоинт, живые враги, здоровье.
+func continue_run() -> void:
+	var save := SaveGame.read_slot(SaveGame.AUTOSAVE)
+	if save.is_empty() or bool(save.get("cleared", false)):
+		start_run()
+		return
+	_start_level(SaveGame.migrate(save))
+
+
+func _start_level(save: Dictionary) -> void:
 	get_tree().paused = false
 	_clear_level()
 	overlay.close()
@@ -129,9 +144,16 @@ func start_run() -> void:
 	hud.debug_on = false
 	state = State.PLAY
 
+	var wanted := String(save.get("level", FIRST_LEVEL))
+	level_id = wanted if LEVELS.has(wanted) else FIRST_LEVEL
+	checkpoint_id = String(save.get("checkpoint", ""))
+
 	level = LEVELS[level_id].instantiate()
+	level.world_state = save
 	host.add_child(level)
 	level.cleared.connect(_on_cleared)
+	level.checkpoint_reached.connect(_on_checkpoint)
+	level.enemy_died.connect(_on_enemy_died)
 
 	var lim := level.camera_limits()
 	camera.limit_left = lim["left"]
@@ -140,16 +162,20 @@ func start_run() -> void:
 	camera.limit_bottom = lim["bottom"]
 
 	player = PLAYER_SCENE.instantiate()
-	player.global_position = level.spawn_point
+	player.global_position = level.resume_position()
 	level.add_child(player)
 	player.died.connect(_on_player_died)
+	var hp := int(save.get("hp", player.MAX_HP))
+	player.hp = clampi(hp, 1, player.MAX_HP)
+	player.hp_changed.emit(player.hp, player.MAX_HP)
 	level.bind_player(player)
 
 	camera.global_position = player.global_position + Vector2(0.0, -40.0)
 	camera.reset_smoothing()
 	hud.bind(player)
 	_autosave(false)
-	print("LEVEL %s: врагов %d" % [level_id, level.enemy_count()])
+	print("LEVEL %s: врагов %d, чекпоинт %s" % [
+		level_id, level.enemy_count(), checkpoint_id if not checkpoint_id.is_empty() else "вход"])
 
 
 func _clear_level() -> void:
@@ -176,10 +202,30 @@ func _show_title() -> void:
 	_clear_level()
 	hud.visible = false
 	overlay.close()
+	title_screen.refresh()
 	title_screen.visible = true
 	state = State.TITLE
 	camera.global_position = Vector2(640.0, 360.0)
 	camera.reset_smoothing()
+
+
+## Чекпоинт лечит и пишет автосейв: смерть вернёт игрока сюда.
+## Возврат на уже пройденный чекпоинт лечит, но лишний раз не пишет файл.
+func _on_checkpoint(id: String, _pos: Vector2) -> void:
+	var fresh := id != checkpoint_id
+	checkpoint_id = id
+	if level != null:
+		level.activate_checkpoint(id)
+	if player != null:
+		player.hp = player.MAX_HP
+		player.hp_changed.emit(player.hp, player.MAX_HP)
+	if fresh:
+		_autosave(false)
+
+
+## Мир помнит убитых: после смерти они не возвращаются.
+func _on_enemy_died(_id: String) -> void:
+	_autosave(false)
 
 
 func _on_player_died() -> void:
@@ -200,6 +246,8 @@ func _autosave(cleared: bool) -> void:
 		return
 	SaveGame.write_slot(SaveGame.AUTOSAVE, {
 		"level": level_id,
+		"checkpoint": checkpoint_id,
+		"killed": level.killed_ids.duplicate(),
 		"hp": player.hp,
 		"enemies_left": level.enemy_count(),
 		"cleared": cleared,
@@ -217,8 +265,8 @@ func _on_overlay_choice(item: String) -> void:
 				"В МЕНЮ":
 					_show_title()
 		State.DEAD:
-			if item == "ЗАНОВО":
-				start_run()
+			if item == "С ЧЕКПОИНТА":
+				continue_run()
 			else:
 				_show_title()
 		State.CLEARED:

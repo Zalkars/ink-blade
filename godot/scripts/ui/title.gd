@@ -3,6 +3,7 @@ extends Control
 ## Титульный экран каркаса: заголовок Underdog, меню без мыши.
 
 signal start_pressed
+signal continue_pressed
 signal quit_pressed
 
 const FONT_TITLE := preload("res://assets/fonts/Underdog-Regular.ttf")
@@ -14,28 +15,42 @@ const RED := Color("#9c1f24")
 const PAPER := Color("#f1e6d0")
 const GRAY := Color(0.09, 0.07, 0.06, 0.55)
 
-const ITEMS := ["ИГРАТЬ", "ВЫХОД"]
-
 var selected := 0
+var items: Array[String] = []
 var _wob := 0.0
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_process(true)
+	refresh()
+
+
+## Пункт «ПРОДОЛЖИТЬ» появляется только когда есть незачищенный автосейв.
+func refresh() -> void:
+	items.clear()
+	var save := SaveGame.read_slot(SaveGame.AUTOSAVE)
+	if not save.is_empty() and not bool(save.get("cleared", false)):
+		items.append("ПРОДОЛЖИТЬ")
+	items.append("ИГРАТЬ")
+	items.append("ВЫХОД")
+	selected = clampi(selected, 0, items.size() - 1)
 
 
 func _physics_process(delta: float) -> void:
 	_wob += delta
 	if CTL.pressed("down"):
-		selected = (selected + 1) % ITEMS.size()
+		selected = (selected + 1) % items.size()
 	if CTL.pressed("up"):
-		selected = (selected + ITEMS.size() - 1) % ITEMS.size()
+		selected = (selected + items.size() - 1) % items.size()
 	if CTL.confirm():
-		if selected == 0:
-			start_pressed.emit()
-		else:
-			quit_pressed.emit()
+		match items[selected]:
+			"ПРОДОЛЖИТЬ":
+				continue_pressed.emit()
+			"ИГРАТЬ":
+				start_pressed.emit()
+			_:
+				quit_pressed.emit()
 	queue_redraw()
 
 
@@ -56,7 +71,7 @@ func _draw() -> void:
 
 	draw_string(FONT_TEXT, Vector2(92.0, 372.0), "ТРЕНИРОВОЧНАЯ ЗАЛА · КАРКАС", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, GRAY)
 
-	for i in ITEMS.size():
+	for i in items.size():
 		var y := 470.0 + i * 62.0
 		var on := i == selected
 		if on:
@@ -68,7 +83,7 @@ func _draw() -> void:
 			])
 			draw_colored_polygon(box, Color(INK, 0.06))
 			draw_rect(Rect2(84.0, y - 34.0, 5.0, 44.0), RED)
-		draw_string(FONT_BOLD, Vector2(104.0, y), ITEMS[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 30, INK if on else Color(INK, 0.55))
+		draw_string(FONT_BOLD, Vector2(104.0, y), items[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 30, INK if on else Color(INK, 0.55))
 
 	draw_string(FONT_TEXT, Vector2(88.0, size.y - 40.0),
 		"%s / %s — выбор   ·   %s — подтвердить   ·   %s — отладка" % [
