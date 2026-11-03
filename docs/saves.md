@@ -25,7 +25,7 @@ user://saves/<slot>.json     — ручные слоты, зарезервиро
 {
   "version": 2,
   "saved_at": 1762300000,
-  "level": "arena_01",
+  "level": "ch01_hall",
   "checkpoint": "cp_mid",
   "killed": ["e1", "e3"],
   "hp": 5,

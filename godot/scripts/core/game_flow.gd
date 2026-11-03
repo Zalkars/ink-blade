@@ -12,9 +12,10 @@ const CONSOLE_SCENE := preload("res://scenes/ui/console.tscn")
 const PLAYER_SCENE := preload("res://scenes/actors/player.tscn")
 
 const LEVELS := {
+	"ch01_hall": preload("res://scenes/level/ch01_hall.tscn"),
 	"arena_01": preload("res://scenes/level/arena_01.tscn"),
 }
-const FIRST_LEVEL := "arena_01"
+const FIRST_LEVEL := "ch01_hall"
 
 enum State { TITLE, PLAY, PAUSE, DEAD, CLEARED }
 

@@ -44,9 +44,14 @@ func _run() -> void:
 
 	_check(flow.level != null, "уровень загружен как сцена")
 	_check(flow.player != null, "игрок создан сценой, а не RefCounted")
-	_check(flow.level.enemy_count() == 4, "враги из JSON: %d из 4" % flow.level.enemy_count())
+	var placements: Array = flow.level.data.get("placements", [])
+	_check(flow.level.enemy_count() == placements.size() and placements.size() >= 10,
+		"враги из JSON: %d из %d" % [flow.level.enemy_count(), placements.size()])
 	_check(flow.level.enemies[0].target == flow.player, "враг получает цель из уровня")
 	_check(flow.level.spawn_point.y > 0.0, "точка спавна из данных")
+	_check(flow.level.bounds.size.x >= 6000.0, "длинный уровень: %.0f px" % flow.level.bounds.size.x)
+	var lim: Dictionary = flow.level.camera_limits()
+	_check(int(lim["right"]) == int(flow.level.bounds.end.x), "границы камеры совпадают с уровнем")
 	_check(flow.level.tile_layer != null and flow.level.tile_layer.get_used_cells().size() > 100,
 		"геометрия в TileMapLayer: %d клеток" % (flow.level.tile_layer.get_used_cells().size() if flow.level.tile_layer != null else 0))
 	_check(flow.level.one_way_cells > 0, "односторонние платформы — тайлы: %d" % flow.level.one_way_cells)
@@ -84,7 +89,10 @@ func _run() -> void:
 	for i in 40:
 		await get_tree().physics_frame
 
-	# Прыжок поднимает игрока
+	# Прыжок поднимает игрока (с открытого места, чтобы не задеть платформу сверху)
+	flow.player.global_position = flow.level.spawn_point
+	flow.player.velocity = Vector2.ZERO
+	await get_tree().physics_frame
 	var y0: float = flow.player.global_position.y
 	flow.player.jump_buf = flow.player.JUMP_BUFFER
 	for i in 12:
@@ -128,22 +136,24 @@ func _run() -> void:
 	_check(flow.level.enemy_count() == before - 1, "враг умирает от двух ударов")
 
 	# Урон игроку и неуязвимость
+	flow.player.hp = flow.player.MAX_HP
+	flow.player.iframes = 0.0
 	var hp0: int = flow.player.hp
 	flow.player.take_damage(1, 1.0)
 	flow.player.take_damage(1, 1.0)
 	_check(flow.player.hp == hp0 - 1, "неуязвимость гасит второй удар подряд")
 
 	# Чекпоинт: касание запоминает точку, лечит и пишет автосейв
-	_check(flow.level.checkpoint_count() == 3, "чекпоинты из JSON: %d из 3" % flow.level.checkpoint_count())
-	var cp_pos: Vector2 = flow.level.checkpoint_position("cp_mid")
+	_check(flow.level.checkpoint_count() == 4, "чекпоинты из JSON: %d из 4" % flow.level.checkpoint_count())
+	var cp_pos: Vector2 = flow.level.checkpoint_position("cp_02")
 	flow.player.global_position = cp_pos
 	flow.player.velocity = Vector2.ZERO
 	for i in 4:
 		await get_tree().physics_frame
-	_check(flow.checkpoint_id == "cp_mid", "касание чекпоинта запоминает его")
+	_check(flow.checkpoint_id == "cp_02", "касание чекпоинта запоминает его")
 	_check(flow.player.hp == flow.player.MAX_HP, "чекпоинт восстанавливает здоровье")
 	var cp_save: Dictionary = SaveGame.read_slot(SaveGame.AUTOSAVE)
-	_check(String(cp_save.get("checkpoint", "")) == "cp_mid", "автосейв хранит чекпоинт")
+	_check(String(cp_save.get("checkpoint", "")) == "cp_02", "автосейв хранит чекпоинт")
 	var killed_saved: Array = cp_save.get("killed", [])
 	_check(killed_saved.has("e1"), "автосейв хранит убитых врагов")
 	flow.title_screen.refresh()
@@ -159,13 +169,13 @@ func _run() -> void:
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	_check(flow.state == Flow.State.PLAY, "продолжение возвращает в игру")
-	_check(flow.player.global_position.distance_to(flow.level.checkpoint_position('cp_mid')) < 2.0, "игрок появляется на чекпоинте")
+	_check(flow.player.global_position.distance_to(flow.level.checkpoint_position('cp_02')) < 2.0, "игрок появляется на чекпоинте")
 	_check(flow.level.enemy_count() == alive_before, "после продолжения врагов столько же: %d" % flow.level.enemy_count())
 	_check(flow.level.killed_ids.has("e1"), "убитый враг остаётся мёртвым")
 	_check(flow.player.hp == flow.player.MAX_HP, "после продолжения здоровье полное")
 
 	# Сохранение
-	var ok_write: bool = SaveGame.write_slot("smoke", {"level": "arena_01", "hp": 3})
+	var ok_write: bool = SaveGame.write_slot("smoke", {"level": "ch01_hall", "hp": 3})
 	var loaded: Dictionary = SaveGame.read_slot("smoke")
 	_check(ok_write, "слот пишется")
 	_check(int(loaded.get("hp", 0)) == 3 and int(loaded.get("version", 0)) == SaveGame.VERSION, "слот читается с версией")
