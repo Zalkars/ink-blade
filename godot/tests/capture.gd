@@ -61,6 +61,19 @@ func _ready() -> void:
 	await _wait(6)
 	await _shot("skeleton-boss")
 
+	# Финал: последний слайд с пером над городом.
+	flow.play_cutscene("finale")
+	await _wait(4)
+	flow.cutscene.advance()
+	flow.cutscene.advance()
+	await _wait(4)
+	await _shot("skeleton-finale")
+	for i in 4:
+		if not flow.cutscene.visible:
+			break
+		flow.cutscene.advance()
+	await _wait(2)
+
 	flow._pause()
 	await _wait(4)
 	await _shot("skeleton-pause")

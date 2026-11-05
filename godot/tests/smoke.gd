@@ -79,6 +79,16 @@ func _run() -> void:
 	_check(not flow.cutscene.visible and flow.state == Flow.State.PLAY and not get_tree().paused,
 		"катсцена возвращает в игру")
 
+	# Финал: отдельный сценарий, который играет после победы над боссом.
+	_check(flow.play_cutscene("finale"), "финал читается из JSON")
+	_check(flow.cutscene.slide_count() >= 3, "слайдов финала: %d" % flow.cutscene.slide_count())
+	for i in 8:
+		if not flow.cutscene.visible:
+			break
+		flow.cutscene.advance()
+		await get_tree().physics_frame
+	_check(flow.state == Flow.State.PLAY and not get_tree().paused, "финал возвращает в игру")
+
 	# Диалог Переписчика: пауза, реплики, награда
 	_check(flow.play_dialogue("archivist"), "диалог читается из JSON")
 	_check(flow.state == Flow.State.DIALOGUE and get_tree().paused and flow.dialogue.visible,
@@ -166,6 +176,11 @@ func _run() -> void:
 	await get_tree().physics_frame
 	_check(flow.level.enemy_count() == blot_before_spawn,
 		"после деления и добивания врагов снова %d" % flow.level.enemy_count())
+	var temp_in_killed := false
+	for killed_id in flow.level.killed_ids:
+		if flow.level.is_temporary_id(killed_id):
+			temp_in_killed = true
+	_check(not temp_in_killed, "временные враги не попадают в killed")
 
 	# Босс: карточка, закрытая и открытая печать, вторая фаза, смерть
 	_check(DB.has(&"boss.keeper"), "карточка босса в каталоге")
@@ -408,6 +423,18 @@ func _run() -> void:
 	flow.console.execute("kill")
 	await get_tree().physics_frame
 	_check(flow.level.enemy_count() == 0, "kill убирает всех врагов")
+	_check(flow.state == Flow.State.CUTSCENE and flow.cutscene.visible,
+		"после зачистки играет финал")
+	_check(flow.cutscene.slide_count() >= 3, "слайдов финала: %d" % flow.cutscene.slide_count())
+	for i in 8:
+		if not flow.cutscene.visible:
+			break
+		flow.cutscene.advance()
+		await get_tree().physics_frame
+	_check(flow.state == Flow.State.CLEARED and flow.overlay.visible,
+		"финал открывает окно зачистки")
+	var cleared_save: Dictionary = SaveGame.read_slot(SaveGame.AUTOSAVE)
+	_check(bool(cleared_save.get("cleared", false)), "автосейв помечает уровень зачищенным")
 
 	var fps_reply: String = flow.console.execute("fps")
 	_check(fps_reply.contains("fps"), "fps печатает метрики")

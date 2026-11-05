@@ -11,6 +11,8 @@ signal enemy_died(id: String)
 signal trigger_reached(id: String, spec: Dictionary)
 
 const DEFAULT_DATA := "res://content/levels/arena_01.json"
+## Временные ID не попадают в сохранение: дети деления, призывы босса, debug-спавн.
+const TEMP_ID_PREFIXES := ["split_", "summon_", "spawn_"]
 
 const PAPER := Color("#f1e6d0")
 const RIDGE_FAR := Color("#d5c8b1")
@@ -290,9 +292,21 @@ func _on_checkpoint_reached(id: String, pos: Vector2) -> void:
 	checkpoint_reached.emit(id, pos)
 
 
+## Временные ID не попадают в сохранение: это дети деления, призывы босса
+## и отладочный спавн. Постоянные расстановки уровня приходят из JSON.
+func is_temporary_id(id: String) -> bool:
+	for prefix in TEMP_ID_PREFIXES:
+		if id.begins_with(prefix):
+			return true
+	return false
+
+
 func _on_enemy_died(node: Node) -> void:
 	var placement_id := String(node.get_meta("placement_id", ""))
-	if not placement_id.is_empty() and not killed_ids.has(placement_id):
+	# Дети деления, призванные кляксы и debug-спавн — временные:
+	# их не надо помнить в сохранении, иначе файл пухнет мусором.
+	if not placement_id.is_empty() and not is_temporary_id(placement_id) \
+		and not killed_ids.has(placement_id):
 		killed_ids.append(placement_id)
 	enemies.erase(node)
 	# Смерть босса заканчивает бой: призванные кляксы не должны держать зал.

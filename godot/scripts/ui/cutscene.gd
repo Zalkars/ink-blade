@@ -148,6 +148,25 @@ func _draw_art(kind: String) -> void:
 			for i in 4:
 				draw_rect(Rect2(440.0 + i * 100.0, 370.0, 100.0, 16.0), Color(INK, 0.55))
 			draw_line(Vector2(80.0, 386.0), Vector2(size.x - 80.0, 386.0), Color(INK, 0.7), 2.0)
+		"pen":
+			# Город внизу и огромное перо над ним: зацепка на следующую главу.
+			var sky := 430.0
+			draw_line(Vector2(60.0, sky), Vector2(size.x - 60.0, sky), Color(INK, 0.75), 2.0)
+			var heights := [80, 140, 60, 170, 110, 200, 90, 150, 70]
+			for i in heights.size():
+				var x := 120.0 + i * 120.0
+				var h := float(heights[i])
+				draw_rect(Rect2(x, sky - h, 80.0, h), Color(INK, 0.68))
+			draw_line(Vector2(1000.0, 80.0), Vector2(720.0, 370.0), Color(INK, 0.9), 12.0)
+			draw_line(Vector2(1000.0, 80.0), Vector2(720.0, 370.0), Color(RED, 0.5), 3.0)
+			draw_colored_polygon(PackedVector2Array([
+				Vector2(1000.0, 80.0),
+				Vector2(1100.0, 126.0),
+				Vector2(1034.0, 214.0),
+				Vector2(952.0, 150.0),
+			]), Color(INK, 0.85))
+			draw_circle(Vector2(720.0, 370.0), 10.0, Color(RED, 0.9))
+			draw_circle(Vector2(720.0, 370.0), 18.0, Color(RED, 0.2))
 		_:
 			draw_circle(Vector2(640.0, 260.0), 90.0, Color(INK, 0.75))
 			draw_circle(Vector2(600.0, 230.0), 24.0, Color(RED, 0.8))

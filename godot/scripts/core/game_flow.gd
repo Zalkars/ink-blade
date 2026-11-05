@@ -42,6 +42,8 @@ var player: Player
 var level_id := FIRST_LEVEL
 var checkpoint_id := ""
 var _console_guard := 0
+## Финал играет один раз: после него открывается окно зачистки, а не возврат в игру.
+var _finale_pending := false
 
 
 func _ready() -> void:
@@ -152,6 +154,7 @@ func continue_run() -> void:
 
 func _start_level(save: Dictionary, with_intro := false) -> void:
 	get_tree().paused = false
+	_finale_pending = false
 	_clear_level()
 	overlay.close()
 	cutscene.close()
@@ -228,6 +231,7 @@ func _on_start_pressed() -> void:
 
 func _show_title() -> void:
 	get_tree().paused = false
+	_finale_pending = false
 	_clear_level()
 	hud.visible = false
 	overlay.close()
@@ -255,7 +259,10 @@ func _on_checkpoint(id: String, _pos: Vector2) -> void:
 
 
 ## Мир помнит убитых: после смерти они не возвращаются.
-func _on_enemy_died(_id: String) -> void:
+## Временные враги (деление, призыв, debug-спавн) не пишут файл зря.
+func _on_enemy_died(id: String) -> void:
+	if level != null and level.is_temporary_id(id):
+		return
 	_autosave(false)
 
 
@@ -287,6 +294,10 @@ func play_dialogue(id: String) -> bool:
 
 
 func _on_cutscene_finished() -> void:
+	if _finale_pending:
+		_finale_pending = false
+		_show_cleared()
+		return
 	state = State.PLAY
 	get_tree().paused = false
 	hud.visible = true
@@ -310,9 +321,18 @@ func _on_player_died() -> void:
 
 
 func _on_cleared() -> void:
-	state = State.CLEARED
 	_autosave(true)
+	# Финал играет до окна зачистки: сначала история, потом «уровень пройден».
+	_finale_pending = true
+	if not play_cutscene("finale"):
+		_finale_pending = false
+		_show_cleared()
+
+
+func _show_cleared() -> void:
+	state = State.CLEARED
 	get_tree().paused = true
+	hud.visible = false
 	overlay.open(OVERLAY_CLEARED, L10N.t("ui.cleared.subtitle"))
 
 

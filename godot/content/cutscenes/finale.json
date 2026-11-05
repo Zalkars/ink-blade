@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "id": "finale",
+  "slides": [
+    { "text": "cutscene.finale.1", "art": "hall" },
+    { "text": "cutscene.finale.2", "art": "ink" },
+    { "text": "cutscene.finale.3", "art": "pen" }
+  ]
+}
