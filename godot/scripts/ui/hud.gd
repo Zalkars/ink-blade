@@ -17,21 +17,41 @@ var debug_on := false
 var hint := ""
 var toast := ""
 var toast_t := 0.0
+var _hint_device := ""
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hint = L10N.t("ui.hud.hint", [
-		CTL.label_move(),
-		CTL.label_key("jump"),
-		CTL.label_key("dash"),
-		CTL.label_key("attack"),
-		CTL.label_key("swap"),
-		CTL.label_key("pause"),
-	])
+	_rebuild_hint()
+
+
+## Подсказка зависит от устройства: после подключения геймпада
+## нельзя показывать клавиши клавиатуры.
+func _rebuild_hint() -> void:
+	_hint_device = CTL.device
+	if CTL.device == "gamepad":
+		hint = L10N.t("ui.hud.hint", [
+			L10N.t("KEY_STICK"),
+			CTL.label_pad("jump"),
+			CTL.label_pad("dash"),
+			CTL.label_pad("attack"),
+			CTL.label_pad("swap"),
+			CTL.label_pad("pause"),
+		])
+	else:
+		hint = L10N.t("ui.hud.hint", [
+			CTL.label_move(),
+			CTL.label_key("jump"),
+			CTL.label_key("dash"),
+			CTL.label_key("attack"),
+			CTL.label_key("swap"),
+			CTL.label_key("pause"),
+		])
 
 
 func _process(delta: float) -> void:
+	if CTL.device != _hint_device:
+		_rebuild_hint()
 	if toast_t > 0.0:
 		toast_t = maxf(0.0, toast_t - delta)
 	queue_redraw()

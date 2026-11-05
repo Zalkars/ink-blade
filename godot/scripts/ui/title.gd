@@ -28,15 +28,17 @@ func _ready() -> void:
 
 
 ## Пункт «ПРОДОЛЖИТЬ» появляется только когда есть незачищенный автосейв.
+## «ИГРАТЬ» всегда первый: с титула новая игра не должна случайно
+## превращаться в продолжение с середины.
 func refresh() -> void:
 	items.clear()
 	actions.clear()
+	actions.append("play")
+	items.append(L10N.t("ui.title.play"))
 	var save := SaveGame.read_slot(SaveGame.AUTOSAVE)
 	if not save.is_empty() and not bool(save.get("cleared", false)):
 		actions.append("continue")
 		items.append(L10N.t("ui.title.continue"))
-	actions.append("play")
-	items.append(L10N.t("ui.title.play"))
 	actions.append("quit")
 	items.append(L10N.t("ui.title.quit"))
 	selected = clampi(selected, 0, actions.size() - 1)
@@ -90,9 +92,20 @@ func _draw() -> void:
 			draw_rect(Rect2(84.0, y - 34.0, 5.0, 44.0), RED)
 		draw_string(FONT_BOLD, Vector2(104.0, y), items[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 30, INK if on else Color(INK, 0.55))
 
-	draw_string(FONT_TEXT, Vector2(88.0, size.y - 40.0),
-		L10N.t("ui.title.hint", [
-			CTL.label_key("up"), CTL.label_key("down"), CTL.label_key("jump"), CTL.label_key("help")]),
+	var hint_text := ""
+	if CTL.device == "gamepad":
+		hint_text = L10N.t("ui.title.hint_pad", [L10N.t("KEY_STICK"), CTL.label_pad("jump")])
+	else:
+		hint_text = L10N.t("ui.title.hint", [
+			CTL.label_of("up"), CTL.label_of("down"), CTL.label_of("jump"), CTL.label_of("help")])
+	draw_string(FONT_TEXT, Vector2(88.0, size.y - 40.0), hint_text,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GRAY)
+
+	# Системные клавиши есть только на клавиатуре: на геймпаде не показываем.
+	if CTL.device != "gamepad":
+		draw_string(FONT_TEXT, Vector2(88.0, size.y - 18.0),
+			L10N.t("ui.title.system_hint", [
+				CTL.label_key("fullscreen"), CTL.label_key("mute"), CTL.label_key("screenshot")]),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, GRAY)
 
 	draw_string(FONT_TEXT, Vector2(size.x - 210.0, size.y - 40.0), L10N.t("ui.title.version"), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GRAY)

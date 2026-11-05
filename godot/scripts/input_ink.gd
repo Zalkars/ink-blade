@@ -389,14 +389,18 @@ func label_of(a: String) -> String:
 
 
 func _update_pad() -> void:
-	var connected := Input.get_connected_joypads().size() > 0
+	var pads := Input.get_connected_joypads()
+	var connected := not pads.is_empty()
 	if connected:
 		pad_connected = true
 		pad_id = L10N.t("PAD_NAME")
 		var reused := []
 		for i in range(16):
 			reused.append(false)
-		var joy := 0
+		# Берём реальный ID первого подключённого устройства, а не 0:
+		# на Windows геймпад может прийти не нулевым, особенно если
+		# в системе есть виртуальный контроллер или старый геймпад.
+		var joy: int = int(pads[0])
 		var used := false
 		for i in range(16):
 			var code: int = PAD_BUTTON_JOY[i]

@@ -100,5 +100,5 @@ func _draw() -> void:
 		draw_string(FONT_BOLD, Vector2(0.0, y), labels[i], HORIZONTAL_ALIGNMENT_CENTER, size.x, 26, INK if on else Color(INK, 0.5))
 
 	draw_string(FONT_TEXT, Vector2(0.0, size.y - 36.0),
-		L10N.t("ui.overlay.hint", [CTL.label_key("up"), CTL.label_key("down"), CTL.label_key("jump")]),
+		L10N.t("ui.overlay.hint", [CTL.label_of("up"), CTL.label_of("down"), CTL.label_of("jump")]),
 		HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, Color(INK, 0.5))

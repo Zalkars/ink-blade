@@ -38,6 +38,10 @@ func _run() -> void:
 	_check(int(Engine.physics_ticks_per_second) == 120, "тик физики 120 Гц")
 	_check(flow.title_screen != null and flow.title_screen.visible, "стартовый экран — титул")
 	_check(flow.title_screen.items == ["ИГРАТЬ", "ВЫХОД"], "без автосейва нет пункта «Продолжить»")
+	_check(CTL.keyboard["jump"].has(KEY_SPACE), "прыжок на пробеле")
+	_check(CTL.keyboard["fullscreen"].has(KEY_F11), "полный экран на F11")
+	_check(CTL.slot_of_joy(JOY_BUTTON_A) == 0, "геймпад: A — слот прыжка")
+	_check(CTL.slot_of_joy(JOY_BUTTON_START) == 9, "геймпад: START — слот паузы")
 
 	flow.start_run()
 	await get_tree().physics_frame

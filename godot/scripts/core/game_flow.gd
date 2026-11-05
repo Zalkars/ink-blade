@@ -12,6 +12,7 @@ const CONSOLE_SCENE := preload("res://scenes/ui/console.tscn")
 const CUTSCENE_SCENE := preload("res://scenes/ui/cutscene.tscn")
 const DIALOGUE_SCENE := preload("res://scenes/ui/dialogue.tscn")
 const PLAYER_SCENE := preload("res://scenes/actors/player.tscn")
+const SETTINGS_FILE := "user://settings.cfg"
 
 const LEVELS := {
 	"ch01_hall": preload("res://scenes/level/ch01_hall.tscn"),
@@ -49,6 +50,7 @@ var _finale_pending := false
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Engine.physics_ticks_per_second = 120
+	_apply_saved_display()
 	_build_stage()
 	# QA-флаг для сборки: сразу в игру, без титула.
 	# Запуск: InkBlade-Windows.exe --headless --quit-after 300 -- --play
@@ -56,6 +58,10 @@ func _ready() -> void:
 		start_run()
 	else:
 		_show_title()
+	# Окно должно получить фокус сразу: иначе первые нажатия уходят
+	# в другое приложение, и кажется, что управление не работает.
+	if not OS.has_feature("mobile") and DisplayServer.get_name() != "headless":
+		DisplayServer.window_move_to_foreground()
 
 
 func _build_stage() -> void:
@@ -109,9 +115,7 @@ func _build_stage() -> void:
 func _physics_process(delta: float) -> void:
 	# Единственная точка, где обновляется ввод. Все читают его после этого кадра.
 	CTL.update(delta)
-
-	if CTL.pressed("help"):
-		hud.debug_on = not hud.debug_on
+	_handle_global()
 
 	# Кадр открытия/закрытия консоли не должен заодно ставить игру на паузу.
 	if _console_guard > 0:
@@ -129,6 +133,67 @@ func _physics_process(delta: float) -> void:
 				start_run()
 		State.PAUSE, State.DEAD, State.CLEARED, State.CUTSCENE, State.DIALOGUE:
 			pass
+
+
+## Горячие клавиши, которые работают в любом состоянии, кроме открытой консоли.
+func _handle_global() -> void:
+	if console.visible:
+		return
+	if CTL.pressed("help") or CTL.pressed("hitboxes"):
+		hud.debug_on = not hud.debug_on
+	if CTL.pressed("mute"):
+		SND.set_muted(not SND.muted)
+		if hud.visible:
+			hud.show_toast(L10N.t("ui.hud.toast.muted" if SND.muted else "ui.hud.toast.unmuted"))
+	if CTL.pressed("fullscreen"):
+		_toggle_fullscreen()
+	if CTL.pressed("screenshot"):
+		_save_screenshot()
+
+
+## F11: полноэкранный режим без рамки и обратно. На Android не нужен.
+func _toggle_fullscreen() -> void:
+	if OS.has_feature("mobile") or DisplayServer.get_name() == "headless":
+		return
+	var mode := DisplayServer.window_get_mode()
+	var full := not (mode == DisplayServer.WINDOW_MODE_FULLSCREEN \
+			or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
+	DisplayServer.window_set_mode(
+		DisplayServer.WINDOW_MODE_FULLSCREEN if full else DisplayServer.WINDOW_MODE_WINDOWED)
+	_save_display(full)
+
+
+## Полноэкранный режим помнится между запусками: пишем только свой ключ,
+## остальные настройки старого прототипа не трогаем.
+func _apply_saved_display() -> void:
+	if OS.has_feature("mobile") or DisplayServer.get_name() == "headless":
+		return
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_FILE) != OK:
+		return
+	if bool(cfg.get_value("display", "fullscreen", false)):
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+
+
+func _save_display(fullscreen: bool) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_FILE)
+	cfg.set_value("display", "fullscreen", fullscreen)
+	cfg.save(SETTINGS_FILE)
+
+
+## F12: снимок кадра в user://screenshots. Работает и на паузе.
+func _save_screenshot() -> void:
+	var dir := DirAccess.open("user://")
+	if dir != null:
+		dir.make_dir_recursive("screenshots")
+	var stamp := Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
+	var path := "user://screenshots/ink-blade-%s.png" % stamp
+	var image := get_viewport().get_texture().get_image()
+	if image != null and image.save_png(path) == OK:
+		print("SCREENSHOT " + path)
+		if hud.visible:
+			hud.show_toast(L10N.t("ui.hud.toast.screenshot"))
 
 
 func _follow_player() -> void:

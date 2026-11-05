@@ -136,7 +136,9 @@
     "ui.title.quit": "QUIT",
     "ui.title.subtitle": "TRAINING HALL · SKELETON",
     "ui.title.version": "skeleton · v0.1",
-    "ui.title.hint": "%s / %s — select   ·   %s — confirm   ·   %s — debug",
+    "ui.title.hint": "%s / %s - select   ·   %s - confirm   ·   %s - debug",
+    "ui.title.hint_pad": "%s - select   ·   %s - confirm",
+    "ui.title.system_hint": "%s - fullscreen   ·   %s - sound   ·   %s - screenshot",
     "ui.hud.dash": "DASH",
     "ui.hud.weapon": "WEAPON",
     "ui.hud.hint": "%s — run   ·   %s — jump   ·   %s — dash   ·   %s — attack   ·   %s — switch weapon   ·   %s — pause",
@@ -180,6 +182,9 @@
     "dialogue.hint": "%s — next",
 
     "ui.hud.toast.weapon": "RECEIVED: %s",
+    "ui.hud.toast.muted": "SOUND OFF",
+    "ui.hud.toast.unmuted": "SOUND ON",
+    "ui.hud.toast.screenshot": "SCREENSHOT SAVED",
     "ui.hud.boss.phase": "PHASE %d",
     "ui.hud.boss.seal_open": "SEAL OPEN",
 

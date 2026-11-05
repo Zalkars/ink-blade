@@ -137,6 +137,8 @@
     "ui.title.subtitle": "ТРЕНИРОВОЧНАЯ ЗАЛА · КАРКАС",
     "ui.title.version": "каркас · v0.1",
     "ui.title.hint": "%s / %s — выбор   ·   %s — подтвердить   ·   %s — отладка",
+    "ui.title.hint_pad": "%s — выбор   ·   %s — подтвердить",
+    "ui.title.system_hint": "%s — полный экран   ·   %s — звук   ·   %s — скриншот",
     "ui.hud.dash": "РЫВОК",
     "ui.hud.weapon": "ОРУЖИЕ",
     "ui.hud.hint": "%s — бег   ·   %s — прыжок   ·   %s — рывок   ·   %s — удар   ·   %s — сменить оружие   ·   %s — пауза",
@@ -180,6 +182,9 @@
     "dialogue.hint": "%s — дальше",
 
     "ui.hud.toast.weapon": "ПОЛУЧЕНО: %s",
+    "ui.hud.toast.muted": "ЗВУК ВЫКЛЮЧЕН",
+    "ui.hud.toast.unmuted": "ЗВУК ВКЛЮЧЁН",
+    "ui.hud.toast.screenshot": "СКРИНШОТ СОХРАНЁН",
     "ui.hud.boss.phase": "ФАЗА %d",
     "ui.hud.boss.seal_open": "ПЕЧАТЬ ОТКРЫТА",
 
