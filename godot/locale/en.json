@@ -134,6 +134,7 @@
     "ui.title.play": "PLAY",
     "ui.title.continue": "CONTINUE",
     "ui.title.quit": "QUIT",
+    "ui.title.quit_confirm": "QUIT FOR REAL?",
     "ui.title.subtitle": "TRAINING HALL · SKELETON",
     "ui.title.version": "skeleton · v0.1",
     "ui.title.hint": "%s / %s - select   ·   %s - confirm   ·   %s - debug",

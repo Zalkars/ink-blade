@@ -19,6 +19,7 @@ var selected := 0
 var items: Array[String] = []
 var actions: Array[String] = []
 var _wob := 0.0
+var _confirm_quit := false
 
 
 func _ready() -> void:
@@ -33,6 +34,7 @@ func _ready() -> void:
 func refresh() -> void:
 	items.clear()
 	actions.clear()
+	_confirm_quit = false
 	actions.append("play")
 	items.append(L10N.t("ui.title.play"))
 	var save := SaveGame.read_slot(SaveGame.AUTOSAVE)
@@ -45,11 +47,18 @@ func refresh() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# Скрытый титул не должен читать ввод: visible = false не выключает
+	# _physics_process сам по себе. Без этой строки прыжок в игре подтверждал
+	# пункт меню — игра перезапускалась, а с выбранным «ВЫХОД» закрывалась.
+	if not visible:
+		return
 	_wob += delta
 	if CTL.pressed("down"):
 		selected = (selected + 1) % actions.size()
+		_confirm_quit = false
 	if CTL.pressed("up"):
 		selected = (selected + actions.size() - 1) % actions.size()
+		_confirm_quit = false
 	if CTL.confirm():
 		match actions[selected]:
 			"continue":
@@ -57,7 +66,13 @@ func _physics_process(delta: float) -> void:
 			"play":
 				start_pressed.emit()
 			_:
-				quit_pressed.emit()
+				# Выход — только со второго нажатия: случайный пробел или
+				# удар по «ВЫХОД» не должен закрывать игру.
+				if _confirm_quit:
+					quit_pressed.emit()
+				else:
+					_confirm_quit = true
+		queue_redraw()
 	queue_redraw()
 
 
@@ -90,7 +105,10 @@ func _draw() -> void:
 			])
 			draw_colored_polygon(box, Color(INK, 0.06))
 			draw_rect(Rect2(84.0, y - 34.0, 5.0, 44.0), RED)
-		draw_string(FONT_BOLD, Vector2(104.0, y), items[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 30, INK if on else Color(INK, 0.55))
+		var label := items[i]
+		if on and actions[i] == "quit" and _confirm_quit:
+			label = L10N.t("ui.title.quit_confirm")
+		draw_string(FONT_BOLD, Vector2(104.0, y), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, INK if on else Color(INK, 0.55))
 
 	var hint_text := ""
 	if CTL.device == "gamepad":

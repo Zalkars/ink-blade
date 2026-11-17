@@ -47,6 +47,38 @@ func _run() -> void:
 	await get_tree().physics_frame
 
 	_check(flow.level != null, "уровень загружен как сцена")
+
+	# Скрытый титул не должен читать ввод: раньше прыжок в игре подтверждал
+	# пункт меню, уровень перезапускался, а на «ВЫХОДЕ» игра закрывалась.
+	var level_before = flow.level
+	flow.title_screen.selected = 0
+	CTL.state["jump"] = true
+	CTL.edge["jump"] = true
+	flow.title_screen._physics_process(0.016)
+	CTL.state["jump"] = false
+	CTL.edge["jump"] = false
+	_check(flow.level == level_before and flow.state == Flow.State.PLAY,
+		"скрытый титул не перезапускает игру")
+	_check(flow.title_screen.selected == 0, "скрытый титул не листает меню")
+
+	# «ВЫХОД» на титуле срабатывает только со второго нажатия.
+	flow.title_screen.visible = true
+	flow.title_screen.selected = flow.title_screen.actions.size() - 1
+	CTL.edge["jump"] = true
+	flow.title_screen._physics_process(0.016)
+	CTL.edge["jump"] = false
+	_check(flow.title_screen._confirm_quit, "выход просит подтверждение")
+	flow.title_screen.visible = false
+	flow.title_screen.selected = 0
+	flow.title_screen.refresh()
+
+	# Направление движения: A влево, D вправо — та самая «перепутанность».
+	# Синтетические клавиши в headless не доходят до Input, поэтому проверяем
+	# сами назначения, а не состояние клавиш.
+	_check(CTL.keyboard["left"].has(KEY_A) and CTL.keyboard["right"].has(KEY_D),
+		"A ведёт влево, D — вправо")
+	_check(CTL.keyboard["jump"].has(KEY_SPACE) and CTL.keyboard["attack"].has(KEY_J),
+		"пробел — прыжок, J — удар")
 	_check(flow.player != null, "игрок создан сценой, а не RefCounted")
 	var placements: Array = flow.level.data.get("placements", [])
 	_check(flow.level.enemy_count() == placements.size() and placements.size() >= 10,
