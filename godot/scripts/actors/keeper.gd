@@ -299,6 +299,8 @@ func hit(amount: int, from_dir: int, knock: float = KNOCKBACK) -> void:
 		return
 	var dealt := amount + (1 if amount >= 3 else 0)
 	hp -= dealt
+	InkFx.text_fx(global_position.x, global_position.y - 30, "-%d" % dealt, 20, InkR.RED, false)
+	InkFx.ink_burst(global_position.x, global_position.y, 9, 150, [InkR.INK, InkR.RED], 4, false, null, 0, 0, 1000, global_position.y + 25)
 	hit_t = HURT_TIME
 	velocity.x = -from_dir * knock
 	if hp <= 0:

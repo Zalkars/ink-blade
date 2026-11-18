@@ -34,15 +34,23 @@ static func burst(actor: Node2D, point: Vector2, direction: Vector2, color := RE
 static func surface(actor: Node2D, point: Vector2, normal: Vector2, strength := 1.0) -> void:
 	var fx := layer(actor)
 	var tangent := normal.orthogonal()
-	var polygon := PackedVector2Array()
-	for i in 22:
-		var a := TAU * i / 22.0
-		var radius := randf_range(0.72, 1.15) * strength
-		polygon.append((tangent * cos(a) * 24.0 + normal * sin(a) * 7.0) * radius)
-	var dots: Array[Vector2] = []
-	for i in 9:
-		dots.append(tangent * randf_range(-36, 36) * strength + normal * randf_range(1, 10))
-	fx.marks.append({"p": fx.to_local(point + normal * 0.8), "poly": polygon, "dots": dots})
+	# Ink seeps inward from the contact edge. Never paint free space.
+	var footprint := PackedVector2Array()
+	for i in 32:
+		var angle := TAU * float(i) / 32.0
+		var edge := 1.0 + sin(angle * 5 + point.x) * 0.12 + cos(angle * 9) * 0.07
+		footprint.append(point - normal * 13 * strength + (tangent * cos(angle) * 34 - normal * sin(angle) * 21) * strength * edge)
+	var fragments: Array[PackedVector2Array] = []
+	var area := Rect2(point - Vector2.ONE * 64 * strength, Vector2.ONE * 128 * strength)
+	for terrain in terrain_polygons(actor, area):
+		for clipped in Geometry2D.intersect_polygons(footprint, terrain):
+			var local := PackedVector2Array()
+			for vertex in clipped:
+				local.append(fx.to_local(vertex))
+			if local.size() >= 3:
+				fragments.append(local)
+	fx.marks.append({"fragments": fragments})
+	fx.get_parent().queue_redraw()
 	if fx.marks.size() > MAX_MARKS:
 		fx.marks.pop_front()
 	burst(actor, point, normal, INK, 16)
@@ -67,12 +75,37 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	for mark in marks:
-		draw_set_transform(mark.p)
-		draw_colored_polygon(mark.poly, Color(INK, 0.78))
-		for i in mark.dots.size():
-			draw_circle(mark.dots[i], 1.0 + (i % 3) * 0.65, Color(INK, 0.65))
-	draw_set_transform(Vector2.ZERO)
 	for p in particles:
 		var col := Color(p.color, minf(1.0, p.life * 5.0))
 		draw_line(p.p - p.v * 0.018, p.p, col, p.size, true)
+
+
+static func terrain_polygons(actor: Node2D, area: Rect2) -> Array[PackedVector2Array]:
+	var root := layer(actor).get_parent()
+	var result: Array[PackedVector2Array] = []
+	if root is Level and not root.data.is_empty():
+		for spec in root.data.get("solids", []) + root.data.get("one_ways", []):
+			var r: Rect2 = root._rect_of(spec)
+			var tile := float(InkTileset.SIZE)
+			r = Rect2((r.position / tile).round() * tile, (r.end / tile).round() * tile - (r.position / tile).round() * tile)
+			var polygon := PackedVector2Array([root.to_global(r.position), root.to_global(Vector2(r.end.x, r.position.y)), root.to_global(r.end), root.to_global(Vector2(r.position.x, r.end.y))])
+			if r.intersects(Rect2(root.to_local(area.position), area.size)):
+				result.append(polygon)
+	else:
+		# Synthetic rooms and standalone geometry use actual collider shapes.
+		for body in root.get_children():
+			if body is StaticBody2D:
+				for child in body.get_children():
+					if child is CollisionShape2D and child.shape is RectangleShape2D:
+						var half: Vector2 = child.shape.size * 0.5
+						result.append(PackedVector2Array([child.to_global(-half), child.to_global(Vector2(half.x,-half.y)), child.to_global(half), child.to_global(Vector2(-half.x,half.y))]))
+	return result
+
+func draw_terrain(canvas: Node2D) -> void:
+	for mark in marks:
+		for fragment in mark.fragments:
+			var polygon := PackedVector2Array()
+			for vertex in fragment:
+				polygon.append(canvas.to_local(to_global(vertex)))
+			# Thin edge plus translucent soaking keeps the relief texture visible.
+			canvas.draw_colored_polygon(polygon, Color(INK, 0.7))

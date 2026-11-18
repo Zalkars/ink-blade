@@ -1,16 +1,30 @@
 # Чернильный клинок · Ink Blade
 
-**v0.4.0 · Godot 4.5.1 · Windows и Android**
+**v0.4.1 · Godot 4.5.1 · Windows и Android**
 
 Экшн-платформер в рисованной чернильной стилистике: бумага, тушь,
 быстрый бой, рывки и лечение за накопленную душу. Текущая версия —
 вертикальный срез с четырьмя зонами первого уровня, чекпоинтами,
 диалогом, двумя видами оружия и боссом Хранителем.
 
-[**Скачать v0.4.0 для Windows и Android**](https://github.com/Zalkars/ink-blade/releases/tag/v0.4.0) ·
+[**Скачать v0.4.1 для Windows и Android**](https://github.com/Zalkars/ink-blade/releases/tag/v0.4.1) ·
 [История изменений](CHANGELOG.md) · [Технический бриф](docs/tech-brief.md)
 
-![Чернильный клинок](docs/screenshots/v0.4.0-title.png)
+![Чернильный клинок](docs/screenshots/v0.4.1-title.png)
+
+## Исправления в 0.4.1
+
+Ход работы и проверки — в [FIX_PLAN.md](FIX_PLAN.md). В версии 0.4.1 восстановлены
+дуги и направленные атаки из 0.2, эффекты урона и возрождения, общие настройки
+(звук, громкость, тряска, вибрация, язык и экран). Исправлены атака от любого
+касания, фон заставки в безопасных отступах и окрашивание рельефа чернилами.
+
+Для удара вверх удерживайте W / стрелку вверх либо отклоните стик / крестовину
+вверх и нажмите атаку. В воздухе можно аналогично ударить вниз.
+
+![Общие настройки](docs/screenshots/v0.4.1-general.png)
+
+![Удар вверх](docs/screenshots/v0.4.1-up-attack.png)
 
 ## Что нового в 0.4.0
 
@@ -31,7 +45,7 @@
 
 ### Windows
 
-1. Скачайте `InkBlade-0.4.0-windows-x64.zip` со [страницы релиза](https://github.com/Zalkars/ink-blade/releases/tag/v0.4.0).
+1. Скачайте `InkBlade-0.4.1-windows-x64.zip` со [страницы релиза](https://github.com/Zalkars/ink-blade/releases/tag/v0.4.1).
 2. Распакуйте архив и запустите `InkBlade-Windows.exe`.
 
 Godot и .NET устанавливать не нужно: ресурсы встроены в EXE.
@@ -40,12 +54,12 @@ EXE не имеет подписи издателя Windows.
 
 ### Android
 
-1. Скачайте `InkBlade-0.4.0-android.apk` с той же страницы релиза.
+1. Скачайте `InkBlade-0.4.1-android.apk` с той же страницы релиза.
 2. Разрешите установку из выбранного браузера или файлового менеджера и установите APK.
 3. Запустите «Чернильный клинок». Игра работает в горизонтальной ориентации.
 
 Требуется Android 7.0 или новее. APK содержит ARMv7, ARM64 и x86_64. Идентификатор приложения —
-`org.inkblade.game`, версия — `0.4.0`, код версии — `40000`.
+`org.inkblade.game`, версия — `0.4.1`, код версии — `40001`.
 Для обновления поверх старого APK подпись старой установки должна совпадать;
 при несовпадении Android отклонит обновление. Удаление приложения удаляет локальные сохранения.
 Интернет игре не требуется. В релизе также опубликован `SHA256SUMS.txt`.
@@ -116,7 +130,7 @@ export templates. C#-версия в `native/` сохранена как исх�
 ```powershell
 Godot --headless --path godot --editor --quit
 Godot --headless --path godot --export-release "Windows Desktop" ../builds/InkBlade-Windows.exe
-Godot --headless --path godot --export-release "Android" ../builds/InkBlade-0.4.0-android.apk
+Godot --headless --path godot --export-release "Android" ../builds/InkBlade-0.4.1-android.apk
 ```
 
 Для Android нужны JDK 17 и Android SDK, настроенные в Editor Settings.
@@ -131,6 +145,7 @@ Godot --headless --path godot --export-release "Android" ../builds/InkBlade-0.4.
 ```powershell
 Godot --headless --path godot tests/smoke.tscn
 Godot --headless --path godot tests/combat.tscn
+Godot --headless --path godot tests/fixes.tscn
 Godot --headless --path godot tests/controls.tscn
 Godot --headless --path godot tests/mobile.tscn -- --touch
 ```
@@ -165,6 +180,8 @@ docs/                  Бриф, планы и материалы проекта
 Релиз APK предназначен для прямой установки; публикация в магазине — отдельный шаг.
 
 ## Предыдущие релизы
+
+- [v0.4.0 — настройки управления и Android](https://github.com/Zalkars/ink-blade/releases/tag/v0.4.0)
 
 - [v0.3.1 — исправления управления Windows](https://github.com/Zalkars/ink-blade/releases/tag/v0.3.1)
 - [v0.3.0 — вертикальный срез](https://github.com/Zalkars/ink-blade/releases/tag/v0.3.0-slice)

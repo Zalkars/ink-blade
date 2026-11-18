@@ -126,7 +126,7 @@
     "ui.title.quit": "QUIT",
     "ui.title.quit_confirm": "QUIT FOR REAL?",
     "ui.title.subtitle": "TRAINING HALL · SKELETON",
-    "ui.title.version": "v0.4.0",
+    "ui.title.version": "v0.4.1",
     "ui.title.hint": "%s / %s - select   ·   %s - confirm   ·   %s - debug",
     "ui.title.hint_pad": "%s - select   ·   %s - confirm",
     "ui.title.system_hint": "%s - fullscreen   ·   %s - sound   ·   %s - screenshot",
@@ -187,7 +187,7 @@
     "mobile.swap": "Weapon",
     "mobile.stick": "Move",
     "UI_BACK": "‹ BACK",
-    "controls.title": "CONTROLS",
+    "controls.title": "SETTINGS",
     "controls.keyboard": "Keyboard & mouse",
     "controls.controller": "Controller",
     "controls.touch": "Touch",
@@ -199,7 +199,7 @@
     "controls.deadzone": "Stick deadzone",
     "controls.opacity": "Button opacity",
     "controls.edit": "Edit position and size",
-    "controls.touch_note": "Drag each control and adjust its size individually. Positions adapt to the screen and safe area.",
+    "controls.touch_note": "Drag each control and adjust its size individually. Positions adapt to the screen and safe area. To strike upwards, hold the stick or D-pad up and press Attack. You can strike downwards while airborne.",
     "controls.key_note": "Select an action, then press a key or mouse button. Esc always goes back.",
     "controls.pad_note": "Select an action, then press a button or trigger. B / START go back from settings.",
     "controls.hint": "Choose a tab and action · Arrows / D-pad: navigate · Enter / A: select",
@@ -218,6 +218,15 @@
     "controls.mouse": "Mouse",
     "ACT_SWAP": "Switch weapon",
     "ACT_HITBOXES": "Debug hitboxes",
-    "controls.reserved": "This input is reserved or would leave another action unbound"
+    "controls.reserved": "This input is reserved or would leave another action unbound",
+    "controls.general": "General",
+    "controls.sound": "Sound",
+    "controls.volume": "Volume",
+    "controls.shake": "Screen shake",
+    "controls.vibration": "Vibration",
+    "controls.language": "Language",
+    "controls.fullscreen": "Fullscreen",
+    "controls.resolution": "Window resolution",
+    "controls.vsync": "VSync"
   }
 }

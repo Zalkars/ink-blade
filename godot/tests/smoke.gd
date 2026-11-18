@@ -339,7 +339,8 @@ func _run() -> void:
 	flow.player.facing = 1
 	flow.player.equip_weapon("weapon.blade")
 	flow.player._try_attack()
-	await get_tree().physics_frame
+	for i in 8:
+		await get_tree().physics_frame
 	_check(target.hp < target_hp, "атака снимает здоровье врагу (%d -> %d)" % [target_hp, target.hp])
 
 	# Тяжёлая кисть: замах, широкий удар, сильный урон

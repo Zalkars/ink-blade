@@ -73,7 +73,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), PAPER)
+	draw_rect(Rect2(-position, get_viewport_rect().size), PAPER)
 	draw_circle(Vector2(size.x * 0.78, 180.0), 128.0, Color(RED, 0.9))
 	draw_circle(Vector2(size.x * 0.78, 180.0), 132.0, Color(RED, 0.2))
 

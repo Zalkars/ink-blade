@@ -6,7 +6,7 @@ extends Area2D
 
 const SPEED := 420.0
 const LIFETIME := 3.0
-const RADIUS := 6.0
+const RADIUS := 11.0
 
 const INK := Color("#17130f")
 const RED := Color("#9c1f24")
@@ -73,10 +73,15 @@ func _impact(point: Vector2, normal: Vector2) -> void:
 	queue_free()
 
 func _draw() -> void:
-	for i in range(1, _trail.size()):
-		draw_line(to_local(_trail[i - 1]), to_local(_trail[i]), Color(INK, 0.5 * (1.0 - i / 8.0)), 5.0 - i * 0.5, true)
-	draw_circle(Vector2.ZERO, RADIUS + 2.0, Color(INK, 0.25))
-	draw_circle(Vector2.ZERO, RADIUS, INK)
-	draw_circle(-velocity.normalized() * 1.5, 3.0 + sin(life * 28.0) * 0.7, RED)
-	draw_line(Vector2(-velocity.normalized().x * 14.0, -velocity.normalized().y * 14.0),
-		Vector2.ZERO, Color(INK, 0.45), 2.0)
+	InkR.init_static()
+	InkR.set_canvas(self)
+	InkR.begin_frame(LIFETIME - life)
+	for i in _trail.size():
+		var p := to_local(_trail[i])
+		var k := 1.0 - float(i) / maxf(1, _trail.size())
+		InkR.srand(i + int(global_position.x))
+		InkR.blob(p.x, p.y, RADIUS * k * 0.8, INK, null, 2.0, k * 0.5, 0.8, 10, 0.13, false)
+	InkR.srand(int(global_position.x))
+	InkR.blob(0, 0, RADIUS, INK, INK, 1.5, 1.0, 1.2, 10, 0.12)
+	InkR.blob(-2, -1, RADIUS * 0.45, RED, null, 2.0, 1.0, 0.5, 10, 0.13, false)
+	InkR.blob(3, -4, 2.2, InkR.CREAM, null, 2.0, 1.0, 0.2, 10, 0.13, false)

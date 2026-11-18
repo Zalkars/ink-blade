@@ -69,6 +69,16 @@ var soul := 0.0
 var healing := false
 var heal_t := 0.0
 var heal_flash := 0.0
+var attack_dir := "fwd"
+var swing_active := 0.1
+var swing_recover := 0.1
+var swing_windup := 0.05
+var swing_reach := Vector2(66,58)
+var swing_damage := 1
+var swing_knock := 280.0
+var _hit_targets := {}
+var combo_time := 0.0
+var _dust_time := 0.0
 var attack_step := 0
 var attack_facing := 1
 
@@ -89,6 +99,7 @@ func _ready() -> void:
 	if not all.is_empty():
 		unlock_weapon(String(all[0].id), false)
 	hp_changed.emit(hp, MAX_HP)
+	spawn_effect()
 
 
 ## Открывает оружие по карточке. Возвращает false, если карточки нет
@@ -173,6 +184,8 @@ func weapon_name() -> String:
 
 func _physics_process(delta: float) -> void:
 	_wob += delta
+	combo_time = maxf(0.0, combo_time - delta)
+	_dust_time -= delta
 	heal_flash = maxf(0.0, heal_flash - delta)
 	dash_cd = maxf(0.0, dash_cd - delta)
 	iframes = maxf(0.0, iframes - delta)
@@ -180,7 +193,7 @@ func _physics_process(delta: float) -> void:
 	attack_t = maxf(0.0, attack_t - delta)
 	attack_windup = maxf(0.0, attack_windup - delta)
 	attack_cd = maxf(0.0, attack_cd - delta)
-	if attack_t > 0.0 and not _struck and attack_windup <= 0.0:
+	if attack_t > 0.0 and attack_windup <= 0.0:
 		_strike()
 		_struck = true
 
@@ -215,6 +228,9 @@ func _physics_process(delta: float) -> void:
 	healing = can_heal
 	if healing:
 		heal_t += delta
+		if _dust_time <= 0:
+			_dust_time = 0.13
+			InkFx.sparks(global_position.x, global_position.y + 10, -PI / 2, 2, InkR.GOLD)
 		velocity.x = move_toward(velocity.x, 0.0, DEC_GROUND * delta)
 		if heal_t >= HEAL_TIME:
 			soul -= HEAL_COST
@@ -223,6 +239,8 @@ func _physics_process(delta: float) -> void:
 			healing = false
 			heal_flash = 0.4
 			hp_changed.emit(hp, MAX_HP)
+			InkFx.text_fx(global_position.x, global_position.y - 35, "+1", 25, InkR.GOLD, false)
+			InkFx.ring(global_position.x, global_position.y, 8, 64, InkR.GOLD, 0.4, 3)
 			SND.heal()
 			CombatFx.burst(self, global_position, Vector2.UP, InkR.GOLD, 22)
 		move_and_slide()
@@ -238,6 +256,7 @@ func _physics_process(delta: float) -> void:
 		dash_t -= delta
 		velocity.x = dash_dir * DASH_SPEED
 		velocity.y = 0.0
+		InkFx.ghost_trail(global_position.x - 14, global_position.y - 23, 28, 46, facing)
 		move_and_slide()
 		queue_redraw()
 		return
@@ -254,8 +273,18 @@ func _physics_process(delta: float) -> void:
 		jump_buf = 0.0
 		coyote = 0.0
 		air_dash = true
+		InkFx.dust(global_position.x, global_position.y + 23, 7, -facing)
+		SND.jump()
 
+	var was_grounded := is_on_floor()
+	var fall_speed := velocity.y
 	move_and_slide()
+	if not was_grounded and is_on_floor() and fall_speed > 120:
+		InkFx.dust(global_position.x, global_position.y + 23, 10, -facing)
+		InkFx.add_shake(minf(3.0, fall_speed / 250))
+	if is_on_floor() and absf(velocity.x) > 80 and _dust_time <= 0:
+		_dust_time = 0.1
+		InkFx.dust(global_position.x, global_position.y + 23, 2, -facing)
 	queue_redraw()
 
 
@@ -282,6 +311,9 @@ func _try_dash() -> void:
 	var ax := CTL.axis_x()
 	dash_dir = 1.0 if ax > 0.05 else (-1.0 if ax < -0.05 else float(facing))
 	facing = int(dash_dir)
+	SND.dash()
+	InkFx.dust(global_position.x, global_position.y + 23, 8, -facing)
+	CTL.rumble(0.15, 0.35, 90)
 	dash_t = DASH_TIME
 	dash_cd = DASH_COOLDOWN
 	if not is_on_floor():
@@ -293,13 +325,30 @@ func _try_attack() -> void:
 		return
 	healing = false
 	heal_t = 0.0
-	attack_step = attack_step % 2 + 1
+	attack_step = attack_step % 3 + 1 if combo_time > 0 else 1
+	combo_time = 0.55
+	attack_dir = "up" if CTL.axis_y() < -0.45 else ("down" if CTL.axis_y() > 0.45 and not is_on_floor() else "fwd")
+	_hit_targets.clear()
 	attack_facing = facing
 	_struck = false
-	attack_windup = weapon.windup
-	attack_total = weapon.windup + weapon.active
+	swing_windup = weapon.windup
+	swing_active = weapon.active
+	swing_recover = weapon.cooldown
+	swing_reach = weapon.reach
+	swing_damage = weapon.damage
+	swing_knock = weapon.knockback
+	if String(weapon.id) == "weapon.blade":
+		var profile: Array = InkPlayer.ATTACKS[attack_step]
+		swing_windup = profile[0]
+		swing_active = profile[1]
+		swing_recover = profile[2]
+		swing_reach = Vector2(profile[3], 58)
+		swing_damage = int(profile[4])
+		swing_knock = profile[5]
+	attack_windup = swing_windup
+	attack_total = swing_windup + swing_active
 	attack_t = attack_total
-	attack_cd = attack_total + weapon.cooldown
+	attack_cd = attack_total + swing_recover
 	if attack_windup <= 0.0:
 		_strike()
 		_struck = true
@@ -308,14 +357,20 @@ func _try_attack() -> void:
 func _strike() -> void:
 	if weapon == null:
 		return
-	SND.slash(attack_step)
-	var reach: Vector2 = weapon.reach
+	if not _struck:
+		spawn_slash()
+		SND.slash(attack_step)
+		_struck = true
+	var reach: Vector2 = swing_reach
 	var center := global_position
-	if weapon.hit_both_sides:
+	if attack_dir != "fwd":
+		reach = Vector2(54, swing_reach.x)
+		center += Vector2(0, -23 - reach.y * 0.5 + 10 if attack_dir == "up" else 23 + reach.y * 0.5 - 12)
+	elif weapon.hit_both_sides:
 		# Кисть бьёт вокруг: широкая фигура без смещения вперёд.
-		reach = Vector2(weapon.reach.x * 2.0, weapon.reach.y)
+		reach = Vector2(swing_reach.x * 2.0, swing_reach.y)
 	else:
-		center += Vector2(weapon.reach.x * 0.5 * facing, 0.0)
+		center += Vector2(swing_reach.x * 0.5 * facing, 0.0)
 	var shape := RectangleShape2D.new()
 	shape.size = reach
 	var params := PhysicsShapeQueryParameters2D.new()
@@ -327,15 +382,22 @@ func _strike() -> void:
 	var found := get_world_2d().direct_space_state.intersect_shape(params, 8)
 	for hit in found:
 		var body = hit.get("collider")
-		if body != null and body.has_method("hit"):
+		if body != null and body.has_method("hit") and not _hit_targets.has(body.get_instance_id()):
+			_hit_targets[body.get_instance_id()] = true
 			var hp_before := int(body.get("hp"))
-			body.hit(weapon.damage, attack_facing, weapon.knockback)
+			body.hit(swing_damage, attack_facing, swing_knock)
 			if int(body.get("hp")) < hp_before:
 				soul = minf(99.0, soul + 12.0)
 				CombatFx.burst(self, body.global_position, Vector2(attack_facing, -0.35))
-				SND.hit(weapon.damage >= 3)
+				InkFx.add_shake(3.0)
+				InkFx.sparks(body.global_position.x, body.global_position.y, 0.0, 7, InkR.CREAM)
+				if attack_dir == "down":
+					velocity.y = -660
+					air_dash = true
+					InkFx.ring(global_position.x, global_position.y + 23, 8, 44, InkR.RED)
+				SND.hit(swing_damage >= 3)
 	var start := global_position + Vector2(0, -4)
-	var ray := PhysicsRayQueryParameters2D.create(start, start + Vector2(weapon.reach.x * attack_facing, 0), 1)
+	var ray := PhysicsRayQueryParameters2D.create(start, start + Vector2(swing_reach.x * attack_facing, 0), 1)
 	var wall := get_world_2d().direct_space_state.intersect_ray(ray)
 	if not wall.is_empty():
 		CombatFx.burst(self, wall.position, wall.normal, BONE, 8)
@@ -352,6 +414,12 @@ func take_damage(amount: int, from_dir: float) -> void:
 	dash_t = 0.0
 	healing = false
 	heal_t = 0.0
+	InkFx.text_fx(global_position.x, global_position.y - 33, "-%d" % amount, 24, RED, false)
+	InkFx.damage_screen(1.0)
+	InkFx.flash_screen(0.2, RED)
+	InkFx.add_shake(9.0)
+	InkFx.sparks(global_position.x, global_position.y, 0.0, 9, InkR.RED_BRIGHT)
+	CTL.rumble(0.9, 0.5, 220)
 	SND.hurt()
 	CombatFx.burst(self, global_position, Vector2(from_dir, -0.6), RED, 20)
 	var away := 1.0 if from_dir == 0.0 else from_dir
@@ -359,6 +427,9 @@ func take_damage(amount: int, from_dir: float) -> void:
 	hp_changed.emit(hp, MAX_HP)
 	if hp == 0:
 		dead = true
+		InkFx.ink_burst(global_position.x, global_position.y, 34, 440, [INK, RED], 7, true, null, 0, 0, 1300, global_position.y + 23)
+		InkFx.ring(global_position.x, global_position.y, 10, 140, RED, 0.7, 4)
+		SND.death()
 		velocity = Vector2(-facing * 180.0, -220.0)
 		died.emit()
 
@@ -380,6 +451,7 @@ func respawn() -> void:
 	attack_windup = 0.0
 	hurt_t = 0.0
 	hp_changed.emit(hp, MAX_HP)
+	spawn_effect()
 
 
 func dash_ready() -> float:
@@ -410,13 +482,13 @@ func _process(delta: float) -> void:
 		_visual.blink_t = randf_range(2.0, 5.0)
 	_visual.attack = null
 	if attack_t > 0.0 and weapon != null:
-		_visual.attack = {"step": attack_step, "dir": "fwd",
-			"t": attack_total - attack_t, "windup": weapon.windup,
-			"active": weapon.active}
+		_visual.attack = {"step": attack_step, "dir": attack_dir,
+			"t": attack_total - attack_t, "windup": swing_windup,
+			"active": swing_active}
 	elif attack_cd > 0.0 and _struck and weapon != null and hurt_t <= 0.0:
-		_visual.attack = {"step": attack_step, "dir": "fwd",
-			"t": attack_total + weapon.cooldown - attack_cd,
-			"windup": weapon.windup, "active": weapon.active, "recover": weapon.cooldown}
+		_visual.attack = {"step": attack_step, "dir": attack_dir,
+			"t": attack_total + swing_recover - attack_cd,
+			"windup": swing_windup, "active": swing_active, "recover": swing_recover}
 	if _visual_pos == Vector2.INF or _visual_pos.distance_to(global_position) > 200.0:
 		_visual.reset_scarf()
 	_visual_pos = global_position
@@ -446,20 +518,24 @@ func _draw() -> void:
 	if heal_flash > 0.0:
 		draw_arc(Vector2.ZERO, 20.0 + (0.4 - heal_flash) * 75.0, 0, TAU, 40,
 			Color(InkR.GOLD, heal_flash * 2.0), 2.5, true)
-	# The trail only exists during the active swing; anticipation stays readable.
-	if attack_t > 0.0 and weapon != null and attack_windup <= 0.0:
-		var k := clampf((attack_total - attack_t - weapon.windup) / maxf(weapon.active, 0.001), 0, 1)
-		var sweep := -1.35 + 2.7 * (1.0 - pow(1.0 - k, 3))
-		var a0 := sweep - 0.85
-		var a1 := sweep
-		if attack_step == 2:
-			a0 = -sweep
-			a1 = -sweep + 0.85
-		var opacity := sin(PI * k)
-		for i in 3:
-			var col := Color(weapon.ink if i < 2 else BONE, opacity * (1.0 - i * 0.23))
-			var r := weapon.swing_radius - i * 3.0
-			if attack_facing > 0:
-				InkR.taper_arc(8.5, -1.0, r, a0, a1, weapon.swing_width + 3 - i, 0.5, col)
-			else:
-				InkR.taper_arc(-8.5, -1.0, r, PI - a1, PI - a0, weapon.swing_width + 3 - i, 0.5, col)
+
+
+func spawn_effect() -> void:
+	InkFx.dust(global_position.x, global_position.y + 23, 26, 0)
+	InkFx.ring(global_position.x, global_position.y + 10, 6, 70, InkR.INK_SOFT, 0.5, 3)
+	InkFx.ink_burst(global_position.x, global_position.y, 16, 120, [BONE, INK], 5, false, null, 0, -40, -50, 0, false)
+
+func spawn_slash() -> void:
+	var a0 := -1.2 if attack_facing > 0 else PI + 1.2
+	var a1 := 1.05 if attack_facing > 0 else PI - 1.05
+	var origin := global_position + Vector2(attack_facing * 6, -2)
+	if attack_dir == "up":
+		a0 = PI + 0.35
+		a1 = TAU - 0.35
+		origin = global_position + Vector2(0, -20)
+	elif attack_dir == "down":
+		a0 = 0.35
+		a1 = PI - 0.35
+		origin = global_position + Vector2(0, 12)
+	InkFx.slash(origin.x, origin.y, a0, a1, maxf(54 + attack_step * 3, weapon.swing_radius), 20, 7, swing_active + 0.11, weapon.ink)
+	InkFx.sparks(origin.x + cos(a1) * 34, origin.y + sin(a1) * 34, a1, 3, InkR.INK_SOFT)

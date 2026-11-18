@@ -357,6 +357,9 @@ func _draw() -> void:
 		_draw_surface(_rect_of(spec), false)
 	for spec in data.get("one_ways", []):
 		_draw_surface(_rect_of(spec), true)
+	var stains := get_node_or_null("CombatInk") as CombatFx
+	if stains != null:
+		stains.draw_terrain(self)
 
 
 func _draw_surface(rect: Rect2, one_way: bool) -> void:

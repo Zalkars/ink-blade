@@ -85,6 +85,7 @@ func _ready() -> void:
 	_build_bindings(false)
 	_build_bindings(true)
 	_build_touch()
+	_build_general()
 	status = Label.new()
 	status.text = trc("hint")
 	status.add_theme_font_size_override("font_size", 16)
@@ -215,7 +216,7 @@ func _build_editor() -> void:
 	editor.visible = false
 
 func open() -> void:
-	_refresh_bindings()
+	_relabel()
 	visible = true
 	_guard = 0.2
 	panel.visible = true
@@ -290,6 +291,14 @@ func _reset_page() -> void:
 				CTL.pad_map[action] = CTL.DEFAULT_PAD.get(action, []).duplicate()
 			CTL.pad_movement = "both"
 			CTL.pad_deadzone = 0.32
+		3:
+			flow.shake_enabled = true
+			flow.master_volume = 0.8
+			CTL.vibration_enabled = true
+			SND.set_muted(false)
+			flow.vsync_enabled = true
+			flow.resolution_index = 0
+			flow.save_preferences()
 		2:
 			CTL.touch_layout.clear()
 			CTL.touch_style = "floating"
@@ -304,6 +313,7 @@ func _reset_page() -> void:
 	_build_bindings(false)
 	_build_bindings(true)
 	_build_touch()
+	_build_general()
 	pages.current_tab = index
 	pages.get_tab_bar().grab_focus()
 
@@ -343,3 +353,76 @@ func go_back() -> void:
 	else:
 		visible = false
 		flow.close_settings()
+
+
+func toggle(parent: Node, key: String, value: bool, callback: Callable) -> void:
+	var line := row(parent, trc(key))
+	var control := CheckButton.new()
+	control.custom_minimum_size = Vector2(320, 48)
+	control.button_pressed = value
+	line.add_child(control)
+	control.toggled.connect(callback)
+
+func _build_general() -> void:
+	var column := page(trc("general"))
+	toggle(column, "sound", not SND.muted, func(v: bool):
+		SND.set_muted(not v)
+		flow.save_preferences())
+	slider(column, trc("volume"), 0, 100, flow.master_volume * 100, func(v: float):
+		flow.master_volume = v / 100.0
+		flow.save_preferences())
+	toggle(column, "shake", flow.shake_enabled, func(v: bool):
+		flow.shake_enabled = v
+		flow.camera.offset = Vector2.ZERO
+		flow.camera.rotation = 0
+		flow.save_preferences())
+	toggle(column, "vibration", CTL.vibration_enabled, func(v: bool):
+		CTL.vibration_enabled = v
+		flow.save_preferences())
+	var line := row(column, trc("language"))
+	var language := OptionButton.new()
+	language.custom_minimum_size = Vector2(320,48)
+	var codes := L10N.languages()
+	for code in codes:
+		language.add_item(code.to_upper())
+	language.selected = codes.find(L10N.lang)
+	line.add_child(language)
+	language.item_selected.connect(func(i: int):
+		L10N.set_lang(codes[i])
+		flow.title_screen.refresh()
+		flow.hud._rebuild_hint()
+		_relabel.call_deferred())
+	if not OS.has_feature("mobile"):
+		toggle(column, "fullscreen", DisplayServer.window_get_mode() in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN], func(_v: bool): flow._toggle_fullscreen())
+		var resolution_line := row(column, trc("resolution"))
+		var resolution := OptionButton.new()
+		resolution.custom_minimum_size = Vector2(320,48)
+		for value in flow.RESOLUTIONS:
+			resolution.add_item("%d × %d" % [value.x,value.y])
+		resolution.selected = flow.resolution_index
+		resolution_line.add_child(resolution)
+		resolution.item_selected.connect(func(i: int):
+			flow.resolution_index = i
+			if DisplayServer.get_name() != "headless":
+				DisplayServer.window_set_size(flow.RESOLUTIONS[i])
+			flow.save_preferences())
+		toggle(column, "vsync", flow.vsync_enabled, func(v: bool):
+			flow.vsync_enabled = v
+			flow.save_preferences())
+
+func _relabel() -> void:
+	var index := pages.current_tab
+	for child in pages.get_children():
+		pages.remove_child(child)
+		child.queue_free()
+	binding_buttons.clear()
+	_build_bindings(false)
+	_build_bindings(true)
+	_build_touch()
+	_build_general()
+	pages.current_tab = index
+	panel.get_child(0).get_child(0).text = trc("title")
+	status.text = trc("hint")
+	var footer := panel.get_child(0).get_child(3)
+	footer.get_child(0).text = trc("reset")
+	footer.get_child(1).text = trc("back")

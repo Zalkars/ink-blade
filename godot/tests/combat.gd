@@ -83,6 +83,8 @@ func _ready() -> void:
 	player.attack_cd = 0
 	player.facing = 1
 	player._try_attack()
+	check(grunt.hp == 2, "blade anticipation precedes damage")
+	player._physics_process(0.06)
 	check(grunt.hp == 1 and player.soul == 12, "successful blade hit earns ink")
 	player.attack_t = 0
 	grunt.queue_free()

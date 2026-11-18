@@ -90,7 +90,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color(PAPER, 0.88))
+	draw_rect(Rect2(-position, get_viewport_rect().size), Color(PAPER, 0.88))
 	draw_rect(Rect2(Vector2(0.0, 250.0), Vector2(size.x, 3.0)), Color(RED, 0.7))
 
 	draw_string(FONT_TITLE, Vector2(0.0, 236.0), heading, HORIZONTAL_ALIGNMENT_CENTER, size.x, 54, INK)

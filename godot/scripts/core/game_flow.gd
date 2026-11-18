@@ -26,6 +26,11 @@ const OVERLAY_PAUSE := 0
 const OVERLAY_DEAD := 1
 const OVERLAY_CLEARED := 2
 
+var shake_enabled := true
+var master_volume := 0.8
+var vsync_enabled := true
+var resolution_index := 0
+const RESOLUTIONS := [Vector2i(1280,720), Vector2i(1600,900), Vector2i(1920,1080), Vector2i(2560,1440), Vector2i(3840,2160)]
 var state := State.TITLE
 
 var host: Node2D
@@ -52,6 +57,7 @@ var _finale_pending := false
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Engine.physics_ticks_per_second = 120
+	load_preferences()
 	_apply_saved_display()
 	_build_stage()
 	# QA-флаг для сборки: сразу в игру, без титула.
@@ -129,6 +135,11 @@ func _physics_process(delta: float) -> void:
 	CTL.update(delta)
 	if settings.visible:
 		return
+	if state == State.PLAY:
+		InkFx.update(delta)
+		var shake := InkFx.shake_offset() if shake_enabled else Vector3.ZERO
+		camera.offset = Vector2(shake.x, shake.y)
+		camera.rotation = shake.z
 	_handle_global()
 
 	# Кадр открытия/закрытия консоли не должен заодно ставить игру на паузу.
@@ -157,6 +168,7 @@ func _handle_global() -> void:
 		hud.debug_on = not hud.debug_on
 	if CTL.pressed("mute"):
 		SND.set_muted(not SND.muted)
+		save_preferences()
 		if hud.visible:
 			hud.show_toast(L10N.t("ui.hud.toast.muted" if SND.muted else "ui.hud.toast.unmuted"))
 	if CTL.pressed("fullscreen"):
@@ -185,6 +197,7 @@ func _apply_saved_display() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(SETTINGS_FILE) != OK:
 		return
+	DisplayServer.window_set_size(RESOLUTIONS[resolution_index])
 	if bool(cfg.get_value("display", "fullscreen", false)):
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
@@ -272,6 +285,10 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	var hp := int(save.get("hp", player.MAX_HP))
 	player.hp = clampi(hp, 1, player.MAX_HP)
 	player.hp_changed.emit(player.hp, player.MAX_HP)
+	var legacy_fx := preload("res://scripts/visuals/legacy_fx_layer.gd").new()
+	legacy_fx.z_index = 20
+	level.add_child(legacy_fx)
+	player.died.connect(func(): legacy_fx.animate_on_death = true)
 	level.bind_player(player)
 
 	camera.global_position = player.global_position + Vector2(0.0, -40.0)
@@ -286,6 +303,9 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 
 
 func _clear_level() -> void:
+	InkFx.reset()
+	camera.offset = Vector2.ZERO
+	camera.rotation = 0.0
 	if level != null and is_instance_valid(level):
 		level.queue_free()
 	level = null
@@ -507,3 +527,32 @@ func close_settings() -> void:
 	overlay.input_guard = 0.2
 	title_screen.visible = state == State.TITLE
 	overlay.visible = state == State.PAUSE
+
+
+func load_preferences() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_FILE)
+	shake_enabled = bool(cfg.get_value("general", "shake", true))
+	master_volume = clampf(float(cfg.get_value("general", "volume", 0.8)), 0, 1)
+	CTL.vibration_enabled = bool(cfg.get_value("general", "vibration", true))
+	SND.set_muted(bool(cfg.get_value("general", "muted", false)))
+	vsync_enabled = bool(cfg.get_value("display", "vsync", true))
+	resolution_index = clampi(int(cfg.get_value("display", "resolution", 0)), 0, RESOLUTIONS.size() - 1)
+	apply_preferences()
+
+func apply_preferences() -> void:
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(master_volume, 0.0001)))
+	if not OS.has_feature("mobile") and DisplayServer.get_name() != "headless":
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync_enabled else DisplayServer.VSYNC_DISABLED)
+
+func save_preferences() -> void:
+	apply_preferences()
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_FILE)
+	cfg.set_value("general", "shake", shake_enabled)
+	cfg.set_value("general", "volume", master_volume)
+	cfg.set_value("general", "vibration", CTL.vibration_enabled)
+	cfg.set_value("general", "muted", SND.muted)
+	cfg.set_value("display", "vsync", vsync_enabled)
+	cfg.set_value("display", "resolution", resolution_index)
+	cfg.save(SETTINGS_FILE)

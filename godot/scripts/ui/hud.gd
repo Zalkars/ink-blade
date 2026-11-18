@@ -18,6 +18,9 @@ var hint := ""
 var toast := ""
 var toast_t := 0.0
 var _hint_device := ""
+var _hp_before := 5
+var _hp_anim := 0.0
+var _lost_from := 5
 
 
 func _ready() -> void:
@@ -50,6 +53,11 @@ func _rebuild_hint() -> void:
 
 
 func _process(delta: float) -> void:
+	_hp_anim = maxf(0, _hp_anim - delta)
+	if is_instance_valid(player) and player.hp != _hp_before:
+		_lost_from = _hp_before
+		_hp_before = player.hp
+		_hp_anim = 0.55
 	if CTL.device != _hint_device:
 		_rebuild_hint()
 	if toast_t > 0.0:
@@ -66,6 +74,8 @@ func show_toast(text: String) -> void:
 
 func bind(p: Player) -> void:
 	player = p
+	_hp_before = p.hp
+	_hp_anim = 0
 
 
 func bind_boss(b: Keeper) -> void:
@@ -100,12 +110,20 @@ func _draw() -> void:
 		_draw_debug()
 
 
+	InkR.init_static()
+	InkR.set_canvas(self)
+	InkFx.draw_screen(size.x, size.y)
+
+
 func _draw_hearts() -> void:
 	var x := 44.0
 	for i in player.MAX_HP:
 		var c := Vector2(x + i * 24.0, 44.0)
 		var filled := i < player.hp
-		_draw_drop(c, 9.0, RED if filled else Color(INK, 0.25))
+		_draw_drop(c, 9.0 + (sin(_hp_anim * PI / 0.55) * 2 if filled and _hp_anim > 0 else 0), RED if filled else Color(INK, 0.25))
+		if _hp_anim > 0 and i >= player.hp and i < _lost_from:
+			var progress := 1.0 - _hp_anim / 0.55
+			_draw_drop(c + Vector2(sin(progress * 5) * 7, -progress * 24), 9.0 * (1.0 - progress * 0.6), Color(RED, 1.0 - progress))
 
 
 func _draw_drop(c: Vector2, r: float, col: Color) -> void:

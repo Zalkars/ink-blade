@@ -107,9 +107,12 @@ func hit(damage: int, from_dir: int, knock: float = KNOCKBACK) -> void:
 	if dead:
 		return
 	hp -= damage
+	InkFx.text_fx(global_position.x, global_position.y - 30, "-%d" % damage, 20, InkR.RED, false)
+	InkFx.ink_burst(global_position.x, global_position.y, 9, 150, [InkR.INK, InkR.RED], 4, false, null, 0, 0, 1000, global_position.y + 25)
 	hit_t = HURT_TIME
 	global_position.x += -from_dir * knock * 0.02
 	if hp <= 0:
+		InkFx.ink_burst(global_position.x, global_position.y, 22, 260, null, 6, true, null, 0, 0, 1000, global_position.y + 25)
 		dead = true
 		died.emit(self)
 		queue_free()

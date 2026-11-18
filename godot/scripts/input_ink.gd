@@ -70,6 +70,7 @@ const PAD_BUTTON_JOY := [0, 1, 2, 3, 9, 10, -1, -2, 4, 6, 7, 8, 11, 12, 13, 14]
 
 const DEADZONE := 0.32
 
+var _mouse_buttons := {}
 var mouse_gameplay_enabled := true
 var pad_movement := "both"
 var pad_deadzone := 0.32
@@ -270,7 +271,7 @@ func first_pad_label(a: String) -> String:
 ## Подпись клавиатурного назначения действия (все клавиши через «/»).
 func label_key(a: String) -> String:
 	if a == "attack_up":
-		a = "down"
+		a = "up"
 	var arr: Array = keyboard.get(a, [])
 	if arr.is_empty():
 		return "—"
@@ -296,7 +297,7 @@ func label_move() -> String:
 ## Подпись геймпад-назначения действия.
 func label_pad(a: String) -> String:
 	if a == "attack_up":
-		a = "down"
+		a = "up"
 	if a in ["left", "right", "up", "down"]:
 		return L10N.t("controls." + pad_movement)
 	var arr: Array = pad_map.get(a, [])
@@ -389,7 +390,7 @@ func snapshot() -> Dictionary:
 
 func label_of(a: String) -> String:
 	if a == "attack_up":
-		return label_of("down")
+		return label_of("up")
 	if device == "touch":
 		var touch := {
 			"left": L10N.t("KEY_STICK"), "right": L10N.t("KEY_STICK"), "up": L10N.t("KEY_STICK"), "down": L10N.t("KEY_STICK"),
@@ -451,7 +452,7 @@ func _update_pad() -> void:
 ## назначения работали в любой раскладке.
 func _key_down(code: int) -> bool:
 	if code < 0:
-		return mouse_gameplay_enabled and Input.is_mouse_button_pressed(-code)
+		return mouse_gameplay_enabled and bool(_mouse_buttons.get(-code, false))
 	return Input.is_key_pressed(code) or Input.is_physical_key_pressed(code)
 
 
@@ -583,9 +584,14 @@ func update(dt: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed:
-		device = "keyboard"
-		SND.unlock()
+	if event is InputEventMouseButton:
+		# Godot marks touch-emulated mouse events with a negative device ID.
+		# Track genuine buttons separately: polling Input merges both sources.
+		if event.device >= 0:
+			_mouse_buttons[event.button_index] = event.pressed
+			if event.pressed:
+				device = "keyboard"
+				SND.unlock()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		device = "keyboard"
 		SND.unlock()
@@ -602,6 +608,7 @@ func _input(event: InputEvent) -> void:
 
 ## Сброс при паузе, сворачивании и смене экрана: отпускание может не прийти.
 func clear_touch() -> void:
+	_mouse_buttons.clear()
 	for a in _touch_refs:
 		state[a] = false
 		prev[a] = false
