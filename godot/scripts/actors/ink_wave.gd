@@ -15,6 +15,7 @@ var velocity := Vector2.ZERO
 var damage := 1
 var life := LIFETIME
 var _t := 0.0
+var _done := false
 
 
 func _ready() -> void:
@@ -30,17 +31,33 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _done:
+		return
 	_t += delta
-	position += velocity * delta
+	var next := global_position + velocity * delta
+	var ray := PhysicsRayQueryParameters2D.create(global_position, next + velocity.normalized() * 18.0, 1)
+	var wall := get_world_2d().direct_space_state.intersect_ray(ray)
+	if not wall.is_empty():
+		CombatFx.surface(self, wall.position, wall.normal, 1.4)
+		_done = true
+		queue_free()
+		return
+	global_position = next
 	life -= delta
 	if life <= 0.0:
+		CombatFx.floor_mark(self, global_position, 1.1)
+		_done = true
 		queue_free()
 		return
 	queue_redraw()
 
 
 func _on_body_entered(body: Node2D) -> void:
+	if _done:
+		return
 	if body is Player:
+		_done = true
+		CombatFx.burst(self, global_position, -velocity, INK, 16)
 		body.take_damage(damage, 1.0 if velocity.x >= 0.0 else -1.0)
 		queue_free()
 

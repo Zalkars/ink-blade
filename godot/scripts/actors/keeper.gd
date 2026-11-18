@@ -250,6 +250,7 @@ func _sweep() -> void:
 
 
 func _spawn_wave(dir: float) -> void:
+	CombatFx.floor_mark(self, global_position + Vector2(dir * 40, 10), 1.3)
 	var wave := WAVE_SCENE.instantiate()
 	wave.global_position = global_position + Vector2(dir * 40.0, 10.0)
 	wave.velocity = Vector2(dir * InkWave.SPEED, 0.0)
@@ -319,9 +320,27 @@ func _die() -> void:
 
 
 func _draw() -> void:
+	# The chapter spans 14,080 px; distant actors need no ink draw commands.
+	if not get_viewport_rect().grow(120.0).has_point(get_global_transform_with_canvas().origin):
+		return
+	InkR.init_static()
+	InkR.set_canvas(self)
+	InkR.begin_frame(_t)
 	var flash := hit_t > 0.0
 	var ink := BONE if flash else INK
 	var sway := sin(_t * 1.4) * 2.0
+
+	# The heavy brush follows anticipation and a short follow-through.
+	var pose := 0.0
+	if state == State.WINDUP_SWEEP or state == State.WINDUP_SLAM:
+		pose = 1.0 - clampf(state_t / maxf(windup * (0.62 if phase == 2 else 1.0), 0.01), 0, 1)
+	var angle := -0.3 - pose * 1.7
+	if state == State.RECOVER:
+		angle = 0.9
+	var hand := Vector2(facing * 25, -30)
+	var tip := hand + Vector2(cos(angle) * facing, sin(angle)) * 68
+	draw_line(hand, tip, INK, 9, true)
+	draw_line(tip, tip + Vector2(facing * 9, 15), RED, 14, true)
 
 	# Тень и ряса из перечёркнутых строк.
 	draw_circle(Vector2(0.0, 20.0), 36.0, Color(INK, 0.14))
@@ -333,11 +352,14 @@ func _draw() -> void:
 		Vector2(24.0 + sway, -22.0),
 		Vector2(34.0, 20.0),
 	])
-	draw_colored_polygon(robe, ink)
+	InkR.srand(840)
+	InkR.fill_poly(Array(robe), InkR.RED if flash else InkR.CREAM, 1.0, 0.7)
+	InkR.poly(Array(robe), 2.4, INK, 1.0, 0.8, true)
+	InkR.hatch(Array(robe), 12, 0.16)
 	for i in 4:
 		var y := 8.0 - i * 18.0
 		draw_line(Vector2(-26.0 + sway * 0.4, y), Vector2(26.0 + sway * 0.4, y - 2.0),
-			Color(PAPER, 0.16), 1.2)
+			Color(INK, 0.35), 1.2)
 
 	# Плечи и руки. Правая рука держит кисть и двигается на замахе.
 	var arm_dir := float(facing)
@@ -355,7 +377,8 @@ func _draw() -> void:
 	draw_circle(Vector2(16.0 + arm_dir * 34.0, -52.0 + brush_len), 5.0, RED)
 
 	# Голова и зачёркнутое имя вместо лица.
-	draw_circle(Vector2(sway * 0.5, -74.0), 17.0, ink)
+	InkR.blob(sway * 0.5, -74.0, 17.0, InkR.RED if flash else InkR.CREAM,
+		INK, 2.4, 1.0, 0.8)
 	draw_line(Vector2(-13.0, -76.0), Vector2(13.0, -72.0), RED, 3.0)
 	draw_circle(Vector2(-5.0, -80.0), 2.0, Color(RED_BRIGHT, 0.8))
 	draw_circle(Vector2(6.0, -79.0), 2.0, Color(RED_BRIGHT, 0.8))

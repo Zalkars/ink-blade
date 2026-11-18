@@ -76,6 +76,12 @@ func _draw() -> void:
 	if player != null:
 		_draw_hearts()
 		_draw_dash()
+		var pos := Vector2(40, 92)
+		draw_rect(Rect2(pos, Vector2(96, 5)), Color(INK, 0.18))
+		draw_rect(Rect2(pos, Vector2(96 * player.soul / 99.0, 5)), InkR.GOLD)
+		draw_line(pos + Vector2(96 * Player.HEAL_COST / 99.0, -2), pos + Vector2(96 * Player.HEAL_COST / 99.0, 7), Color(INK, 0.5))
+		var key := CTL.label_of("heal")
+		draw_string(FONT_TEXT, pos + Vector2(106, 7), L10N.t("mobile.heal") if CTL.touch_enabled else L10N.t("mobile.heal") + " [" + key + "]", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, FAINT)
 		_draw_weapon()
 
 	if boss != null and is_instance_valid(boss) and boss.engaged and not boss.dead:
@@ -84,7 +90,7 @@ func _draw() -> void:
 	if toast_t > 0.0 and not toast.is_empty():
 		_draw_toast()
 
-	if not hint.is_empty():
+	if not hint.is_empty() and not CTL.touch_enabled:
 		var strip := Rect2(0.0, size.y - 46.0, size.x, 46.0)
 		draw_rect(strip, Color(PAPER, 0.94))
 		draw_line(Vector2(0.0, strip.position.y), Vector2(size.x, strip.position.y), Color(INK, 0.25), 1.0)
@@ -128,7 +134,7 @@ func _draw_weapon() -> void:
 	var name := player.weapon_name()
 	if name.is_empty():
 		return
-	var right := size.x - 40.0
+	var right := size.x - (140.0 if CTL.touch_enabled else 40.0)
 	draw_string(FONT_TEXT, Vector2(right - 340.0, 36.0), L10N.t("ui.hud.weapon"),
 		HORIZONTAL_ALIGNMENT_RIGHT, 340.0, 11, FAINT)
 	draw_string(FONT_BOLD, Vector2(right - 340.0, 62.0), name,

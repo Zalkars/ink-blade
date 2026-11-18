@@ -37,6 +37,8 @@ var overlay: Control
 var console: Control
 var cutscene: Control
 var dialogue: Control
+var settings: Control
+var mobile_controls: Control
 
 var level: Level
 var player: Player
@@ -58,6 +60,7 @@ func _ready() -> void:
 		start_run()
 	else:
 		_show_title()
+	get_tree().auto_accept_quit = false
 	# Окно должно получить фокус сразу: иначе первые нажатия уходят
 	# в другое приложение, и кажется, что управление не работает.
 	if not OS.has_feature("mobile") and DisplayServer.get_name() != "headless":
@@ -104,6 +107,7 @@ func _build_stage() -> void:
 	title_screen.start_pressed.connect(_on_start_pressed)
 	title_screen.continue_pressed.connect(continue_run)
 	title_screen.quit_pressed.connect(_quit)
+	title_screen.settings_pressed.connect(open_settings)
 
 	console = CONSOLE_SCENE.instantiate()
 	console.flow = self
@@ -111,10 +115,20 @@ func _build_stage() -> void:
 	console.opened.connect(_on_console_toggled)
 	console.closed.connect(_on_console_toggled)
 
+	mobile_controls = preload("res://scripts/ui/mobile_controls.gd").new()
+	mobile_controls.flow = self
+	ui.add_child(mobile_controls)
+	settings = preload("res://scripts/ui/control_settings.gd").new()
+	settings.flow = self
+	ui.add_child(settings)
+
 
 func _physics_process(delta: float) -> void:
 	# Единственная точка, где обновляется ввод. Все читают его после этого кадра.
+	CTL.mouse_gameplay_enabled = state == State.PLAY and not settings.visible and not console.visible
 	CTL.update(delta)
+	if settings.visible:
+		return
 	_handle_global()
 
 	# Кадр открытия/закрытия консоли не должен заодно ставить игру на паузу.
@@ -218,6 +232,7 @@ func continue_run() -> void:
 
 
 func _start_level(save: Dictionary, with_intro := false) -> void:
+	CTL.clear_touch()
 	get_tree().paused = false
 	_finale_pending = false
 	_clear_level()
@@ -278,12 +293,14 @@ func _clear_level() -> void:
 
 
 func _pause() -> void:
+	CTL.clear_touch()
 	state = State.PAUSE
 	get_tree().paused = true
 	overlay.open(OVERLAY_PAUSE, L10N.t("ui.overlay.subtitle", [_level_name()]))
 
 
 func _resume() -> void:
+	CTL.clear_touch()
 	state = State.PLAY
 	get_tree().paused = false
 	overlay.close()
@@ -295,6 +312,7 @@ func _on_start_pressed() -> void:
 
 
 func _show_title() -> void:
+	CTL.clear_touch()
 	get_tree().paused = false
 	_finale_pending = false
 	_clear_level()
@@ -343,6 +361,7 @@ func _on_trigger(_id: String, spec: Dictionary) -> void:
 func play_cutscene(id: String) -> bool:
 	if not cutscene.play(id):
 		return false
+	CTL.clear_touch()
 	state = State.CUTSCENE
 	get_tree().paused = true
 	hud.visible = false
@@ -352,6 +371,7 @@ func play_cutscene(id: String) -> bool:
 func play_dialogue(id: String) -> bool:
 	if not dialogue.play(id):
 		return false
+	CTL.clear_touch()
 	state = State.DIALOGUE
 	get_tree().paused = true
 	hud.visible = false
@@ -380,6 +400,7 @@ func _on_dialogue_finished(_id: String, grant: String) -> void:
 
 
 func _on_player_died() -> void:
+	CTL.clear_touch()
 	state = State.DEAD
 	get_tree().paused = true
 	overlay.open(OVERLAY_DEAD, L10N.t("ui.overlay.subtitle", [_level_name()]))
@@ -395,6 +416,7 @@ func _on_cleared() -> void:
 
 
 func _show_cleared() -> void:
+	CTL.clear_touch()
 	state = State.CLEARED
 	get_tree().paused = true
 	hud.visible = false
@@ -427,6 +449,8 @@ func _on_overlay_choice(item: String) -> void:
 	match state:
 		State.PAUSE:
 			match item:
+				"settings":
+					open_settings()
 				"resume":
 					_resume()
 				"restart":
@@ -452,3 +476,34 @@ func _quit() -> void:
 func _on_console_toggled() -> void:
 	# Открытие и закрытие консоли не считается нажатием паузы.
 	_console_guard = 2
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+		CTL.clear_touch()
+		if state == State.PLAY and is_instance_valid(overlay):
+			_pause()
+	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		if settings.visible:
+			settings.go_back()
+		elif state == State.PLAY:
+			_pause()
+		elif state == State.PAUSE:
+			_resume()
+	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_quit()
+
+
+func open_settings() -> void:
+	CTL.clear_touch()
+	title_screen.visible = false
+	overlay.visible = false
+	settings.open()
+
+
+func close_settings() -> void:
+	CTL.clear_touch()
+	title_screen.input_guard = 0.2
+	overlay.input_guard = 0.2
+	title_screen.visible = state == State.TITLE
+	overlay.visible = state == State.PAUSE

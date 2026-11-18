@@ -29,3 +29,10 @@ native/InkBlade/snapshots/
 
 # local opencode session export
 ses_*.json
+
+# Local credentials, caches and generated previews
+*.keystore
+*.jks
+.godot-config/
+.godot-user/
+artifacts/

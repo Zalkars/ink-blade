@@ -91,7 +91,10 @@ func _physics_process(delta: float) -> void:
 		if absf(dx) < TOUCH_RANGE.x and absf(target.global_position.y - global_position.y) < TOUCH_RANGE.y:
 			_touch_player(dx)
 
+	var was_airborne := not is_on_floor()
 	move_and_slide()
+	if was_airborne and is_on_floor():
+		CombatFx.floor_mark(self, global_position, 0.65 if generation > 0 else 0.9)
 	queue_redraw()
 
 
@@ -120,21 +123,34 @@ func hit(damage: int, from_dir: int, knock: float = KNOCKBACK) -> void:
 
 
 func _draw() -> void:
-	var ink := BONE if hit_t > 0.0 else INK
-	var wob := sin(_wob * 4.0) * 1.6
-	var pts := PackedVector2Array([
-		Vector2(-15.0 + wob, -8.0),
-		Vector2(-8.0, -17.0),
-		Vector2(6.0 + wob, -16.0),
-		Vector2(16.0, -4.0),
-		Vector2(13.0, 12.0),
-		Vector2(2.0, 18.0),
-		Vector2(-11.0, 14.0),
-		Vector2(-17.0, 2.0),
-	])
-	draw_colored_polygon(pts, ink)
-	draw_circle(Vector2(-5.0, -4.0), 2.2, RED)
-	draw_circle(Vector2(5.0, -4.0), 2.2, RED)
-	# Капли, стекающие с кляксы.
-	draw_circle(Vector2(-12.0, 16.0), 2.5, Color(ink, 0.6))
-	draw_circle(Vector2(10.0, 18.0), 1.8, Color(ink, 0.5))
+	# The chapter spans 14,080 px; distant actors need no ink draw commands.
+	if not get_viewport_rect().grow(120.0).has_point(get_global_transform_with_canvas().origin):
+		return
+	InkR.init_static()
+	InkR.set_canvas(self)
+	InkR.begin_frame(_wob)
+	var sy := 1.0
+	if is_on_floor() and hop_t < 0.2:
+		sy = 0.75 + hop_t * 1.25
+	elif not is_on_floor():
+		sy = 1.0 + clampf(-velocity.y / 1200.0, -0.15, 0.3)
+	InkR.save()
+	InkR.t_translate(0, 20)
+	InkR.t_scale(2.0 - sy, sy)
+	InkR.t_translate(0, -20)
+	var fill := InkR.RED if hit_t > 0.0 else InkR.CREAM
+	InkR.srand(650)
+	InkR.blob(0, 1, 18, fill, InkR.INK, 2.4, 1.0, 1.0, 12, 0.16)
+	InkR.hatch(InkR.circle_pts(0, 1, 16, 12), 8, 0.12)
+	for i in 2:
+		var x := -6.0 + i * 12.0
+		InkR.blob(x, -4, 4.0, InkR.CREAM, InkR.INK, 1.3)
+		InkR.blob(x + 1, -4, 2.0, InkR.RED, null)
+	InkR.poly([Vector2(-5, 6), Vector2(0, 8), Vector2(6, 5)],
+		1.6, InkR.INK, 1.0, 0.4)
+	for i in 3:
+		var x := -12.0 + i * 11.0
+		InkR.poly([Vector2(x, 13), Vector2(x + sin(_wob * 4 + i) * 3, 20)],
+			2.2, InkR.INK, 0.7, 0.5)
+
+	InkR.restore()

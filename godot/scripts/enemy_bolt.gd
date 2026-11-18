@@ -1,7 +1,7 @@
-class_name InkBolt
+class_name LegacyInkBolt
 extends RefCounted
 
-## Снаряд — порт InkBolt
+## Снаряд — порт LegacyInkBolt
 
 static var _next_id := 10000
 
@@ -19,8 +19,8 @@ var trail: Array = []   # [{x, y, life}]
 
 func _init(game, X: float, Y: float, VX: float, VY: float) -> void:
 	g = game
-	id = "p%d" % InkBolt._next_id
-	InkBolt._next_id += 1
+	id = "p%d" % LegacyInkBolt._next_id
+	LegacyInkBolt._next_id += 1
 	x = X
 	y = Y
 	vx = VX

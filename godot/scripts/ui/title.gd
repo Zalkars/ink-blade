@@ -4,6 +4,7 @@ extends Control
 
 signal start_pressed
 signal continue_pressed
+signal settings_pressed
 signal quit_pressed
 
 const FONT_TITLE := preload("res://assets/fonts/Underdog-Regular.ttf")
@@ -15,6 +16,7 @@ const RED := Color("#9c1f24")
 const PAPER := Color("#f1e6d0")
 const GRAY := Color(0.09, 0.07, 0.06, 0.55)
 
+var input_guard := 0.0
 var selected := 0
 var items: Array[String] = []
 var actions: Array[String] = []
@@ -23,7 +25,7 @@ var _confirm_quit := false
 
 
 func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_process(true)
 	refresh()
 
@@ -41,6 +43,8 @@ func refresh() -> void:
 	if not save.is_empty() and not bool(save.get("cleared", false)):
 		actions.append("continue")
 		items.append(L10N.t("ui.title.continue"))
+	actions.append("settings")
+	items.append(L10N.t("MENU_SETTINGS"))
 	actions.append("quit")
 	items.append(L10N.t("ui.title.quit"))
 	selected = clampi(selected, 0, actions.size() - 1)
@@ -52,6 +56,9 @@ func _physics_process(delta: float) -> void:
 	# пункт меню — игра перезапускалась, а с выбранным «ВЫХОД» закрывалась.
 	if not visible:
 		return
+	if input_guard > 0:
+		input_guard -= delta
+		return
 	_wob += delta
 	if CTL.pressed("down"):
 		selected = (selected + 1) % actions.size()
@@ -60,18 +67,7 @@ func _physics_process(delta: float) -> void:
 		selected = (selected + actions.size() - 1) % actions.size()
 		_confirm_quit = false
 	if CTL.confirm():
-		match actions[selected]:
-			"continue":
-				continue_pressed.emit()
-			"play":
-				start_pressed.emit()
-			_:
-				# Выход — только со второго нажатия: случайный пробел или
-				# удар по «ВЫХОД» не должен закрывать игру.
-				if _confirm_quit:
-					quit_pressed.emit()
-				else:
-					_confirm_quit = true
+		activate(selected)
 		queue_redraw()
 	queue_redraw()
 
@@ -94,7 +90,7 @@ func _draw() -> void:
 	draw_string(FONT_TEXT, Vector2(92.0, 372.0), L10N.t("ui.title.subtitle"), HORIZONTAL_ALIGNMENT_LEFT, -1, 17, GRAY)
 
 	for i in items.size():
-		var y := 470.0 + i * 62.0
+		var y := 470.0 + i * 44.0
 		var on := i == selected
 		if on:
 			var box := PackedVector2Array([
@@ -111,7 +107,9 @@ func _draw() -> void:
 		draw_string(FONT_BOLD, Vector2(104.0, y), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, INK if on else Color(INK, 0.55))
 
 	var hint_text := ""
-	if CTL.device == "gamepad":
+	if CTL.touch_enabled:
+		hint_text = L10N.t("mobile.menu_hint")
+	elif CTL.device == "gamepad":
 		hint_text = L10N.t("ui.title.hint_pad", [L10N.t("KEY_STICK"), CTL.label_pad("jump")])
 	else:
 		hint_text = L10N.t("ui.title.hint", [
@@ -120,10 +118,42 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GRAY)
 
 	# Системные клавиши есть только на клавиатуре: на геймпаде не показываем.
-	if CTL.device != "gamepad":
+	if CTL.device != "gamepad" and not CTL.touch_enabled:
 		draw_string(FONT_TEXT, Vector2(88.0, size.y - 18.0),
 			L10N.t("ui.title.system_hint", [
 				CTL.label_key("fullscreen"), CTL.label_key("mute"), CTL.label_key("screenshot")]),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, GRAY)
 
 	draw_string(FONT_TEXT, Vector2(size.x - 210.0, size.y - 40.0), L10N.t("ui.title.version"), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, GRAY)
+
+
+func item_rect(i: int) -> Rect2:
+	return Rect2(84.0, 430.0 + i * 44.0, 520.0, 42.0)
+
+
+func activate(i: int) -> void:
+	if i != selected:
+		_confirm_quit = false
+	selected = i
+	match actions[selected]:
+		"continue":
+			continue_pressed.emit()
+		"settings":
+			settings_pressed.emit()
+		"play":
+			start_pressed.emit()
+		_:
+			# Выход — только со второго нажатия: случайный пробел или
+			# удар по «ВЫХОД» не должен закрывать игру.
+			if _confirm_quit:
+				quit_pressed.emit()
+			else:
+				_confirm_quit = true
+
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		for i in actions.size():
+			if item_rect(i).has_point(event.position):
+				activate(i)
+				accept_event()

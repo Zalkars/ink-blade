@@ -150,6 +150,8 @@ func _rect_of(d: Dictionary) -> Rect2:
 func _build_tiles() -> void:
 	tile_layer = TileMapLayer.new()
 	tile_layer.name = "Tiles"
+	# Keep tile physics; draw continuous v0.2 surfaces instead of the atlas.
+	tile_layer.self_modulate.a = 0.0
 	tile_layer.tile_set = InkTileset.build()
 	add_child(tile_layer)
 
@@ -347,6 +349,33 @@ func _draw() -> void:
 		var y := 120.0 + fmod(x * 0.31, 90.0)
 		draw_line(Vector2(x, y), Vector2(x + 7.0, y - 4.0), Color(INK_DARK, 0.22), 1.5)
 		draw_line(Vector2(x + 7.0, y - 4.0), Vector2(x + 13.0, y + 1.0), Color(INK_DARK, 0.22), 1.5)
+
+	InkR.init_static()
+	InkR.set_canvas(self)
+	InkR.begin_frame(0.0)
+	for spec in data.get("solids", []):
+		_draw_surface(_rect_of(spec), false)
+	for spec in data.get("one_ways", []):
+		_draw_surface(_rect_of(spec), true)
+
+
+func _draw_surface(rect: Rect2, one_way: bool) -> void:
+	# Match the rounded tile collision bounds exactly.
+	var tile := float(InkTileset.SIZE)
+	var start := (rect.position / tile).round() * tile
+	var end := (rect.end / tile).round() * tile
+	var size := end - start
+	if size.x <= 0.0 or size.y <= 0.0:
+		return
+	if size.y >= 96.0 and end.y >= bounds.end.y:
+		InkR.fill_rect_gradient(start.x, start.y, size.x, size.y, InkR.tex_floor_grad)
+		InkR.line(start.x, start.y, end.x, start.y, 4.5, InkR.INK, 1.0, 0.8)
+		InkR.line(start.x + 3, start.y + 6, end.x - 3, start.y + 6,
+			1.4, InkR.INK, 0.25, 0.5)
+		InkR.hatch([start + Vector2(0, 8), Vector2(end.x, start.y + 8),
+			end, Vector2(start.x, end.y)], 17, 0.08)
+	else:
+		InkWorld.platform(start.x, start.y, size.x, size.y, one_way)
 
 
 func _ridge(base_y: float, amp: float, col: Color) -> void:

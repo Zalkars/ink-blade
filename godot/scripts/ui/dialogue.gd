@@ -112,7 +112,7 @@ func _draw() -> void:
 		"%d / %d" % [index + 1, lines.size()],
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, GRAY)
 	draw_string(FONT_TEXT, Vector2(0.0, size.y - 20.0),
-		L10N.t("dialogue.hint", [CTL.label_key("jump")]),
+		L10N.t("mobile.advance") if CTL.touch_enabled else L10N.t("dialogue.hint", [CTL.label_of("jump")]),
 		HORIZONTAL_ALIGNMENT_RIGHT, size.x - 40.0, 14, GRAY)
 
 

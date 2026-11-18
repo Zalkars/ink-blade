@@ -97,7 +97,7 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_CENTER, size.x - 280.0, 38, 3, INK)
 
 	draw_string(FONT_TEXT, Vector2(0.0, size.y - 58.0),
-		L10N.t("cutscene.hint", [CTL.label_key("jump")]),
+		L10N.t("mobile.advance") if CTL.touch_enabled else L10N.t("cutscene.hint", [CTL.label_of("jump")]),
 		HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, GRAY)
 	draw_string(FONT_TEXT, Vector2(size.x - 160.0, size.y - 58.0),
 		"%d / %d" % [index + 1, slides.size()],

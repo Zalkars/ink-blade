@@ -63,11 +63,21 @@ var attack_cd := 0.0
 var attack_windup := 0.0
 var attack_total := ATTACK_TIME
 var _struck := false
+const HEAL_TIME := 0.8
+const HEAL_COST := 40.0
+var soul := 0.0
+var healing := false
+var heal_t := 0.0
+var heal_flash := 0.0
+var attack_step := 0
+var attack_facing := 1
 
 var weapons: Array = []
 var weapon_index := 0
 var weapon: WeaponDef
 
+var _visual = preload("res://scripts/visuals/player_visual.gd").new(null, -14.0, -23.0)
+var _visual_pos := Vector2.INF
 var _wob := 0.0
 var _spawn := Vector2.ZERO
 
@@ -163,6 +173,7 @@ func weapon_name() -> String:
 
 func _physics_process(delta: float) -> void:
 	_wob += delta
+	heal_flash = maxf(0.0, heal_flash - delta)
 	dash_cd = maxf(0.0, dash_cd - delta)
 	iframes = maxf(0.0, iframes - delta)
 	hurt_t = maxf(0.0, hurt_t - delta)
@@ -196,6 +207,29 @@ func _physics_process(delta: float) -> void:
 	if CTL.pressed("swap"):
 		next_weapon()
 
+	var can_heal := (CTL.down("heal") and is_on_floor() and hp < MAX_HP
+		and soul >= HEAL_COST and attack_t <= 0.0 and dash_t <= 0.0
+		and hurt_t <= 0.0 and jump_buf <= 0.0)
+	if can_heal and not healing:
+		SND.heal_loop()
+	healing = can_heal
+	if healing:
+		heal_t += delta
+		velocity.x = move_toward(velocity.x, 0.0, DEC_GROUND * delta)
+		if heal_t >= HEAL_TIME:
+			soul -= HEAL_COST
+			hp = mini(MAX_HP, hp + 1)
+			heal_t = 0.0
+			healing = false
+			heal_flash = 0.4
+			hp_changed.emit(hp, MAX_HP)
+			SND.heal()
+			CombatFx.burst(self, global_position, Vector2.UP, InkR.GOLD, 22)
+		move_and_slide()
+		queue_redraw()
+		return
+	heal_t = 0.0
+
 	var ax := CTL.axis_x()
 	if absf(ax) < 0.2:
 		ax = 0.0
@@ -208,11 +242,12 @@ func _physics_process(delta: float) -> void:
 		queue_redraw()
 		return
 
-	if ax != 0.0:
+	if ax != 0.0 and attack_t <= 0.0 and hurt_t <= 0.0:
 		facing = 1 if ax > 0.0 else -1
 
 	_apply_gravity(delta)
-	_apply_run(ax, delta)
+	if hurt_t <= 0.0:
+		_apply_run(ax * (0.35 if attack_t > 0.0 else 1.0), delta)
 
 	if jump_buf > 0.0 and coyote > 0.0:
 		velocity.y = -JUMP_VELOCITY
@@ -240,7 +275,7 @@ func _apply_run(ax: float, delta: float) -> void:
 
 
 func _try_dash() -> void:
-	if dash_cd > 0.0:
+	if dash_cd > 0.0 or hurt_t > 0.0 or attack_t > 0.0 or dead:
 		return
 	if not is_on_floor() and not air_dash:
 		return
@@ -254,8 +289,12 @@ func _try_dash() -> void:
 
 
 func _try_attack() -> void:
-	if attack_cd > 0.0 or weapon == null:
+	if attack_cd > 0.0 or weapon == null or hurt_t > 0.0 or dash_t > 0.0 or dead:
 		return
+	healing = false
+	heal_t = 0.0
+	attack_step = attack_step % 2 + 1
+	attack_facing = facing
 	_struck = false
 	attack_windup = weapon.windup
 	attack_total = weapon.windup + weapon.active
@@ -269,6 +308,7 @@ func _try_attack() -> void:
 func _strike() -> void:
 	if weapon == null:
 		return
+	SND.slash(attack_step)
 	var reach: Vector2 = weapon.reach
 	var center := global_position
 	if weapon.hit_both_sides:
@@ -288,15 +328,32 @@ func _strike() -> void:
 	for hit in found:
 		var body = hit.get("collider")
 		if body != null and body.has_method("hit"):
-			body.hit(weapon.damage, facing, weapon.knockback)
+			var hp_before := int(body.get("hp"))
+			body.hit(weapon.damage, attack_facing, weapon.knockback)
+			if int(body.get("hp")) < hp_before:
+				soul = minf(99.0, soul + 12.0)
+				CombatFx.burst(self, body.global_position, Vector2(attack_facing, -0.35))
+				SND.hit(weapon.damage >= 3)
+	var start := global_position + Vector2(0, -4)
+	var ray := PhysicsRayQueryParameters2D.create(start, start + Vector2(weapon.reach.x * attack_facing, 0), 1)
+	var wall := get_world_2d().direct_space_state.intersect_ray(ray)
+	if not wall.is_empty():
+		CombatFx.burst(self, wall.position, wall.normal, BONE, 8)
 
 
 func take_damage(amount: int, from_dir: float) -> void:
-	if dead or iframes > 0.0:
+	if dead or iframes > 0.0 or amount <= 0:
 		return
 	hp = maxi(0, hp - amount)
 	iframes = HURT_INVULN
-	hurt_t = 0.18
+	hurt_t = 0.28
+	attack_t = 0.0
+	attack_windup = 0.0
+	dash_t = 0.0
+	healing = false
+	heal_t = 0.0
+	SND.hurt()
+	CombatFx.burst(self, global_position, Vector2(from_dir, -0.6), RED, 20)
 	var away := 1.0 if from_dir == 0.0 else from_dir
 	velocity = Vector2(away * HURT_KNOCKBACK.x, HURT_KNOCKBACK.y)
 	hp_changed.emit(hp, MAX_HP)
@@ -315,6 +372,13 @@ func respawn() -> void:
 	dash_t = 0.0
 	dash_cd = 0.0
 	air_dash = true
+	healing = false
+	heal_t = 0.0
+	heal_flash = 0.0
+	attack_t = 0.0
+	attack_cd = 0.0
+	attack_windup = 0.0
+	hurt_t = 0.0
 	hp_changed.emit(hp, MAX_HP)
 
 
@@ -324,34 +388,78 @@ func dash_ready() -> float:
 	return clampf(1.0 - dash_cd / DASH_COOLDOWN, 0.0, 1.0)
 
 
-func _draw() -> void:
-	var ink := INK
-	if iframes > 0.0 and int(iframes * 24.0) % 2 == 0:
-		ink = BONE
-	if dead:
-		ink = Color(INK, 0.55)
-
-	var sway := sin(_wob * 2.4) * 1.4
-	var pts := PackedVector2Array([
-		Vector2(-7.0, -23.0),
-		Vector2(6.0, -22.0),
-		Vector2(11.0 + sway * 0.4, 0.0),
-		Vector2(9.0, 23.0),
-		Vector2(-9.0, 23.0),
-		Vector2(-11.0 + sway * 0.4, 0.0),
-	])
-	draw_colored_polygon(pts, ink)
-
-	if not dead:
-		draw_circle(Vector2(3.5 * facing, -9.0), 2.4, RED)
-
+func _process(delta: float) -> void:
+	# World coordinates keep the scarf trailing while the actor moves.
+	_visual.x = global_position.x - 14.0
+	_visual.y = global_position.y - 23.0
+	_visual.vx = velocity.x
+	_visual.vy = velocity.y
+	_visual.facing = facing
+	_visual.grounded = is_on_floor()
+	_visual.dead = dead
+	_visual.iframes = iframes
+	_visual.hurt_t = hurt_t
+	_visual.healing = healing
+	_visual.heal_t = heal_t
+	_visual.squash = 0.91 if healing else (1.08 if hurt_t > 0.0 else 1.0)
+	_visual.dash_active = dash_t > 0.0
+	_visual.t += delta
+	_visual.run_phase += absf(velocity.x) * delta * 0.085
+	_visual.blink_t -= delta
+	if _visual.blink_t < -0.12:
+		_visual.blink_t = randf_range(2.0, 5.0)
+	_visual.attack = null
 	if attack_t > 0.0 and weapon != null:
-		var k := 1.0 - attack_t / maxf(attack_total, 0.001)
-		var a0 := -0.9 + k * 0.9
-		var a1 := 0.7 + k * 0.5
-		var r: float = weapon.swing_radius
-		var col: Color = weapon.ink
-		if facing > 0:
-			draw_arc(Vector2(2.0, -4.0), r, a0, a1, 14, col, weapon.swing_width)
-		else:
-			draw_arc(Vector2(-2.0, -4.0), r, PI - a1, PI - a0, 14, col, weapon.swing_width)
+		_visual.attack = {"step": attack_step, "dir": "fwd",
+			"t": attack_total - attack_t, "windup": weapon.windup,
+			"active": weapon.active}
+	elif attack_cd > 0.0 and _struck and weapon != null and hurt_t <= 0.0:
+		_visual.attack = {"step": attack_step, "dir": "fwd",
+			"t": attack_total + weapon.cooldown - attack_cd,
+			"windup": weapon.windup, "active": weapon.active, "recover": weapon.cooldown}
+	if _visual_pos == Vector2.INF or _visual_pos.distance_to(global_position) > 200.0:
+		_visual.reset_scarf()
+	_visual_pos = global_position
+	_visual.scarf_acc += delta
+	while _visual.scarf_acc >= 1.0 / 60.0:
+		_visual.scarf_step()
+		_visual.scarf_acc -= 1.0 / 60.0
+	var ray := PhysicsRayQueryParameters2D.create(
+		global_position + Vector2(0, 22), global_position + Vector2(0, 720), 1)
+	var ground := get_world_2d().direct_space_state.intersect_ray(ray)
+	_visual.ground_y = ground.position.y if not ground.is_empty() else 10000.0
+	queue_redraw()
+
+
+func _draw() -> void:
+	# The chapter spans 14,080 px; distant actors need no ink draw commands.
+	if not get_viewport_rect().grow(120.0).has_point(get_global_transform_with_canvas().origin):
+		return
+	InkR.init_static()
+	InkR.set_canvas(self)
+	InkR.begin_frame(_visual.t)
+	InkR.save()
+	InkR.t_translate(-global_position.x, -global_position.y)
+	_visual.draw()
+	InkR.restore()
+
+	if heal_flash > 0.0:
+		draw_arc(Vector2.ZERO, 20.0 + (0.4 - heal_flash) * 75.0, 0, TAU, 40,
+			Color(InkR.GOLD, heal_flash * 2.0), 2.5, true)
+	# The trail only exists during the active swing; anticipation stays readable.
+	if attack_t > 0.0 and weapon != null and attack_windup <= 0.0:
+		var k := clampf((attack_total - attack_t - weapon.windup) / maxf(weapon.active, 0.001), 0, 1)
+		var sweep := -1.35 + 2.7 * (1.0 - pow(1.0 - k, 3))
+		var a0 := sweep - 0.85
+		var a1 := sweep
+		if attack_step == 2:
+			a0 = -sweep
+			a1 = -sweep + 0.85
+		var opacity := sin(PI * k)
+		for i in 3:
+			var col := Color(weapon.ink if i < 2 else BONE, opacity * (1.0 - i * 0.23))
+			var r := weapon.swing_radius - i * 3.0
+			if attack_facing > 0:
+				InkR.taper_arc(8.5, -1.0, r, a0, a1, weapon.swing_width + 3 - i, 0.5, col)
+			else:
+				InkR.taper_arc(-8.5, -1.0, r, PI - a1, PI - a0, weapon.swing_width + 3 - i, 0.5, col)

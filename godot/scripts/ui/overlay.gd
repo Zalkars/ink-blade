@@ -21,11 +21,12 @@ var heading := ""
 var sub := ""
 var actions: Array[String] = []
 var labels: Array[String] = []
+var input_guard := 0.0
 var selected := 0
 
 
 func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
 
 
@@ -38,6 +39,7 @@ func open(m: int, subtitle: String = "") -> void:
 			heading = L10N.t("ui.pause.title")
 			_set_items([
 				["resume", "ui.pause.resume"],
+				["settings", "MENU_SETTINGS"],
 				["restart", "ui.pause.restart"],
 				["menu", "ui.pause.menu"],
 			])
@@ -69,14 +71,17 @@ func close() -> void:
 	visible = false
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if not visible:
+		return
+	if input_guard > 0:
+		input_guard -= delta
 		return
 	if CTL.pressed("down"):
 		selected = (selected + 1) % actions.size()
 	if CTL.pressed("up"):
 		selected = (selected + actions.size() - 1) % actions.size()
-	if mode == Mode.PAUSE and CTL.pressed("back"):
+	if mode == Mode.PAUSE and CTL.back():
 		chosen.emit("resume")
 		return
 	if CTL.confirm():
@@ -93,12 +98,25 @@ func _draw() -> void:
 		draw_string(FONT_TEXT, Vector2(0.0, 288.0), sub, HORIZONTAL_ALIGNMENT_CENTER, size.x, 17, Color(INK, 0.6))
 
 	for i in labels.size():
-		var y := 366.0 + i * 52.0
+		var y := 366.0 + i * 68.0
 		var on := i == selected
 		if on:
 			draw_line(Vector2(size.x * 0.5 - 150.0, y + 10.0), Vector2(size.x * 0.5 + 150.0, y + 8.0), RED, 2.5)
 		draw_string(FONT_BOLD, Vector2(0.0, y), labels[i], HORIZONTAL_ALIGNMENT_CENTER, size.x, 26, INK if on else Color(INK, 0.5))
 
 	draw_string(FONT_TEXT, Vector2(0.0, size.y - 36.0),
-		L10N.t("ui.overlay.hint", [CTL.label_of("up"), CTL.label_of("down"), CTL.label_of("jump")]),
+		L10N.t("mobile.menu_hint") if CTL.touch_enabled else L10N.t("ui.overlay.hint", [CTL.label_of("up"), CTL.label_of("down"), CTL.label_of("jump")]),
 		HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, Color(INK, 0.5))
+
+
+func item_rect(i: int) -> Rect2:
+	return Rect2(size.x * 0.5 - 280.0, 330.0 + i * 68.0, 560.0, 64.0)
+
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		for i in actions.size():
+			if item_rect(i).has_point(event.position):
+				selected = i
+				chosen.emit(actions[i])
+				accept_event()

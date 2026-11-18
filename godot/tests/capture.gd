@@ -3,7 +3,13 @@ extends Node
 ## Снимает несколько кадров каркаса в PNG (для показа и для docs).
 ## Запуск: Godot --path godot tests/capture.tscn
 
-const DIR := "C:/Users/alexk/AppData/Local/Temp/opencode/"
+var output_dir := "user://captures/"
+
+func _init() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--output-dir="):
+			output_dir = arg.trim_prefix("--output-dir=").path_join("")
+	DirAccess.make_dir_recursive_absolute(output_dir)
 
 
 func _ready() -> void:
@@ -17,6 +23,8 @@ func _ready() -> void:
 	await _shot("skeleton-title")
 
 	flow.start_run(true)
+	# Keep the capture sequence alive while arranging combat shots.
+	flow.player.iframes = 9999.0
 	await _wait(2)
 	await _shot("skeleton-cutscene")
 	for i in 4:
@@ -99,5 +107,5 @@ func _wait(frames: int) -> void:
 func _shot(name: String) -> void:
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
-	img.save_png(DIR + name + ".png")
+	img.save_png(output_dir.path_join(name + ".png"))
 	print("SHOT ", name, " ", img.get_size())

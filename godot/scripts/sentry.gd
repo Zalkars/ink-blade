@@ -51,7 +51,7 @@ func fire(dx: float, dy: float) -> void:
 	const SPEED := 345.0
 	kx -= cos(a) * 14.0
 	ky -= sin(a) * 14.0
-	g.projectiles.append(InkBolt.new(g, cx() + cos(a) * 20.0, cy() + sin(a) * 20.0,
+	g.projectiles.append(LegacyInkBolt.new(g, cx() + cos(a) * 20.0, cy() + sin(a) * 20.0,
 		cos(a) * SPEED, sin(a) * SPEED))
 	InkFx.sparks(cx(), cy(), a, 8, InkR.RED_BRIGHT)
 	InkFx.ring(cx(), cy(), 8, 36, InkR.RED, 0.3, 2)

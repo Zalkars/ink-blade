@@ -29,8 +29,8 @@ const DEFAULT_KEYBOARD := {
 	"up": [KEY_W, KEY_UP],
 	"down": [KEY_S, KEY_DOWN],
 	"jump": [KEY_SPACE, KEY_Z],
-	"attack": [KEY_J, KEY_X],
-	"dash": [KEY_K, KEY_C, KEY_SHIFT],
+	"attack": [KEY_J, KEY_X, -1],
+	"dash": [KEY_K, KEY_C, KEY_SHIFT, -2],
 	"heal": [KEY_L, KEY_V],
 	"swap": [KEY_Q, KEY_TAB],
 	"pause": [KEY_ESCAPE],
@@ -69,6 +69,14 @@ const PAD_BUTTON_JOY := [0, 1, 2, 3, 9, 10, -1, -2, 4, 6, 7, 8, 11, 12, 13, 14]
 # -1 = левый триггер (ось 4), -2 = правый триггер (ось 5)
 
 const DEADZONE := 0.32
+
+var mouse_gameplay_enabled := true
+var pad_movement := "both"
+var pad_deadzone := 0.32
+var touch_style := "floating"
+var touch_opacity := 0.8
+# Normalized centers and individual scales, relative to the safe viewport.
+var touch_layout := {}
 
 var device := "keyboard"
 var disabled := false
@@ -115,6 +123,7 @@ func _ready() -> void:
 	for i in range(16):
 		pad_buttons.append(false)
 	reset_bindings()
+	load_controls()
 
 
 ## Сбрасывает назначения клавиш и кнопок к значениям по умолчанию.
@@ -156,10 +165,11 @@ func _key_used(code: int, except: String) -> bool:
 ## Esc зарезервирована за паузой и «назад» (выход из любого экрана) и не
 ## отдаётся другим действиям. Возвращает false, если назначить нельзя.
 func set_key(action: String, code: int) -> bool:
-	if not keyboard.has(action) or code <= 0:
+	if not keyboard.has(action) or code == 0 or code < -9:
 		return false
 	if code == KEY_ESCAPE and not (action in ["pause", "back"]):
 		return false
+	var before := keyboard.duplicate(true)
 	var old: Array = keyboard[action].duplicate()
 	for a in keyboard.keys():
 		if a == action:
@@ -172,6 +182,9 @@ func set_key(action: String, code: int) -> bool:
 			continue
 		var rest := arr.filter(func(k): return int(k) != code)
 		keyboard[a] = _spare_key(a, old, code) if rest.is_empty() else rest
+		if keyboard[a].is_empty():
+			keyboard = before
+			return false
 	var next: Array = [code]
 	# Esc навсегда остаётся клавишей паузы/назад, даже если их переназначили.
 	if action in ["pause", "back"] and code != KEY_ESCAPE:
@@ -182,7 +195,7 @@ func set_key(action: String, code: int) -> bool:
 
 ## Назначает кнопку геймпада (слот XInput) действию.
 func set_pad(action: String, slot: int) -> bool:
-	if not pad_map.has(action) or slot < 0 or slot >= PAD_LABELS.size():
+	if not pad_map.has(action) or slot < 0 or slot >= 12:
 		return false
 	# Движение на геймпаде всегда стик / D-pad.
 	if action in ["left", "right", "up", "down"]:
@@ -213,6 +226,8 @@ func slot_of_joy(button: int) -> int:
 
 
 func key_label(code: int) -> String:
+	if code < 0:
+		return L10N.t("controls.mouse") + " " + str(-code)
 	match code:
 		KEY_LEFT: return "←"
 		KEY_RIGHT: return "→"
@@ -283,7 +298,7 @@ func label_pad(a: String) -> String:
 	if a == "attack_up":
 		a = "down"
 	if a in ["left", "right", "up", "down"]:
-		return L10N.t("KEY_STICK")
+		return L10N.t("controls." + pad_movement)
 	var arr: Array = pad_map.get(a, [])
 	if arr.is_empty():
 		return "—"
@@ -378,7 +393,7 @@ func label_of(a: String) -> String:
 	if device == "touch":
 		var touch := {
 			"left": L10N.t("KEY_STICK"), "right": L10N.t("KEY_STICK"), "up": L10N.t("KEY_STICK"), "down": L10N.t("KEY_STICK"),
-			"jump": "A", "attack": "X", "dash": "B", "heal": "Y",
+			"jump": L10N.t("mobile.jump"), "attack": L10N.t("mobile.attack"), "dash": L10N.t("mobile.dash"), "swap": L10N.t("mobile.swap"), "heal": L10N.t("mobile.heal"),
 			"pause": "Ⅱ", "restart": "—", "help": "—", "hitboxes": "—", "mute": "—",
 			"fullscreen": "—", "screenshot": "—",
 		}
@@ -435,6 +450,8 @@ func _update_pad() -> void:
 ## Нажата ли клавиша: проверяем и логический, и физический код, чтобы
 ## назначения работали в любой раскладке.
 func _key_down(code: int) -> bool:
+	if code < 0:
+		return mouse_gameplay_enabled and Input.is_mouse_button_pressed(-code)
 	return Input.is_key_pressed(code) or Input.is_physical_key_pressed(code)
 
 
@@ -463,11 +480,18 @@ func update(dt: float) -> void:
 
 	var sx: float = pad_axes[0]
 	var sy: float = pad_axes[1]
-	sx = 0.0 if absf(sx) < DEADZONE else signf(sx) * ((absf(sx) - DEADZONE) / (1.0 - DEADZONE))
-	sy = 0.0 if absf(sy) < DEADZONE else signf(sy) * ((absf(sy) - DEADZONE) / (1.0 - DEADZONE))
+	sx = 0.0 if absf(sx) < pad_deadzone else signf(sx) * ((absf(sx) - pad_deadzone) / (1.0 - pad_deadzone))
+	sy = 0.0 if absf(sy) < pad_deadzone else signf(sy) * ((absf(sy) - pad_deadzone) / (1.0 - pad_deadzone))
 
 	var dpad_x: float = (1.0 if pad_buttons[15] else 0.0) - (1.0 if pad_buttons[14] else 0.0)
 	var dpad_y: float = (1.0 if pad_buttons[13] else 0.0) - (1.0 if pad_buttons[12] else 0.0)
+
+	if pad_movement == "dpad":
+		sx = 0.0
+		sy = 0.0
+	elif pad_movement == "stick":
+		dpad_x = 0.0
+		dpad_y = 0.0
 
 	# тач-зоны (двоичные) + плавающий стик (аналоговый)
 	var tpx: float = (1.0 if touch_down.get("right", false) else 0.0) \
@@ -529,8 +553,8 @@ func update(dt: float) -> void:
 		state[a] = d
 		edge[a] = d and not prev[a] or bool(_touch_edges.get(a, false))
 
-	# тач: удержание X/B = серия (автоочередь атаки/рывка)
-	for a in ["attack", "dash"]:
+	# Тач: удержание атаки = серия; рывок всегда один на нажатие.
+	for a in ["attack"]:
 		var held_touch: bool = touch_down.get(a, false)
 		var interval: float = 0.16 if a == "attack" else 0.25
 		if held_touch and edge[a]:
@@ -559,7 +583,10 @@ func update(dt: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
+	if event is InputEventMouseButton and event.pressed:
+		device = "keyboard"
+		SND.unlock()
+	elif event is InputEventKey and event.pressed and not event.echo:
 		device = "keyboard"
 		SND.unlock()
 	elif event is InputEventJoypadButton and event.pressed:
@@ -571,3 +598,78 @@ func _input(event: InputEvent) -> void:
 			return
 		device = "touch"
 		SND.unlock()
+
+
+## Сброс при паузе, сворачивании и смене экрана: отпускание может не прийти.
+func clear_touch() -> void:
+	for a in _touch_refs:
+		state[a] = false
+		prev[a] = false
+		edge[a] = false
+	touch_down.clear()
+	_touch_refs.clear()
+	_touch_edges.clear()
+	_hold_t.clear()
+	stick_end()
+	move_x = 0.0
+	move_y = 0.0
+
+
+## Read only validated values. Preserve other settings sections on write.
+func load_controls() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load("user://settings.cfg") != OK:
+		return
+	for action in ACTIONS:
+		var keys = cfg.get_value("bindings", "key_" + action, keyboard[action])
+		if keys is Array:
+			var valid := []
+			for code in keys:
+				if (code is int or code is float) and (int(code) > 0 or int(code) in [-1, -2, -3, -8, -9]):
+					if int(code) != KEY_ESCAPE or action in ["pause", "back"]:
+						valid.append(int(code))
+			if not valid.is_empty():
+				keyboard[action] = valid
+		var slots = cfg.get_value("bindings", "pad_" + action, pad_map[action])
+		if slots is Array:
+			var valid := []
+			for slot in slots:
+				if (slot is int or slot is float) and int(slot) >= 0 and int(slot) < 16:
+					valid.append(int(slot))
+			pad_map[action] = valid
+	for action in ["pause", "back"]:
+		if not keyboard[action].has(KEY_ESCAPE):
+			keyboard[action].append(KEY_ESCAPE)
+	if not pad_map.back.has(PAD_BACK_SLOT):
+		pad_map.back.append(PAD_BACK_SLOT)
+	pad_movement = str(cfg.get_value("controls", "pad_movement", "both"))
+	if pad_movement not in ["both", "stick", "dpad"]:
+		pad_movement = "both"
+	pad_deadzone = clampf(float(cfg.get_value("controls", "deadzone", 0.32)), 0.1, 0.6)
+	touch_style = str(cfg.get_value("controls", "touch_style", "floating"))
+	if touch_style not in ["floating", "stick", "dpad"]:
+		touch_style = "floating"
+	touch_opacity = clampf(float(cfg.get_value("controls", "opacity", 0.8)), 0.25, 1.0)
+	var layout = cfg.get_value("controls", "layout", {})
+	touch_layout.clear()
+	if layout is Dictionary:
+		for action in ["move", "jump", "attack", "dash", "swap", "heal", "pause"]:
+			var entry = layout.get(action, {})
+			if entry is Dictionary and entry.get("center") is Vector2:
+				var center: Vector2 = entry.center
+				if is_finite(center.x) and is_finite(center.y):
+					touch_layout[action] = {"center": center.clamp(Vector2.ZERO, Vector2.ONE), "scale": clampf(float(entry.get("scale", 1.0)), 0.65, 1.5)}
+
+
+func save_controls() -> Error:
+	var cfg := ConfigFile.new()
+	cfg.load("user://settings.cfg")
+	for action in ACTIONS:
+		cfg.set_value("bindings", "key_" + action, keyboard[action])
+		cfg.set_value("bindings", "pad_" + action, pad_map[action])
+	cfg.set_value("controls", "pad_movement", pad_movement)
+	cfg.set_value("controls", "deadzone", pad_deadzone)
+	cfg.set_value("controls", "touch_style", touch_style)
+	cfg.set_value("controls", "opacity", touch_opacity)
+	cfg.set_value("controls", "layout", touch_layout)
+	return cfg.save("user://settings.cfg")

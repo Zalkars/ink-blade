@@ -36,6 +36,8 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _done:
+		return
 	_t += delta
 	if not falling:
 		if _t >= TELEGRAPH:
@@ -43,8 +45,17 @@ func _physics_process(delta: float) -> void:
 			monitoring = true
 	else:
 		fall_speed = minf(fall_speed + GRAVITY * delta, MAX_FALL)
-		position.y += fall_speed * delta
-		if position.y >= floor_y:
+		var next := global_position + Vector2(0, fall_speed * delta)
+		var ray := PhysicsRayQueryParameters2D.create(global_position, next + Vector2(0, RADIUS), 1)
+		var ground := get_world_2d().direct_space_state.intersect_ray(ray)
+		if not ground.is_empty():
+			global_position = ground.position
+			CombatFx.surface(self, ground.position, ground.normal, 1.7)
+			_finish()
+			return
+		global_position = next
+		if position.y >= floor_y + 24.0:
+			CombatFx.floor_mark(self, global_position, 1.7)
 			_finish()
 			return
 	queue_redraw()
@@ -55,7 +66,9 @@ func _on_body_entered(body: Node2D) -> void:
 		return
 	if body is Player:
 		body.take_damage(damage, 1.0)
-		_finish()
+		CombatFx.burst(self, global_position, Vector2.UP, RED, 18)
+		_done = true
+		queue_free()
 
 
 func _finish() -> void:
@@ -73,6 +86,8 @@ func _draw() -> void:
 		draw_line(Vector2.ZERO, Vector2(0.0, floor_local), Color(RED, a), 1.5)
 		draw_circle(Vector2(0.0, 2.0), 4.0, Color(RED, a + 0.2))
 		return
+	for i in 4:
+		draw_circle(Vector2(sin(_t * 17 + i) * 2, -float(i + 1) * 10), 7.0 - i * 1.5, Color(INK, 0.4 - i * 0.08))
 	draw_circle(Vector2(0.0, -6.0), 6.0, Color(INK, 0.25))
 	draw_circle(Vector2.ZERO, RADIUS, INK)
 	draw_circle(Vector2(-3.0, -3.0), 3.0, Color(RED, 0.85))
