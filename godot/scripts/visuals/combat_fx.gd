@@ -15,6 +15,21 @@ var particles: Array[Dictionary] = []
 var _stains: Node2D
 var _dirty := false
 var _last_view := Transform2D.IDENTITY
+## Effect budgets use simulation time, so a stalled frame cannot schedule a burst storm.
+var mobile_quality := OS.has_feature("mobile")
+var _clock := 0.0
+var _ray_cursor := 0
+var _burst_times: Dictionary = {}
+var _coverage: Dictionary = {}
+var _rng := RandomNumberGenerator.new()
+var _terrain_polys: Array[PackedVector2Array] = []
+var _terrain_grid: Dictionary = {}
+var _terrain_ready := false
+var rays_last_tick := 0
+var deposits_last_tick := 0
+
+func _ready() -> void:
+	_rng.randomize()
 
 class StainsLayer extends Node2D:
 	var owner_fx: Node2D
@@ -42,13 +57,22 @@ static func layer(actor: Node) -> CombatFx:
 
 static func burst(actor: Node2D, point: Vector2, direction: Vector2, color := RED, count := 12) -> void:
 	var fx := layer(actor)
-	for i in count:
-		if fx.particles.size() >= MAX_PARTICLES:
-			fx.particles.pop_front()
-		var v := direction.normalized().rotated(randf_range(-1.35, 1.35)) * randf_range(95, 330)
-		fx.particles.append({"p": fx.to_local(point), "v": v,
-			"life": randf_range(0.65, 1.15), "size": randf_range(1.5, 5.5), "color": color,
-			"deposit": i % 3 == 0})
+	var cell := Vector2i((point / 32.0).floor())
+	var key := Vector3i(cell.x, cell.y, color.to_rgba32())
+	if fx._clock - float(fx._burst_times.get(key, -100.0)) < (0.11 if fx.mobile_quality else 0.075):
+		return
+	if fx._burst_times.size() > 128:
+		fx._burst_times.clear()
+	fx._burst_times[key] = fx._clock
+	var limit := 96 if fx.mobile_quality else MAX_PARTICLES
+	var amount := maxi(3, int(ceil(count * (0.65 if fx.mobile_quality else 1.0))))
+	# Pale wall chips and healing sparks are light, not physical black ink.
+	var ink := color.r < 0.75 and color.g < 0.5
+	for i in mini(amount, maxi(0, limit - fx.particles.size())):
+		var v := direction.normalized().rotated(fx._rng.randf_range(-1.35, 1.35)) * fx._rng.randf_range(95, 330)
+		fx.particles.append({"p": fx.to_local(point), "trace": fx.to_local(point), "v": v,
+			"life": fx._rng.randf_range(0.65, 1.15), "size": fx._rng.randf_range(1.5, 5.5), "color": color,
+			"deposit": ink and i % (4 if fx.mobile_quality else 3) == 0})
 	fx.queue_redraw()
 
 static func surface(actor: Node2D, point: Vector2, normal: Vector2, strength := 1.0) -> void:
@@ -57,6 +81,10 @@ static func surface(actor: Node2D, point: Vector2, normal: Vector2, strength := 
 	burst(actor, point + normal * 2.0, normal, INK, 24)
 
 func _deposit(point: Vector2, normal: Vector2, strength: float) -> void:
+	var cell := Vector2i((to_local(point) / 8.0).floor())
+	var key := Vector4i(cell.x, cell.y, int(round(normal.x)), int(round(normal.y)))
+	if float(_coverage.get(key, 0.0)) >= strength:
+		return
 	var footprint := PackedVector2Array()
 	var tangent := normal.orthogonal()
 	for i in 32:
@@ -75,7 +103,11 @@ func _deposit(point: Vector2, normal: Vector2, strength: float) -> void:
 				fragments.append(local)
 	if fragments.is_empty():
 		return
+	if _coverage.size() > MAX_MARKS * 2:
+		_coverage.clear()
+	_coverage[key] = strength
 	marks.append(_mark(fragments, 1.0))
+	deposits_last_tick += 1
 	if marks.size() > MAX_MARKS:
 		marks.pop_front()
 	_dirty = true
@@ -91,6 +123,10 @@ func _physics_process(delta: float) -> void:
 	var root := get_parent()
 	if root is Level and root.is_frozen():
 		return
+	_clock += delta
+	rays_last_tick = 0
+	deposits_last_tick = 0
+	var had_particles := not particles.is_empty()
 	var view := get_global_transform_with_canvas()
 	if view != _last_view:
 		_last_view = view
@@ -107,20 +143,37 @@ func _physics_process(delta: float) -> void:
 			particles.remove_at(i)
 			continue
 		p.v.y += 720.0 * delta
-		var next: Vector2 = p.p + p.v * delta
+		p.p += p.v * delta
+	# Round-robin sweeps preserve the segment since the last sample. A small fixed
+	# ray/deposit budget prevents simultaneous landings doing unbounded clipping.
+	var budget := 6 if mobile_quality else 12
+	var checked := 0
+	var index := _ray_cursor % maxi(1, particles.size())
+	while checked < particles.size() and rays_last_tick < budget and not particles.is_empty():
+		var p: Dictionary = particles[index]
+		checked += 1
 		if p.deposit:
-			var a := to_global(p.p)
-			var b := to_global(next)
+			var a := to_global(p.get("trace", p.p))
+			var b := to_global(p.p)
 			var ray := PhysicsRayQueryParameters2D.create(a, b, 9)
 			var hit := get_world_2d().direct_space_state.intersect_ray(ray)
+			rays_last_tick += 1
+			p.trace = p.p
 			if not hit.is_empty():
-				_deposit(hit.position, hit.normal, float(p.size) / 18.0)
-				particles.remove_at(i)
+				if deposits_last_tick < (2 if mobile_quality else 4):
+					_deposit(hit.position, hit.normal, float(p.size) / 18.0)
+				particles.remove_at(index)
+				if particles.is_empty():
+					break
+				index %= particles.size()
 				continue
-		p.p = next
+		index = (index + 1) % particles.size()
+	_ray_cursor = index
+
 	if drying:
 		_redraw_stains()
-	queue_redraw()
+	if had_particles:
+		queue_redraw()
 	if _dirty:
 		_dirty = false
 		persistent_marks_changed.emit()
@@ -130,24 +183,42 @@ func _redraw_stains() -> void:
 		_stains.queue_redraw()
 
 func _draw() -> void:
+	# The mobile trail batch replaces up to 96 antialiased line commands with a
+	# handful of material/width groups. Droplet heads still retain their shape.
+	var trails: Dictionary = {}
 	for p in particles:
 		var col := Color(p.color, minf(1.0, p.life * 4.0))
-		draw_line(p.p - p.v * 0.026, p.p, col, p.size, true)
+		if mobile_quality:
+			var width := 2.0 if p.size < 3.0 else 4.0
+			var key := Vector2i(Color(p.color).to_rgba32(), int(width))
+			if not trails.has(key):
+				trails[key] = {"points": PackedVector2Array(), "color": Color(p.color), "width": width}
+			var batch: Dictionary = trails[key]
+			batch.points.append(p.p - p.v * 0.026)
+			batch.points.append(p.p)
+		else:
+			draw_line(p.p - p.v * 0.026, p.p, col, p.size, true)
 		draw_circle(p.p, p.size * 0.62, col)
 		if p.size > 4.0:
 			draw_circle(p.p - Vector2(0.8, 1.2), 0.85, Color(0.94, 0.89, 0.78, col.a * 0.55))
+	for batch in trails.values():
+		draw_multiline(batch.points, Color(batch.color, 0.7), batch.width, false)
 
 static func terrain_polygons(actor: Node2D, area: Rect2) -> Array[PackedVector2Array]:
 	var fx := actor as CombatFx if actor is CombatFx else layer(actor)
 	var root := fx.get_parent()
 	var result: Array[PackedVector2Array] = []
 	if root is Level and not root.data.is_empty():
-		for spec in root.data.get("solids", []) + root.data.get("one_ways", []):
-			var r: Rect2 = root._rect_of(spec)
-			var tile := float(InkTileset.SIZE)
-			r = Rect2((r.position / tile).round() * tile, (r.end / tile).round() * tile - (r.position / tile).round() * tile)
-			if r.intersects(Rect2(root.to_local(area.position), area.size)):
-				result.append(PackedVector2Array([root.to_global(r.position), root.to_global(Vector2(r.end.x, r.position.y)), root.to_global(r.end), root.to_global(Vector2(r.position.x, r.end.y))]))
+		fx._ensure_terrain_cache()
+		var seen: Dictionary = {}
+		var begin := Vector2i((area.position / 256.0).floor())
+		var end := Vector2i((area.end / 256.0).floor())
+		for x in range(begin.x, end.x + 1):
+			for y in range(begin.y, end.y + 1):
+				for index in fx._terrain_grid.get(Vector2i(x,y), []):
+					if not seen.has(index):
+						seen[index] = true
+						result.append(fx._terrain_polys[index])
 	else:
 		for body in root.get_children():
 			if body is StaticBody2D:
@@ -156,6 +227,28 @@ static func terrain_polygons(actor: Node2D, area: Rect2) -> Array[PackedVector2A
 						var half: Vector2 = child.shape.size * 0.5
 						result.append(PackedVector2Array([child.to_global(-half), child.to_global(Vector2(half.x, -half.y)), child.to_global(half), child.to_global(Vector2(-half.x, half.y))]))
 	return result
+
+func _ensure_terrain_cache() -> void:
+	if _terrain_ready:
+		return
+	_terrain_ready = true
+	var root := get_parent() as Level
+	for spec in root.data.get("solids", []) + root.data.get("one_ways", []):
+		var r: Rect2 = root._rect_of(spec)
+		var tile := float(InkTileset.SIZE)
+		r = Rect2((r.position / tile).round() * tile, (r.end / tile).round() * tile - (r.position / tile).round() * tile)
+		var polygon := PackedVector2Array([root.to_global(r.position), root.to_global(Vector2(r.end.x,r.position.y)), root.to_global(r.end), root.to_global(Vector2(r.position.x,r.end.y))])
+		var index := _terrain_polys.size()
+		_terrain_polys.append(polygon)
+		var bounds := _bounds([polygon])
+		var begin := Vector2i((bounds.position / 256.0).floor())
+		var end := Vector2i((bounds.end / 256.0).floor())
+		for x in range(begin.x, end.x + 1):
+			for y in range(begin.y, end.y + 1):
+				var key := Vector2i(x,y)
+				if not _terrain_grid.has(key):
+					_terrain_grid[key] = []
+				_terrain_grid[key].append(index)
 
 static func _bounds(fragments: Array) -> Rect2:
 	var result := Rect2()
@@ -189,6 +282,8 @@ static func _mark(fragments: Array[PackedVector2Array], wet: float) -> Dictionar
 func restore_state(data) -> void:
 	marks.clear()
 	particles.clear()
+	_coverage.clear()
+	_burst_times.clear()
 	_dirty = false
 	if not data is Array:
 		_redraw_stains()

@@ -122,7 +122,7 @@ func _ready() -> void:
 	check(fx.particles.is_empty() and fx.marks.size() == 3, "stains persist after particles expire")
 	for i in CombatFx.MAX_MARKS + 5:
 		CombatFx.surface(player, Vector2(100 + i % 200, 320), Vector2.UP)
-	check(fx.marks.size() == CombatFx.MAX_MARKS and fx.particles.size() <= CombatFx.MAX_PARTICLES,
+	check(fx.marks.size() > 3 and fx.marks.size() <= CombatFx.MAX_MARKS and fx.particles.size() <= CombatFx.MAX_PARTICLES,
 		"effect storage is bounded")
 	var weak_fx: WeakRef = weakref(fx)
 	room.queue_free()

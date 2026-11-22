@@ -40,15 +40,19 @@ func _ready() -> void:
 	await frames(12)
 	await shot("title")
 	flow._on_start_pressed()
-	check(flow.state == flow.State.GUIDE and get_tree().paused, "new story opens single guide")
+	check(flow.state == flow.State.CUTSCENE, "new story starts intro")
+	while flow.cutscene.visible:
+		flow.cutscene.advance()
+	var guided_level = flow.level
+	check(flow.state == flow.State.GUIDE and get_tree().paused and flow.hud.visible, "guide overlays actual game after intro")
 	await frames(45)
 	await shot("controls-guide")
 	await tap(KEY_SPACE)
-	check(flow.state == flow.State.CUTSCENE and not flow.control_guide.visible, "guide keyboard dismissal starts intro")
-	while flow.cutscene.visible:
-		flow.cutscene.advance()
+	check(flow.control_guide.visible and flow.control_guide.step == 1, "Space advances one demonstration step")
+	await frames(30)
+	await tap(KEY_ESCAPE)
 	await frames()
-	check(flow.state == flow.State.PLAY, "intro enters gameplay without another guide")
+	check(flow.state == flow.State.PLAY and flow.level == guided_level, "Skip resumes the demonstrated world")
 	for enemy in flow.level.enemies:
 		enemy.set_physics_process(false)
 	flow.player.iframes = 0

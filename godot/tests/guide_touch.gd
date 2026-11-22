@@ -24,7 +24,7 @@ func _ready() -> void:
 	guide.dismissed.connect(func(): dismissals += 1)
 	guide.open()
 	var point: Vector2 = guide._button.get_global_rect().get_center()
-	check(guide._button.size == Vector2(290, 52) and point.y > 500, "button geometry exists before drawing")
+	check(guide._button.size.x > 0 and guide._button.size.y > 0 and guide.get_global_rect().has_point(point), "button geometry exists before drawing")
 	touch(0, point, true)
 	await get_tree().create_timer(0.4).timeout
 	touch(0, point, false)
@@ -43,15 +43,25 @@ func _ready() -> void:
 	touch(1, point, false)
 	check(guide.visible, "another finger cannot finish a tap")
 	touch(0, point, false)
-	check(not guide.visible and dismissals == 1, "touch release inside dismisses once without mouse emulation")
+	check(guide.visible and guide.step == 1 and dismissals == 0, "touch release inside advances one step without mouse emulation")
+	await get_tree().create_timer(0.25).timeout
+	point = guide._skip.get_global_rect().get_center()
+	touch(0, point, true)
+	touch(0, point, false)
+	check(not guide.visible and dismissals == 1, "explicit skip dismisses guide")
 	guide.open()
 	get_window().size = Vector2i(1600, 720)
 	await get_tree().create_timer(0.4).timeout
 	point = guide._button.get_global_rect().get_center()
-	check(absf(point.x - guide.size.x * 0.5) < 1, "resize updates hit area without drawing")
+	check(guide.get_global_rect().encloses(guide._button.get_global_rect()), "resize keeps button hit area inside overlay without drawing")
 	touch(0, point, true)
 	touch(0, point, false)
-	check(not guide.visible and dismissals == 2, "tap works after resize")
+	check(guide.visible and guide.step == 1, "Next tap works after resize")
+	await get_tree().create_timer(0.25).timeout
+	point = guide._skip.get_global_rect().get_center()
+	touch(0, point, true)
+	touch(0, point, false)
+	check(not guide.visible and dismissals == 2, "Skip tap works after resize")
 	guide.queue_free()
 	await get_tree().process_frame
 	print("GUIDE_TOUCH_RESULT=%s" % ("OK" if failures == 0 else "FAIL"))

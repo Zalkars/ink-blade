@@ -60,6 +60,7 @@ var _ink_dirty := false
 var _ink_save_delay := 0.0
 var _skip_loaded_checkpoint_heal := false
 var _loaded_spawn := Vector2.ZERO
+var _guide_pending := false
 
 ## Статистика забега и комбо для HUD и оверлеев (как в 0.2).
 var run_time := 0.0
@@ -157,6 +158,7 @@ func _build_stage() -> void:
 	settings.flow = self
 	ui.add_child(settings)
 	control_guide = CONTROL_GUIDE_SCENE.instantiate()
+	control_guide.flow = self
 	ui.add_child(control_guide)
 	control_guide.dismissed.connect(_on_control_guide_dismissed)
 	if mobile_controls.visible:
@@ -193,6 +195,9 @@ func _physics_process(delta: float) -> void:
 		var shake := InkFx.shake_offset() if shake_enabled else Vector3.ZERO
 		camera.offset = Vector2(shake.x, shake.y)
 		camera.rotation = shake.z
+	elif state == State.GUIDE:
+		# The world is paused, but the spawn flash must not wash out its demonstration.
+		InkFx.update(delta)
 	_handle_global()
 
 	# Кадр открытия/закрытия консоли не должен заодно ставить игру на паузу.
@@ -383,6 +388,7 @@ func save_to_slot(slot: String) -> bool:
 
 
 func _start_level(save: Dictionary, with_intro := false) -> void:
+	_guide_pending = false
 	control_guide.visible = false
 	CTL.clear_touch()
 	get_tree().paused = false
@@ -589,31 +595,47 @@ func _on_start_pressed() -> void:
 	start_new_story()
 
 
-## A single, explicit controls page before a new story; never during Continue/respawn.
+## Explain controls on the loaded game screen after the opening story.
 func start_new_story() -> void:
 	if is_instance_valid(level) and is_instance_valid(player):
 		_autosave(_finale_pending or state == State.CLEARED)
 	CTL.clear_touch()
 	for action in ["jump", "attack", "back", "pause", "restart"]:
 		CTL.consume(action)
-	title_screen.visible = false
-	hud.visible = false
-	overlay.close()
-	cutscene.close()
-	dialogue.close()
-	_clear_level()
+	start_run(true)
+	_guide_pending = true
+	if state == State.PLAY:
+		_open_control_guide()
+
+
+func _open_control_guide() -> void:
+	_guide_pending = false
+	CTL.clear_touch()
+	for action in ["jump", "attack", "back", "pause", "restart"]:
+		CTL.consume(action)
 	state = State.GUIDE
 	get_tree().paused = true
+	hud.visible = true
+	InkFx.flash = 0.0
+	if is_instance_valid(player) and player._visual != null:
+		# Intro can pause before the first idle update; initialise the world-space art.
+		player._process(0.0)
+		# Draw a clear static example while retaining actual spawn invulnerability.
+		player._visual.iframes = 0.0
 	control_guide.open()
 
 
 func _on_control_guide_dismissed() -> void:
 	for action in ["jump", "attack", "back", "pause"]:
 		CTL.consume(action)
-	start_run(true)
+	CTL.clear_touch()
+	state = State.PLAY
+	get_tree().paused = false
+	hud.visible = true
 
 
 func _show_title() -> void:
+	_guide_pending = false
 	if is_instance_valid(level) and is_instance_valid(player):
 		_autosave(_finale_pending or state == State.CLEARED)
 	CTL.clear_touch()
@@ -742,6 +764,9 @@ func _on_cutscene_finished() -> void:
 		_finale_seen = true
 		_autosave(true)
 		_show_cleared()
+		return
+	if _guide_pending:
+		_open_control_guide()
 		return
 	state = State.PLAY
 	get_tree().paused = false

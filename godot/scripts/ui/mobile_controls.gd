@@ -155,6 +155,9 @@ func in_move_zone(pos: Vector2) -> bool:
 
 
 func _input(event: InputEvent) -> void:
+	# The guide highlights the actual controls but owns every tutorial tap.
+	if flow.state == flow.State.GUIDE:
+		return
 	if flow.console.visible:
 		return
 	if editing:
@@ -331,7 +334,7 @@ func _ink_disc(c: Vector2, radius: float, fill: Color, edge: Color) -> void:
 
 
 func _draw() -> void:
-	if (flow.state != flow.State.PLAY and not editing) or flow.console.visible or hidden():
+	if (flow.state not in [flow.State.PLAY, flow.State.GUIDE] and not editing) or flow.console.visible or hidden():
 		return
 	if editing:
 		draw_rect(Rect2(Vector2.ZERO, size), PAPER)

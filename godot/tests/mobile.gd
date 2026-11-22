@@ -49,9 +49,6 @@ func _ready() -> void:
 	touch(0, Vector2(360, 458), false)
 	check(flow.state == flow.State.TITLE, "menu drag canceled")
 	tap(Vector2(160, 458))
-	check(flow.state == flow.State.GUIDE, "tap Play opens the single controls guide")
-	await frames(45)
-	tap(flow.control_guide._button.get_global_rect().get_center())
 	check(flow.state == flow.State.CUTSCENE, "tap Play opens intro")
 	await frames()
 	var index: int = flow.cutscene.index
@@ -59,6 +56,14 @@ func _ready() -> void:
 	check(flow.cutscene.index == index + 1, "tap advances intro")
 	while flow.cutscene.visible:
 		flow.cutscene.advance()
+	check(flow.state == flow.State.GUIDE and flow.level != null and flow.player != null and flow.hud.visible,
+		"guide opens over loaded game with HUD after intro")
+	await frames(45)
+	tap(flow.control_guide._button.get_global_rect().get_center())
+	check(flow.control_guide.visible and flow.control_guide.step == 1, "guide Next shows actual jump control without restarting game")
+	await frames(30)
+	tap(flow.control_guide._skip.get_global_rect().get_center())
+	check(flow.state == flow.State.PLAY and not flow.control_guide.visible, "guide Skip enters same game")
 	await frames()
 	flow.player.iframes = 9999.0
 	await frames(80)

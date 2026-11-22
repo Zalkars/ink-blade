@@ -46,14 +46,17 @@ static func draw_backdrop(cv: CanvasItem, cam_x: float, vp_w: float, vp_h: float
 		InkR.srand(3)
 		InkR.circle(sx, 168.0, 106.0, InkR.rgba(156, 33, 41, 18), InkR.rgba(156, 33, 41, 110), 2.0, 1.0, 1.4, 36)
 		InkR.circle(sx - 15.0, 160.0, 88.0, PAPER, InkR.rgba(23, 19, 15, 100), 2.0, 1.0, 1.1, 32)
-		_draw_parallax_ridge(cv, x0, bw, vp_h, 490.0, 62.0, RIDGE_FAR, cam_x * 0.14, 0.004, 0.0)
-		_draw_parallax_ridge(cv, x0, bw, vp_h, 590.0, 48.0, RIDGE_MID, cam_x * 0.23, 0.006, 1.4)
+	# The sky is continuous: interior landmarks change, not the distant landscape.
+	_draw_parallax_ridge(cv, x0, bw, vp_h, 490.0, 62.0, RIDGE_FAR, cam_x * 0.14, 0.004, 0.0)
+	_draw_parallax_ridge(cv, x0, bw, vp_h, 590.0, 48.0, RIDGE_MID, cam_x * 0.23, 0.006, 1.4)
 
 
 static func _draw_parallax_ridge(cv: CanvasItem, x0: float, w: float, h: float, base_y: float, amp: float, col: Color, scroll: float, freq: float, phase: float) -> void:
 	var pts := PackedVector2Array()
 	var step := 48.0
-	var x := x0 - step
+	# Anchor sampling in world space so the silhouette does not re-tessellate
+	# every time the camera moves a fraction of a pixel.
+	var x := floorf(x0 / step) * step - step
 	while x <= x0 + w + step:
 		var wx := x - scroll
 		var y := base_y - sin(wx * freq + phase) * amp - sin(wx * (freq * 2.3) + 1.7) * amp * 0.35
@@ -293,6 +296,9 @@ static func draw_surface(rect: Rect2, one_way: bool, bounds: Rect2, solids: Arra
 	if sz.x <= 0.0 or sz.y <= 0.0:
 		return
 	if sz.y >= 96.0 and end.y >= bounds.end.y:
+		# The historical gradient is translucent ink on paper, not solid ground.
+		# Supply its original paper backing before compositing the unchanged wash.
+		InkR.fill_rect_color(start.x, start.y, sz.x, sz.y, PAPER, 1.0)
 		InkR.fill_rect_gradient(start.x, start.y, sz.x, sz.y, InkR.tex_floor_grad)
 		InkR.line(start.x, start.y, end.x, start.y, 4.5, InkR.INK, 1.0, 0.8)
 		InkR.line(start.x + 3.0, start.y + 6.0, end.x - 3.0, start.y + 6.0,

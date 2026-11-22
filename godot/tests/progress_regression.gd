@@ -254,10 +254,14 @@ func _ready() -> void:
 	flow.title_screen.activate(0)
 	flow.title_screen.input_guard = 0.0
 	flow.title_screen.activate(flow.title_screen.actions.find("confirm_new"))
-	check(not flow.title_screen.visible and flow.state == flow.State.GUIDE, "explicit overwrite choice opens the single controls guide")
+	check(not flow.title_screen.visible and flow.state == flow.State.CUTSCENE, "explicit overwrite choice starts new intro")
+	while flow.cutscene.visible:
+		flow.cutscene.advance()
+	var guided_level = flow.level
+	check(flow.state == flow.State.GUIDE and flow.hud.visible and guided_level != null, "controls guide overlays the actual loaded level")
 	flow.control_guide._guard = 0.0
 	flow.control_guide.dismiss()
-	check(flow.state == flow.State.CUTSCENE and not flow.control_guide.visible, "guide dismissal starts intro without reopening guide")
+	check(flow.state == flow.State.PLAY and flow.level == guided_level and not flow.control_guide.visible, "guide dismissal resumes same level without another intro")
 	check(FileAccess.file_exists("user://saves/auto.json.bak"), "backup preserved on overwrite")
 
 	# M1: Manual save slot save, summary, and load.

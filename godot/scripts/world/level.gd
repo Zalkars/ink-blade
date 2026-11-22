@@ -74,8 +74,10 @@ class _FallbackLayer extends Node2D:
 	var owner_level: Level
 
 	func _process(_delta: float) -> void:
-		if is_instance_valid(owner_level) and not owner_level._all_strips_baked():
-			queue_redraw()
+		if is_instance_valid(owner_level):
+			visible = not owner_level._all_strips_baked()
+			if visible:
+				queue_redraw()
 
 	func _draw() -> void:
 		if not is_instance_valid(owner_level):
@@ -89,7 +91,6 @@ class _FallbackLayer extends Node2D:
 		InkR.init_static()
 		InkR.set_canvas(self)
 		InkR.begin_frame(0.0)
-		var drawn := false
 		for i in total:
 			if owner_level._baked_strips.has(i):
 				continue
@@ -97,7 +98,6 @@ class _FallbackLayer extends Node2D:
 			var sx1 := sx0 + LevelDecor.STRIP_W
 			if sx1 < vx0 or sx0 > vx1:
 				continue
-			drawn = true
 			for spec in owner_level.data.get("solids", []):
 				var r := owner_level._rect_of(spec)
 				if r.end.x >= sx0 - 32.0 and r.position.x <= sx1 + 32.0:
@@ -106,8 +106,6 @@ class _FallbackLayer extends Node2D:
 				var r := owner_level._rect_of(spec)
 				if r.end.x >= sx0 - 32.0 and r.position.x <= sx1 + 32.0:
 					LevelDecor.draw_surface(r, true, owner_level.bounds)
-		if not drawn:
-			visible = false
 
 
 class _DynamicDecorLayer extends Node2D:
