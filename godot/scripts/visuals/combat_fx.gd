@@ -1,13 +1,26 @@
 class_name CombatFx
 extends Node2D
 
-## Level-owned ink: bounded storage, no collision, discarded with the room.
+## Cosmetic ink belongs to the level. Saved polygons never become colliders.
+signal persistent_marks_changed
 const INK := Color("#17130f")
 const RED := Color("#9c1f24")
-const MAX_MARKS := 160
+const MAX_MARKS := 1024
 const MAX_PARTICLES := 240
+const MAX_FRAGMENTS := 16
+const MAX_VERTICES := 96
+static var _base64_regex := RegEx.create_from_string("^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$")
 var marks: Array[Dictionary] = []
 var particles: Array[Dictionary] = []
+var _stains: Node2D
+var _dirty := false
+var _last_view := Transform2D.IDENTITY
+
+class StainsLayer extends Node2D:
+	var owner_fx: Node2D
+	func _draw() -> void:
+		if is_instance_valid(owner_fx):
+			owner_fx.draw_terrain(self)
 
 static func layer(actor: Node) -> CombatFx:
 	var root := actor.get_parent()
@@ -19,6 +32,12 @@ static func layer(actor: Node) -> CombatFx:
 		fx.name = "CombatInk"
 		fx.z_index = 2
 		root.add_child(fx)
+		var stains := StainsLayer.new()
+		stains.name = "CombatStains"
+		stains.z_index = -1
+		stains.owner_fx = fx
+		root.add_child(stains)
+		fx._stains = stains
 	return fx
 
 static func burst(actor: Node2D, point: Vector2, direction: Vector2, color := RED, count := 12) -> void:
@@ -26,86 +45,224 @@ static func burst(actor: Node2D, point: Vector2, direction: Vector2, color := RE
 	for i in count:
 		if fx.particles.size() >= MAX_PARTICLES:
 			fx.particles.pop_front()
-		var v := direction.normalized().rotated(randf_range(-1.2, 1.2)) * randf_range(70, 240)
+		var v := direction.normalized().rotated(randf_range(-1.35, 1.35)) * randf_range(95, 330)
 		fx.particles.append({"p": fx.to_local(point), "v": v,
-			"life": randf_range(0.2, 0.48), "size": randf_range(1.5, 4.5), "color": color})
+			"life": randf_range(0.65, 1.15), "size": randf_range(1.5, 5.5), "color": color,
+			"deposit": i % 3 == 0})
 	fx.queue_redraw()
 
 static func surface(actor: Node2D, point: Vector2, normal: Vector2, strength := 1.0) -> void:
 	var fx := layer(actor)
-	var tangent := normal.orthogonal()
-	# Ink seeps inward from the contact edge. Never paint free space.
+	fx._deposit(point, normal, clampf(strength, 0.1, 3.0))
+	burst(actor, point + normal * 2.0, normal, INK, 24)
+
+func _deposit(point: Vector2, normal: Vector2, strength: float) -> void:
 	var footprint := PackedVector2Array()
+	var tangent := normal.orthogonal()
 	for i in 32:
 		var angle := TAU * float(i) / 32.0
-		var edge := 1.0 + sin(angle * 5 + point.x) * 0.12 + cos(angle * 9) * 0.07
-		footprint.append(point - normal * 13 * strength + (tangent * cos(angle) * 34 - normal * sin(angle) * 21) * strength * edge)
+		var edge := 1.0 + sin(angle * 5.0 + point.x) * 0.16 + cos(angle * 9.0) * 0.09
+		footprint.append(point - normal * 11.0 * strength + (tangent * cos(angle) * 34.0 - normal * sin(angle) * 24.0) * strength * edge)
+	var area := Rect2(point - Vector2.ONE * 72.0 * strength, Vector2.ONE * 144.0 * strength)
 	var fragments: Array[PackedVector2Array] = []
-	var area := Rect2(point - Vector2.ONE * 64 * strength, Vector2.ONE * 128 * strength)
-	for terrain in terrain_polygons(actor, area):
+	for terrain in terrain_polygons(self, area):
 		for clipped in Geometry2D.intersect_polygons(footprint, terrain):
 			var local := PackedVector2Array()
 			for vertex in clipped:
-				local.append(fx.to_local(vertex))
-			if local.size() >= 3:
+				var v := to_local(vertex)
+				local.append(Vector2(snappedf(v.x, 0.01), snappedf(v.y, 0.01)))
+			if local.size() >= 3 and not Geometry2D.triangulate_polygon(local).is_empty():
 				fragments.append(local)
-	fx.marks.append({"fragments": fragments})
-	fx.get_parent().queue_redraw()
-	if fx.marks.size() > MAX_MARKS:
-		fx.marks.pop_front()
-	burst(actor, point, normal, INK, 16)
+	if fragments.is_empty():
+		return
+	marks.append(_mark(fragments, 1.0))
+	if marks.size() > MAX_MARKS:
+		marks.pop_front()
+	_dirty = true
+	_redraw_stains()
 
 static func floor_mark(actor: Node2D, point: Vector2, strength := 1.0) -> void:
-	var ray := PhysicsRayQueryParameters2D.create(point - Vector2(0, 8), point + Vector2(0, 90), 1)
+	var ray := PhysicsRayQueryParameters2D.create(point - Vector2(0, 8), point + Vector2(0, 90), 9)
 	var hit := actor.get_world_2d().direct_space_state.intersect_ray(ray)
 	if not hit.is_empty():
 		surface(actor, hit.position, hit.normal, strength)
 
-func _process(delta: float) -> void:
-	if particles.is_empty():
+func _physics_process(delta: float) -> void:
+	var root := get_parent()
+	if root is Level and root.is_frozen():
 		return
+	var view := get_global_transform_with_canvas()
+	if view != _last_view:
+		_last_view = view
+		_redraw_stains()
+	var drying := false
+	for mark in marks:
+		if mark.wet > 0.0:
+			mark.wet = maxf(0.0, mark.wet - delta)
+			drying = true
 	for i in range(particles.size() - 1, -1, -1):
 		var p: Dictionary = particles[i]
 		p.life -= delta
-		if p.life <= 0:
+		if p.life <= 0.0:
 			particles.remove_at(i)
 			continue
-		p.v.y += 500.0 * delta
-		p.p += p.v * delta
+		p.v.y += 720.0 * delta
+		var next: Vector2 = p.p + p.v * delta
+		if p.deposit:
+			var a := to_global(p.p)
+			var b := to_global(next)
+			var ray := PhysicsRayQueryParameters2D.create(a, b, 9)
+			var hit := get_world_2d().direct_space_state.intersect_ray(ray)
+			if not hit.is_empty():
+				_deposit(hit.position, hit.normal, float(p.size) / 18.0)
+				particles.remove_at(i)
+				continue
+		p.p = next
+	if drying:
+		_redraw_stains()
 	queue_redraw()
+	if _dirty:
+		_dirty = false
+		persistent_marks_changed.emit()
+
+func _redraw_stains() -> void:
+	if is_instance_valid(_stains):
+		_stains.queue_redraw()
 
 func _draw() -> void:
 	for p in particles:
-		var col := Color(p.color, minf(1.0, p.life * 5.0))
-		draw_line(p.p - p.v * 0.018, p.p, col, p.size, true)
-
+		var col := Color(p.color, minf(1.0, p.life * 4.0))
+		draw_line(p.p - p.v * 0.026, p.p, col, p.size, true)
+		draw_circle(p.p, p.size * 0.62, col)
+		if p.size > 4.0:
+			draw_circle(p.p - Vector2(0.8, 1.2), 0.85, Color(0.94, 0.89, 0.78, col.a * 0.55))
 
 static func terrain_polygons(actor: Node2D, area: Rect2) -> Array[PackedVector2Array]:
-	var root := layer(actor).get_parent()
+	var fx := actor as CombatFx if actor is CombatFx else layer(actor)
+	var root := fx.get_parent()
 	var result: Array[PackedVector2Array] = []
 	if root is Level and not root.data.is_empty():
 		for spec in root.data.get("solids", []) + root.data.get("one_ways", []):
 			var r: Rect2 = root._rect_of(spec)
 			var tile := float(InkTileset.SIZE)
 			r = Rect2((r.position / tile).round() * tile, (r.end / tile).round() * tile - (r.position / tile).round() * tile)
-			var polygon := PackedVector2Array([root.to_global(r.position), root.to_global(Vector2(r.end.x, r.position.y)), root.to_global(r.end), root.to_global(Vector2(r.position.x, r.end.y))])
 			if r.intersects(Rect2(root.to_local(area.position), area.size)):
-				result.append(polygon)
+				result.append(PackedVector2Array([root.to_global(r.position), root.to_global(Vector2(r.end.x, r.position.y)), root.to_global(r.end), root.to_global(Vector2(r.position.x, r.end.y))]))
 	else:
-		# Synthetic rooms and standalone geometry use actual collider shapes.
 		for body in root.get_children():
 			if body is StaticBody2D:
 				for child in body.get_children():
 					if child is CollisionShape2D and child.shape is RectangleShape2D:
 						var half: Vector2 = child.shape.size * 0.5
-						result.append(PackedVector2Array([child.to_global(-half), child.to_global(Vector2(half.x,-half.y)), child.to_global(half), child.to_global(Vector2(-half.x,half.y))]))
+						result.append(PackedVector2Array([child.to_global(-half), child.to_global(Vector2(half.x, -half.y)), child.to_global(half), child.to_global(Vector2(-half.x, half.y))]))
 	return result
 
-func draw_terrain(canvas: Node2D) -> void:
+static func _bounds(fragments: Array) -> Rect2:
+	var result := Rect2()
+	var first := true
+	for polygon in fragments:
+		for vertex in polygon:
+			if first:
+				result = Rect2(vertex, Vector2.ZERO)
+				first = false
+			else:
+				result = result.expand(vertex)
+	return result
+
+## JSON-safe level-local polygons; v permits independent future ink migrations.
+func export_state() -> Array:
+	var result: Array = []
 	for mark in marks:
-		for fragment in mark.fragments:
-			var polygon := PackedVector2Array()
-			for vertex in fragment:
-				polygon.append(canvas.to_local(to_global(vertex)))
-			# Thin edge plus translucent soaking keeps the relief texture visible.
-			canvas.draw_colored_polygon(polygon, Color(INK, 0.7))
+		result.append(mark.saved)
+	return result
+
+static func _mark(fragments: Array[PackedVector2Array], wet: float) -> Dictionary:
+	var encoded: Array = []
+	var triangles: Array[PackedInt32Array] = []
+	for polygon in fragments:
+		# Cached float32 bytes keep autosave JSON away from thousands of numeric arrays.
+		encoded.append(Marshalls.raw_to_base64(polygon.to_byte_array()))
+		triangles.append(Geometry2D.triangulate_polygon(polygon))
+	return {"fragments": fragments, "triangles": triangles, "bounds": _bounds(fragments), "wet": wet,
+		"saved": {"v": 2, "fragments": encoded}}
+
+func restore_state(data) -> void:
+	marks.clear()
+	particles.clear()
+	_dirty = false
+	if not data is Array:
+		_redraw_stains()
+		return
+	for record in data.slice(maxi(0, data.size() - MAX_MARKS)):
+		if not record is Dictionary or (record.get("v", 0) != 1 and record.get("v", 0) != 2) or not record.get("fragments") is Array:
+			continue
+		var fragments: Array[PackedVector2Array] = []
+		for points in record.fragments.slice(0, MAX_FRAGMENTS):
+			var polygon := _decode_polygon(points, int(record.v))
+			if polygon.size() >= 3 and not Geometry2D.triangulate_polygon(polygon).is_empty():
+				fragments.append_array(_restore_terrain_fragment(polygon))
+		if not fragments.is_empty():
+			marks.append(_mark(fragments, 0.0))
+	_redraw_stains()
+
+## Reclip old saved decor marks and marks affected by level layout changes.
+## Only physical terrain receives ink; background and columns stay clean.
+func _restore_terrain_fragment(polygon: PackedVector2Array) -> Array[PackedVector2Array]:
+	var world := PackedVector2Array()
+	for point in polygon:
+		world.append(to_global(point))
+	var surfaces := terrain_polygons(self, _bounds([world]).grow(0.1))
+	for surface_polygon in surfaces:
+		var contained := true
+		for point in world:
+			if not Geometry2D.is_point_in_polygon(point, surface_polygon):
+				contained = false
+				break
+		if contained:
+			return [polygon]
+	var result: Array[PackedVector2Array] = []
+	for surface_polygon in surfaces:
+		for fragment in Geometry2D.intersect_polygons(world, surface_polygon):
+			var local := PackedVector2Array()
+			for point in fragment:
+				local.append(to_local(point))
+			if local.size() >= 3 and not Geometry2D.triangulate_polygon(local).is_empty():
+				result.append(local)
+	return result
+
+static func _decode_polygon(points, version: int) -> PackedVector2Array:
+	var polygon := PackedVector2Array()
+	if version == 2:
+		if not points is String or points.length() < 32 or points.length() > MAX_VERTICES * 12 or _base64_regex.search(points) == null:
+			return polygon
+		var raw := Marshalls.base64_to_raw(points)
+		if raw.size() < 24 or raw.size() > MAX_VERTICES * 8 or raw.size() % 8 != 0:
+			return polygon
+		var numbers := raw.to_float32_array()
+		for index in range(0, numbers.size(), 2):
+			polygon.append(Vector2(numbers[index], numbers[index + 1]))
+	else:
+		if not points is Array or points.size() < 3 or points.size() > MAX_VERTICES:
+			return polygon
+		for pair in points:
+			if not pair is Array or pair.size() != 2 or not (pair[0] is float or pair[0] is int) or not (pair[1] is float or pair[1] is int):
+				return PackedVector2Array()
+			polygon.append(Vector2(float(pair[0]), float(pair[1])))
+	for v in polygon:
+		if not v.is_finite() or absf(v.x) > 100000.0 or absf(v.y) > 100000.0:
+			return PackedVector2Array()
+	return polygon
+
+func draw_terrain(canvas: Node2D) -> void:
+	var inverse := get_global_transform_with_canvas().affine_inverse()
+	var vp := get_viewport_rect()
+	var visible := Rect2(inverse * vp.position, Vector2.ZERO).expand(inverse * vp.end).grow(80.0)
+	canvas.draw_set_transform_matrix(canvas.global_transform.affine_inverse() * global_transform)
+	for mark in marks:
+		if not mark.bounds.intersects(visible):
+			continue
+		for index in mark.fragments.size():
+			# Cached, validated triangles avoid driver-side retriangulation of clipped slivers.
+			RenderingServer.canvas_item_add_triangle_array(canvas.get_canvas_item(), mark.triangles[index],
+				mark.fragments[index], PackedColorArray([Color(INK, 0.66 + float(mark.wet) * 0.13)]))
+	canvas.draw_set_transform_matrix(Transform2D.IDENTITY)

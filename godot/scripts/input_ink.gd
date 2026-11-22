@@ -1,6 +1,8 @@
 class_name INKCtl
 extends Node
 
+signal bindings_changed
+
 ## Полный порт Core/Input.cs — клавиатура + геймпад + тач.
 ## update(dt) вызывается ОДИН раз за кадр (как в оригинале), чтобы
 ## все подшаги симуляции внутри кадра видели одинаковые edges.
@@ -71,11 +73,21 @@ const PAD_BUTTON_JOY := [0, 1, 2, 3, 9, 10, -1, -2, 4, 6, 7, 8, 11, 12, 13, 14]
 const DEADZONE := 0.32
 
 var _mouse_buttons := {}
+var _event_keys := {}
+var _key_edges := {}
 var mouse_gameplay_enabled := true
 var pad_movement := "both"
 var pad_deadzone := 0.32
 var touch_style := "floating"
 var touch_opacity := 0.8
+# Удобства по образцу мобильной Dead Cells (все включены по умолчанию).
+var swipe_dash := true
+var slide_buttons := true
+var touch_haptics := true
+var hold_attack := true
+# Направление рывка, заданное свайпом; живёт ровно один кадр симуляции.
+var dash_hint := 0.0
+var _pending_dash_hint := 0.0
 # Normalized centers and individual scales, relative to the safe viewport.
 var touch_layout := {}
 
@@ -115,6 +127,8 @@ var _hold_t := {}
 
 
 func _ready() -> void:
+	# Releases and menu keys must still arrive while the world is paused.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	for a in ACTIONS:
 		state[a] = false
 		prev[a] = false
@@ -134,6 +148,7 @@ func reset_bindings() -> void:
 	for a in ACTIONS:
 		keyboard[a] = DEFAULT_KEYBOARD.get(a, []).duplicate()
 		pad_map[a] = DEFAULT_PAD.get(a, []).duplicate()
+	bindings_changed.emit()
 
 
 ## Клавиша-компенсация для действия, у которого забрали последнюю клавишу.
@@ -191,6 +206,7 @@ func set_key(action: String, code: int) -> bool:
 	if action in ["pause", "back"] and code != KEY_ESCAPE:
 		next.append(KEY_ESCAPE)
 	keyboard[action] = next
+	bindings_changed.emit()
 	return true
 
 
@@ -218,6 +234,7 @@ func set_pad(action: String, slot: int) -> bool:
 	if action == "back" and slot != PAD_BACK_SLOT:
 		next.append(PAD_BACK_SLOT)
 	pad_map[action] = next
+	bindings_changed.emit()
 	return true
 
 
@@ -326,6 +343,32 @@ func touch_tap(a: String) -> void:
 	_touch_edges[a] = true
 
 
+## Рывок свайпом: направление берётся из жеста, а не из стика.
+func touch_dash(dir: float) -> void:
+	_pending_dash_hint = signf(dir)
+	touch_tap("dash")
+
+
+## Короткий тактильный отклик сенсорной кнопки.
+func haptic(ms := 12) -> void:
+	if vibration_enabled and touch_haptics:
+		Input.vibrate_handheld(ms)
+
+
+## Восемь секторов направления (как у стика Dead Cells): горизонталь занимает
+## ±30°, поэтому бег с лёгким наклоном пальца не превращается в удар вверх
+## или спрыгивание. Внутри секторов ввод цифровой — бег сразу на полной скорости.
+static func sector(v: Vector2, deadzone: float) -> Vector2:
+	if v.length() < deadzone:
+		return Vector2.ZERO
+	var angle := rad_to_deg(atan2(absf(v.y), absf(v.x)))
+	if angle < 30.0:
+		return Vector2(signf(v.x), 0.0)
+	if angle < 60.0:
+		return Vector2(signf(v.x), signf(v.y))
+	return Vector2(0.0, signf(v.y))
+
+
 func stick_start() -> void:
 	stick_on = true
 	stick_x = 0.0
@@ -349,6 +392,11 @@ func down(a: String) -> bool:
 
 func pressed(a: String) -> bool:
 	return edge.get(a, false)
+
+
+## The screen opened by an action must not handle that same action again.
+func consume(a: String) -> void:
+	edge[a] = false
 
 
 func axis_x() -> float:
@@ -453,7 +501,7 @@ func _update_pad() -> void:
 func _key_down(code: int) -> bool:
 	if code < 0:
 		return mouse_gameplay_enabled and bool(_mouse_buttons.get(-code, false))
-	return Input.is_key_pressed(code) or Input.is_physical_key_pressed(code)
+	return bool(_event_keys.get(code, false)) or Input.is_key_pressed(code) or Input.is_physical_key_pressed(code)
 
 
 func _key_axis(neg: String, pos: String) -> float:
@@ -471,18 +519,21 @@ func _key_axis(neg: String, pos: String) -> float:
 
 func update(dt: float) -> void:
 	_update_pad()
+	dash_hint = _pending_dash_hint
+	_pending_dash_hint = 0.0
 
-	var enter_down: bool = Input.is_key_pressed(KEY_ENTER) or Input.is_key_pressed(KEY_KP_ENTER)
-	_edge_enter = enter_down and not _prev_enter
+	var enter_down: bool = _key_down(KEY_ENTER) or _key_down(KEY_KP_ENTER)
+	_edge_enter = enter_down and not _prev_enter or _key_edges.has(KEY_ENTER) or _key_edges.has(KEY_KP_ENTER)
 	_prev_enter = enter_down
 
 	var kx: float = _key_axis("left", "right")
 	var ky: float = _key_axis("up", "down")
 
-	var sx: float = pad_axes[0]
-	var sy: float = pad_axes[1]
-	sx = 0.0 if absf(sx) < pad_deadzone else signf(sx) * ((absf(sx) - pad_deadzone) / (1.0 - pad_deadzone))
-	sy = 0.0 if absf(sy) < pad_deadzone else signf(sy) * ((absf(sy) - pad_deadzone) / (1.0 - pad_deadzone))
+	# Радиальная мёртвая зона и секторы: дрейф стика не двигает героя,
+	# а диагональ даёт и бег, и направление удара.
+	var pad_dir := sector(Vector2(pad_axes[0], pad_axes[1]), pad_deadzone)
+	var sx: float = pad_dir.x
+	var sy: float = pad_dir.y
 
 	var dpad_x: float = (1.0 if pad_buttons[15] else 0.0) - (1.0 if pad_buttons[14] else 0.0)
 	var dpad_y: float = (1.0 if pad_buttons[13] else 0.0) - (1.0 if pad_buttons[12] else 0.0)
@@ -553,21 +604,12 @@ func update(dt: float) -> void:
 		prev[a] = state[a]
 		state[a] = d
 		edge[a] = d and not prev[a] or bool(_touch_edges.get(a, false))
-
-	# Тач: удержание атаки = серия; рывок всегда один на нажатие.
-	for a in ["attack"]:
-		var held_touch: bool = touch_down.get(a, false)
-		var interval: float = 0.16 if a == "attack" else 0.25
-		if held_touch and edge[a]:
-			_hold_t[a] = 0.0
-		elif held_touch and edge[a] == false and prev[a]:
-			var ht: float = float(_hold_t.get(a, 0.0)) + dt
-			if ht >= interval:
-				ht = 0.0
+		for key in keys:
+			if _key_edges.has(int(key)):
 				edge[a] = true
-			_hold_t[a] = ht
-		elif not held_touch:
-			_hold_t[a] = 0.0
+
+	# Удержание атаки = серия (hold_attack) обрабатывает Player: следующий
+	# удар выходит сразу по окончании восстановления, на любом устройстве.
 
 	for a in ["up", "down"]:
 		if edge[a]:
@@ -581,6 +623,7 @@ func update(dt: float) -> void:
 			_repeat[a] = -1.0
 
 	_touch_edges.clear()
+	_key_edges.clear()
 
 
 func _input(event: InputEvent) -> void:
@@ -592,9 +635,21 @@ func _input(event: InputEvent) -> void:
 			if event.pressed:
 				device = "keyboard"
 				SND.unlock()
-	elif event is InputEventKey and event.pressed and not event.echo:
-		device = "keyboard"
-		SND.unlock()
+	elif event is InputEventKey:
+		# Retain short press/release pairs between physics ticks. Both codes
+		# keep bindings usable with Russian and English keyboard layouts.
+		for code in [event.keycode, event.physical_keycode]:
+			if code == 0:
+				continue
+			if event.pressed:
+				_event_keys[code] = true
+				if not event.echo:
+					_key_edges[code] = true
+			else:
+				_event_keys.erase(code)
+		if event.pressed and not event.echo:
+			device = "keyboard"
+			SND.unlock()
 	elif event is InputEventJoypadButton and event.pressed:
 		device = "gamepad"
 		SND.unlock()
@@ -607,6 +662,19 @@ func _input(event: InputEvent) -> void:
 
 
 ## Сброс при паузе, сворачивании и смене экрана: отпускание может не прийти.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+		_event_keys.clear()
+		_key_edges.clear()
+		for action in ACTIONS:
+			state[action] = false
+			prev[action] = false
+			edge[action] = false
+		_prev_enter = false
+		_edge_enter = false
+		clear_touch()
+
+
 func clear_touch() -> void:
 	_mouse_buttons.clear()
 	for a in _touch_refs:
@@ -617,6 +685,8 @@ func clear_touch() -> void:
 	_touch_refs.clear()
 	_touch_edges.clear()
 	_hold_t.clear()
+	dash_hint = 0.0
+	_pending_dash_hint = 0.0
 	stick_end()
 	move_x = 0.0
 	move_y = 0.0
@@ -657,6 +727,10 @@ func load_controls() -> void:
 	if touch_style not in ["floating", "stick", "dpad"]:
 		touch_style = "floating"
 	touch_opacity = clampf(float(cfg.get_value("controls", "opacity", 0.8)), 0.25, 1.0)
+	swipe_dash = bool(cfg.get_value("controls", "swipe_dash", true))
+	slide_buttons = bool(cfg.get_value("controls", "slide_buttons", true))
+	touch_haptics = bool(cfg.get_value("controls", "touch_haptics", true))
+	hold_attack = bool(cfg.get_value("controls", "hold_attack", true))
 	var layout = cfg.get_value("controls", "layout", {})
 	touch_layout.clear()
 	if layout is Dictionary:
@@ -669,6 +743,7 @@ func load_controls() -> void:
 
 
 func save_controls() -> Error:
+	bindings_changed.emit()
 	var cfg := ConfigFile.new()
 	cfg.load("user://settings.cfg")
 	for action in ACTIONS:
@@ -678,5 +753,9 @@ func save_controls() -> Error:
 	cfg.set_value("controls", "deadzone", pad_deadzone)
 	cfg.set_value("controls", "touch_style", touch_style)
 	cfg.set_value("controls", "opacity", touch_opacity)
+	cfg.set_value("controls", "swipe_dash", swipe_dash)
+	cfg.set_value("controls", "slide_buttons", slide_buttons)
+	cfg.set_value("controls", "touch_haptics", touch_haptics)
+	cfg.set_value("controls", "hold_attack", hold_attack)
 	cfg.set_value("controls", "layout", touch_layout)
 	return cfg.save("user://settings.cfg")

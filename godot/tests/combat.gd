@@ -96,6 +96,8 @@ func _ready() -> void:
 	await ticks(2)
 	bolt._physics_process(0.1)
 	var fx := room.get_node("CombatInk") as CombatFx
+	# Keep landing particles deterministic while testing each projectile separately.
+	fx.set_physics_process(false)
 	check(fx.marks.size() == 1, "fast bolt hits wall and leaves a surface mark")
 	await ticks(2)
 	var drop := InkDrop.new()
@@ -116,10 +118,10 @@ func _ready() -> void:
 	wave.set_physics_process(false)
 	wave._physics_process(0.1)
 	check(fx.marks.size() == 3, "wave stains the wall on contact")
-	fx._process(2.0)
+	fx._physics_process(2.0)
 	check(fx.particles.is_empty() and fx.marks.size() == 3, "stains persist after particles expire")
-	for i in 180:
-		CombatFx.surface(player, Vector2(100 + i, 320), Vector2.UP)
+	for i in CombatFx.MAX_MARKS + 5:
+		CombatFx.surface(player, Vector2(100 + i % 200, 320), Vector2.UP)
 	check(fx.marks.size() == CombatFx.MAX_MARKS and fx.particles.size() <= CombatFx.MAX_PARTICLES,
 		"effect storage is bounded")
 	var weak_fx: WeakRef = weakref(fx)

@@ -11,6 +11,7 @@ const OVERLAY_SCENE := preload("res://scenes/ui/overlay.tscn")
 const CONSOLE_SCENE := preload("res://scenes/ui/console.tscn")
 const CUTSCENE_SCENE := preload("res://scenes/ui/cutscene.tscn")
 const DIALOGUE_SCENE := preload("res://scenes/ui/dialogue.tscn")
+const CONTROL_GUIDE_SCENE := preload("res://scenes/ui/control_guide.tscn")
 const PLAYER_SCENE := preload("res://scenes/actors/player.tscn")
 const SETTINGS_FILE := "user://settings.cfg"
 
@@ -20,7 +21,7 @@ const LEVELS := {
 }
 const FIRST_LEVEL := "ch01_hall"
 
-enum State { TITLE, PLAY, PAUSE, DEAD, CLEARED, CUTSCENE, DIALOGUE }
+enum State { TITLE, PLAY, PAUSE, DEAD, CLEARED, CUTSCENE, DIALOGUE, GUIDE }
 
 const OVERLAY_PAUSE := 0
 const OVERLAY_DEAD := 1
@@ -44,22 +45,43 @@ var cutscene: Control
 var dialogue: Control
 var settings: Control
 var mobile_controls: Control
+var control_guide: Control
 
 var level: Level
 var player: Player
 var level_id := FIRST_LEVEL
 var checkpoint_id := ""
+var granted_rewards: Array[String] = []
 var _console_guard := 0
 ## Финал играет один раз: после него открывается окно зачистки, а не возврат в игру.
 var _finale_pending := false
+var _finale_seen := false
+var _ink_dirty := false
+var _ink_save_delay := 0.0
+var _skip_loaded_checkpoint_heal := false
+var _loaded_spawn := Vector2.ZERO
+
+## Статистика забега и комбо для HUD и оверлеев (как в 0.2).
+var run_time := 0.0
+var run_kills := 0
+var combo := 0
+var max_combo := 0
+var combo_t := 0.0
+var combo_pop := 0.0
+var hitstop := 0.0
+var _hitstop_paused := false
+var _current_zone := ""
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Engine.physics_ticks_per_second = 120
+	InkR.init_static()
 	load_preferences()
 	_apply_saved_display()
 	_build_stage()
+	if DisplayServer.get_name() != "headless":
+		_bake_paper_async()
 	# QA-флаг для сборки: сразу в игру, без титула.
 	# Запуск: InkBlade-Windows.exe --headless --quit-after 300 -- --play
 	if "--play" in OS.get_cmdline_user_args():
@@ -94,9 +116,13 @@ func _build_stage() -> void:
 
 	hud = HUD_SCENE.instantiate()
 	hud.visible = false
+	if "flow" in hud:
+		hud.flow = self
 	ui.add_child(hud)
 
 	overlay = OVERLAY_SCENE.instantiate()
+	if "flow" in overlay:
+		overlay.flow = self
 	ui.add_child(overlay)
 	overlay.chosen.connect(_on_overlay_choice)
 
@@ -107,8 +133,11 @@ func _build_stage() -> void:
 	dialogue = DIALOGUE_SCENE.instantiate()
 	ui.add_child(dialogue)
 	dialogue.finished.connect(_on_dialogue_finished)
+	dialogue.progress_changed.connect(_on_dialogue_progress)
 
 	title_screen = TITLE_SCENE.instantiate()
+	if "flow" in title_screen:
+		title_screen.flow = self
 	ui.add_child(title_screen)
 	title_screen.start_pressed.connect(_on_start_pressed)
 	title_screen.continue_pressed.connect(continue_run)
@@ -127,16 +156,40 @@ func _build_stage() -> void:
 	settings = preload("res://scripts/ui/control_settings.gd").new()
 	settings.flow = self
 	ui.add_child(settings)
+	control_guide = CONTROL_GUIDE_SCENE.instantiate()
+	ui.add_child(control_guide)
+	control_guide.dismissed.connect(_on_control_guide_dismissed)
+	if mobile_controls.visible:
+		mobile_controls._layout()
 
 
 func _physics_process(delta: float) -> void:
 	# Единственная точка, где обновляется ввод. Все читают его после этого кадра.
 	CTL.mouse_gameplay_enabled = state == State.PLAY and not settings.visible and not console.visible
 	CTL.update(delta)
+	if _ink_dirty:
+		_ink_save_delay -= delta
+		if _ink_save_delay <= 0.0:
+			_autosave(_finale_pending or state == State.CLEARED)
 	if settings.visible:
 		return
 	if state == State.PLAY:
-		InkFx.update(delta)
+		run_time += delta
+		if combo_t > 0.0:
+			combo_t = maxf(0.0, combo_t - delta)
+			if combo_t <= 0.0:
+				combo = 0
+		combo_pop = maxf(0.0, combo_pop - delta * 5.0)
+		if hitstop > 0.0:
+			hitstop = maxf(0.0, hitstop - delta)
+		if is_instance_valid(level):
+			level.hitstop = hitstop
+		InkFx.update(delta * (0.12 if hitstop > 0.0 else 1.0))
+		var shake := InkFx.shake_offset() if shake_enabled else Vector3.ZERO
+		camera.offset = Vector2(shake.x, shake.y)
+		camera.rotation = shake.z
+		_check_zone_transition()
+	elif state == State.DEAD:
 		var shake := InkFx.shake_offset() if shake_enabled else Vector3.ZERO
 		camera.offset = Vector2(shake.x, shake.y)
 		camera.rotation = shake.z
@@ -151,13 +204,41 @@ func _physics_process(delta: float) -> void:
 		State.TITLE:
 			pass
 		State.PLAY:
+			if _check_world_bounds():
+				return
 			_follow_player()
 			if CTL.pressed("pause"):
 				_pause()
 			elif CTL.pressed("restart"):
-				start_run()
-		State.PAUSE, State.DEAD, State.CLEARED, State.CUTSCENE, State.DIALOGUE:
+				_pause()
+				overlay.request_restart()
+		State.PAUSE, State.DEAD, State.CLEARED, State.CUTSCENE, State.DIALOGUE, State.GUIDE:
 			pass
+
+
+func freeze(seconds: float) -> void:
+	hitstop = maxf(hitstop, seconds)
+	if is_instance_valid(level):
+		level.hitstop = hitstop
+
+
+func add_combo() -> void:
+	combo += 1
+	combo_t = 1.7
+	combo_pop = 1.0
+	max_combo = maxi(max_combo, combo)
+
+
+func format_run_time() -> String:
+	var s := maxf(0.0, run_time)
+	var m := int(s / 60.0)
+	var rest := int(s) % 60
+	return "%d:%02d" % [m, rest]
+
+
+func stats_line() -> String:
+	var left := level.enemy_count() if is_instance_valid(level) else 0
+	return L10N.t("ui.overlay.stats", [format_run_time(), run_kills, max_combo, left])
 
 
 ## Горячие клавиши, которые работают в любом состоянии, кроме открытой консоли.
@@ -166,6 +247,8 @@ func _handle_global() -> void:
 		return
 	if CTL.pressed("help") or CTL.pressed("hitboxes"):
 		hud.debug_on = not hud.debug_on
+		if is_instance_valid(level):
+			level.queue_redraw()
 	if CTL.pressed("mute"):
 		SND.set_muted(not SND.muted)
 		save_preferences()
@@ -229,25 +312,91 @@ func _follow_player() -> void:
 	camera.global_position = player.global_position + Vector2(0.0, -40.0)
 
 
+## Camera limits do not constrain physics bodies. Keep the hero in the world,
+## and handle falls even during dash or damage invulnerability.
+func _check_world_bounds() -> bool:
+	if not is_instance_valid(player) or not is_instance_valid(level):
+		return false
+	var safe_x := clampf(player.global_position.x, level.bounds.position.x + 14.0, level.bounds.end.x - 14.0)
+	if safe_x != player.global_position.x:
+		player.global_position.x = safe_x
+		player.velocity.x = 0.0
+	if player.global_position.y > level.bounds.end.y + 160.0:
+		player.iframes = 0.0
+		player.take_damage(player.MAX_HP, 0.0)
+		return true
+	return false
+
+
 ## Новая игра. with_intro = true только при запуске с титула:
 ## перезапуск из паузы и продолжение с чекпоинта катсцену не повторяют.
 func start_run(with_intro := false) -> void:
+	run_time = 0.0
+	run_kills = 0
+	combo = 0
+	max_combo = 0
+	combo_t = 0.0
+	combo_pop = 0.0
+	hitstop = 0.0
 	_start_level({}, with_intro)
 
 
-## Продолжение с автосейва: пройденный чекпоинт, живые враги, здоровье.
-func continue_run() -> void:
-	var save := SaveGame.read_slot(SaveGame.AUTOSAVE)
-	if save.is_empty() or bool(save.get("cleared", false)):
+## Загружает указанный уровень по идентификатору (используется консолью разработчика).
+func load_level(wanted: String) -> bool:
+	if not LEVELS.has(wanted):
+		return false
+	_start_level({"level": wanted}, false)
+	return true
+
+
+## Обычная загрузка сохраняет HP и душу. Смерть отмечается в сейве отдельно.
+func continue_run(slot: String = SaveGame.AUTOSAVE) -> void:
+	var save := SaveGame.read_slot(slot)
+	if not SaveGame.has_unfinished_run(save):
 		start_run()
 		return
-	_start_level(SaveGame.migrate(save))
+	var migrated := SaveGame.migrate(save)
+	if bool(migrated.get("dead", false)):
+		migrated["hp"] = Player.MAX_HP
+		migrated["soul"] = 0.0
+		migrated["dead"] = false
+	if slot != SaveGame.AUTOSAVE:
+		SaveGame.current_slot = slot
+		SaveGame.write_slot(SaveGame.AUTOSAVE, migrated)
+	_start_level(migrated)
+
+
+func respawn_run() -> void:
+	# Used only by the death overlay. A plain Continue must never heal the player.
+	continue_run()
+
+
+func save_to_slot(slot: String) -> bool:
+	SaveGame.current_slot = slot
+	if level == null or player == null:
+		var auto_data := SaveGame.read_slot(SaveGame.AUTOSAVE)
+		if auto_data.is_empty():
+			return false
+		return SaveGame.write_slot(slot, auto_data)
+	_autosave(_finale_pending or state == State.CLEARED)
+	return SaveGame.has_slot(slot)
 
 
 func _start_level(save: Dictionary, with_intro := false) -> void:
+	control_guide.visible = false
 	CTL.clear_touch()
 	get_tree().paused = false
 	_finale_pending = false
+	_finale_seen = bool(save.get("finale_seen", false))
+	_ink_dirty = false
+	_ink_save_delay = 0.0
+	hitstop = 0.0
+	_hitstop_paused = false
+	if host != null and host.process_mode == Node.PROCESS_MODE_DISABLED:
+		host.process_mode = Node.PROCESS_MODE_PAUSABLE
+	combo = 0
+	combo_t = 0.0
+	combo_pop = 0.0
 	_clear_level()
 	overlay.close()
 	cutscene.close()
@@ -260,6 +409,14 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	var wanted := String(save.get("level", FIRST_LEVEL))
 	level_id = wanted if LEVELS.has(wanted) else FIRST_LEVEL
 	checkpoint_id = String(save.get("checkpoint", ""))
+
+	granted_rewards.clear()
+	var saved_grants = save.get("grants", [])
+	if typeof(saved_grants) == TYPE_ARRAY:
+		for g in saved_grants:
+			var gid := String(g)
+			if not gid.is_empty() and not granted_rewards.has(gid):
+				granted_rewards.append(gid)
 
 	level = LEVELS[level_id].instantiate()
 	level.world_state = save
@@ -277,16 +434,31 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 
 	player = PLAYER_SCENE.instantiate()
 	player.global_position = level.resume_position()
+	_loaded_spawn = player.global_position
+	_skip_loaded_checkpoint_heal = not save.is_empty()
 	level.add_child(player)
 	player.died.connect(_on_player_died)
 	var saved_weapons = save.get("weapons", [])
+	var wanted_weapon := String(save.get("weapon", ""))
 	if typeof(saved_weapons) == TYPE_ARRAY and not saved_weapons.is_empty():
-		player.restore_weapons(saved_weapons, String(save.get("weapon", "")))
+		player.restore_weapons(saved_weapons, wanted_weapon)
+	for g in granted_rewards:
+		_grant_weapon(g, false)
+	_restore_story_rewards(save.get("dialogue", {}))
+	if not wanted_weapon.is_empty():
+		player.equip_weapon(wanted_weapon)
 	var hp := int(save.get("hp", player.MAX_HP))
 	player.hp = clampi(hp, 1, player.MAX_HP)
+	player.soul = clampf(float(save.get("soul", 0.0)), 0.0, 99.0)
 	player.hp_changed.emit(player.hp, player.MAX_HP)
+	var combat_ink := CombatFx.layer(player)
+	combat_ink.restore_state(save.get("ink_marks", []))
+	combat_ink.persistent_marks_changed.connect(_on_ink_changed)
+	run_kills = level.killed_ids.size()
+
 	var legacy_fx := preload("res://scripts/visuals/legacy_fx_layer.gd").new()
 	legacy_fx.z_index = 20
+	legacy_fx.flow = self
 	level.add_child(legacy_fx)
 	player.died.connect(func(): legacy_fx.animate_on_death = true)
 	level.bind_player(player)
@@ -295,11 +467,93 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	camera.reset_smoothing()
 	hud.bind(player)
 	hud.bind_boss(level.boss)
-	_autosave(false)
+	_show_zone_banner(checkpoint_id)
+	InkFx.flash_screen(0.55, InkR.CREAM)
+	var pending_finale := bool(save.get("cleared", false)) and not _finale_seen
 	print("LEVEL %s: врагов %d, чекпоинт %s" % [
 		level_id, level.enemy_count(), checkpoint_id if not checkpoint_id.is_empty() else "вход"])
 	if with_intro:
 		play_cutscene("intro")
+	elif level.enemy_count() == 0 or pending_finale:
+		_on_cleared()
+	else:
+		var saved_dialogue = save.get("dialogue", {})
+		if saved_dialogue is Dictionary and not String(saved_dialogue.get("id", "")).is_empty():
+			play_dialogue(String(saved_dialogue.id), int(saved_dialogue.get("line", 0)))
+	_autosave(_finale_pending)
+
+
+func _zone_for_x(x: float) -> String:
+	if level_id != "ch01_hall":
+		return ""
+	if x < 2560.0:
+		return "threshold"
+	if x < 7040.0:
+		return "archive"
+	if x < 11264.0:
+		return "gallery"
+	return "sanctum"
+
+
+func _check_zone_transition() -> void:
+	if player == null or not is_instance_valid(player) or level_id != "ch01_hall":
+		return
+	var z := _zone_for_x(player.global_position.x)
+	if z != _current_zone and not z.is_empty():
+		_current_zone = z
+		_show_zone_banner_key(z)
+
+
+func _show_zone_banner(cp_id: String) -> void:
+	if level_id != "ch01_hall":
+		_current_zone = ""
+		if hud != null and hud.has_method("show_banner"):
+			hud.show_banner(_level_name(), "")
+		return
+	var z := "threshold"
+	match cp_id:
+		"cp_02":
+			z = "archive"
+		"cp_03":
+			z = "gallery"
+		"cp_04":
+			z = "sanctum"
+	_current_zone = z
+	_show_zone_banner_key(z)
+
+
+func _show_zone_banner_key(zone_key: String) -> void:
+	if hud == null or not hud.has_method("show_banner"):
+		return
+	if zone_key == "threshold":
+		hud.show_banner(L10N.t("BANNER_TITLE"), L10N.t("BANNER_SUB"))
+		return
+	hud.show_banner(L10N.t("zone.%s.title" % zone_key), L10N.t("zone.%s.sub" % zone_key))
+
+
+func _bake_paper_async() -> void:
+	if InkR.tex_paper != null or DisplayServer.get_name() == "headless":
+		return
+	var vp := SubViewport.new()
+	vp.size = Vector2i(1280, 720)
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	vp.transparent_bg = false
+	var node := InkBakeNode.new()
+	node.w = 1280.0
+	node.h = 720.0
+	node.fn = func(cv): InkR.bake_paper(cv)
+	vp.add_child(node)
+	add_child(vp)
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	if is_instance_valid(vp):
+		var tex := vp.get_texture()
+		if tex != null:
+			var img := tex.get_image()
+			if img != null and not img.is_empty():
+				img.convert(Image.FORMAT_RGBA8)
+				InkR.tex_paper = ImageTexture.create_from_image(img)
+		vp.queue_free()
 
 
 func _clear_level() -> void:
@@ -313,7 +567,11 @@ func _clear_level() -> void:
 
 
 func _pause() -> void:
+	_autosave(false)
 	CTL.clear_touch()
+	# The same Esc edge must not also activate Back in the newly opened overlay.
+	CTL.consume("pause")
+	CTL.consume("back")
 	state = State.PAUSE
 	get_tree().paused = true
 	overlay.open(OVERLAY_PAUSE, L10N.t("ui.overlay.subtitle", [_level_name()]))
@@ -328,10 +586,36 @@ func _resume() -> void:
 
 ## Титул: новая игра начинается со вступления.
 func _on_start_pressed() -> void:
+	start_new_story()
+
+
+## A single, explicit controls page before a new story; never during Continue/respawn.
+func start_new_story() -> void:
+	if is_instance_valid(level) and is_instance_valid(player):
+		_autosave(_finale_pending or state == State.CLEARED)
+	CTL.clear_touch()
+	for action in ["jump", "attack", "back", "pause", "restart"]:
+		CTL.consume(action)
+	title_screen.visible = false
+	hud.visible = false
+	overlay.close()
+	cutscene.close()
+	dialogue.close()
+	_clear_level()
+	state = State.GUIDE
+	get_tree().paused = true
+	control_guide.open()
+
+
+func _on_control_guide_dismissed() -> void:
+	for action in ["jump", "attack", "back", "pause"]:
+		CTL.consume(action)
 	start_run(true)
 
 
 func _show_title() -> void:
+	if is_instance_valid(level) and is_instance_valid(player):
+		_autosave(_finale_pending or state == State.CLEARED)
 	CTL.clear_touch()
 	get_tree().paused = false
 	_finale_pending = false
@@ -340,6 +624,7 @@ func _show_title() -> void:
 	overlay.close()
 	cutscene.close()
 	dialogue.close()
+	control_guide.visible = false
 	title_screen.refresh()
 	title_screen.visible = true
 	state = State.TITLE
@@ -350,32 +635,75 @@ func _show_title() -> void:
 ## Чекпоинт лечит и пишет автосейв: смерть вернёт игрока сюда.
 ## Возврат на уже пройденный чекпоинт лечит, но лишний раз не пишет файл.
 func _on_checkpoint(id: String, _pos: Vector2) -> void:
+	# Loading places the player inside the checkpoint Area2D. That initial
+	# body_entered must not turn an ordinary Continue into free healing.
+	var loaded_overlap := _skip_loaded_checkpoint_heal and _pos.distance_to(_loaded_spawn) < 64.0
+	_skip_loaded_checkpoint_heal = false
 	var fresh := id != checkpoint_id
 	checkpoint_id = id
 	if level != null:
 		level.activate_checkpoint(id)
-	if player != null:
+	if player != null and not loaded_overlap:
 		player.hp = player.MAX_HP
 		player.hp_changed.emit(player.hp, player.MAX_HP)
 	if fresh:
+		if id != "cp_01":
+			_show_zone_banner(id)
 		_autosave(false)
 
 
 ## Мир помнит убитых: после смерти они не возвращаются.
-## Временные враги (деление, призыв, debug-спавн) не пишут файл зря.
+## Повторный снимок после боя учитывает душу, полученную за добивание.
 func _on_enemy_died(id: String) -> void:
+	run_kills += 1
+	# hit() emits death before Player credits soul for the killing blow.
+	# Refresh that snapshot after combat finishes, including temporary enemies.
+	_save_combat_progress.call_deferred(level)
 	if level != null and level.is_temporary_id(id):
 		return
 	_autosave(false)
 
 
-## Триггер уже записан в fired_triggers, поэтому сохраняем до разговора:
-## если игрок закроет игру во время диалога, сцена не повторится.
+func _save_combat_progress(source: Level) -> void:
+	if is_instance_valid(source) and source == level and is_instance_valid(player):
+		_autosave(_finale_pending or state == State.CLEARED)
+
+
+## Save the active dialogue; the reward is granted only after its final line.
 func _on_trigger(_id: String, spec: Dictionary) -> void:
-	_autosave(false)
 	var dialogue_id := String(spec.get("dialogue", ""))
 	if not dialogue_id.is_empty():
 		play_dialogue(dialogue_id)
+	_autosave(false)
+
+
+func _grant_weapon(grant: String, show_toast := true) -> void:
+	if grant.is_empty() or player == null:
+		return
+	if not granted_rewards.has(grant):
+		granted_rewards.append(grant)
+	var def := WDB.get_weapon(StringName(grant))
+	if def != null:
+		var unlocked := player.unlock_weapon(grant, show_toast)
+		if show_toast and (unlocked or hud.toast.is_empty()):
+			hud.show_toast(L10N.t("ui.hud.toast.weapon", [L10N.t(def.display_name_key)]))
+
+
+## Repair saves written by older versions between the trigger and its reward.
+func _restore_story_rewards(pending_dialogue: Dictionary = {}) -> void:
+	for spec in level.triggers:
+		if not level.fired_triggers.has(String(spec.get("id", ""))):
+			continue
+		var id := String(spec.get("dialogue", ""))
+		if id.is_empty():
+			continue
+		if id == String(pending_dialogue.get("id", "")):
+			continue
+		var path := "res://content/dialogue/%s.json" % id
+		if FileAccess.file_exists(path):
+			var data = JSON.parse_string(FileAccess.get_file_as_string(path))
+			if data is Dictionary:
+				_grant_weapon(String(data.get("grant", "")), false)
 
 
 func play_cutscene(id: String) -> bool:
@@ -388,8 +716,8 @@ func play_cutscene(id: String) -> bool:
 	return true
 
 
-func play_dialogue(id: String) -> bool:
-	if not dialogue.play(id):
+func play_dialogue(id: String, resume_line := 0) -> bool:
+	if not dialogue.play(id, resume_line):
 		return false
 	CTL.clear_touch()
 	state = State.DIALOGUE
@@ -398,9 +726,21 @@ func play_dialogue(id: String) -> bool:
 	return true
 
 
+func _on_dialogue_progress() -> void:
+	_autosave(false)
+
+
+func _on_ink_changed() -> void:
+	if not _ink_dirty:
+		_ink_dirty = true
+		_ink_save_delay = 0.75
+
+
 func _on_cutscene_finished() -> void:
 	if _finale_pending:
 		_finale_pending = false
+		_finale_seen = true
+		_autosave(true)
 		_show_cleared()
 		return
 	state = State.PLAY
@@ -409,10 +749,7 @@ func _on_cutscene_finished() -> void:
 
 
 func _on_dialogue_finished(_id: String, grant: String) -> void:
-	if not grant.is_empty() and player != null:
-		var def := WDB.get_weapon(StringName(grant))
-		if def != null and player.unlock_weapon(grant, true):
-			hud.show_toast(L10N.t("ui.hud.toast.weapon", [L10N.t(def.display_name_key)]))
+	_grant_weapon(grant, true)
 	state = State.PLAY
 	get_tree().paused = false
 	hud.visible = true
@@ -421,17 +758,23 @@ func _on_dialogue_finished(_id: String, grant: String) -> void:
 
 func _on_player_died() -> void:
 	CTL.clear_touch()
+	freeze(0.09)
 	state = State.DEAD
+	_autosave(false)
+	hud.visible = false
 	get_tree().paused = true
 	overlay.open(OVERLAY_DEAD, L10N.t("ui.overlay.subtitle", [_level_name()]))
 
 
 func _on_cleared() -> void:
+	_finale_seen = false
+	_finale_pending = true
 	_autosave(true)
 	# Финал играет до окна зачистки: сначала история, потом «уровень пройден».
-	_finale_pending = true
 	if not play_cutscene("finale"):
 		_finale_pending = false
+		_finale_seen = true
+		_autosave(true)
 		_show_cleared()
 
 
@@ -452,34 +795,52 @@ func _level_name() -> String:
 func _autosave(cleared: bool) -> void:
 	if level == null or player == null:
 		return
-	SaveGame.write_slot(SaveGame.AUTOSAVE, {
+	var payload := {
 		"level": level_id,
 		"checkpoint": checkpoint_id,
 		"killed": level.killed_ids.duplicate(),
 		"triggers": level.fired_triggers.duplicate(),
+		"grants": granted_rewards.duplicate(),
 		"weapons": player.weapon_ids(),
 		"weapon": player.current_weapon_id(),
-		"hp": player.hp,
+		"hp": player.MAX_HP if player.dead or state == State.DEAD else player.hp,
+		"soul": 0.0 if player.dead or state == State.DEAD else player.soul,
+		"dead": player.dead or state == State.DEAD,
+		"dialogue": {"id": dialogue.dialogue_id, "line": dialogue.index} if dialogue.visible else {},
+		"ink_marks": CombatFx.layer(player).export_state(),
 		"enemies_left": level.enemy_count(),
 		"cleared": cleared,
-	})
+		"finale_seen": _finale_seen if cleared else false,
+	}
+	_ink_dirty = false
+	SaveGame.write_slot(SaveGame.AUTOSAVE, payload)
+	if SaveGame.current_slot != SaveGame.AUTOSAVE and SaveGame.current_slot in SaveGame.MANUAL_SLOTS:
+		SaveGame.write_slot(SaveGame.current_slot, payload)
 
 
 func _on_overlay_choice(item: String) -> void:
 	match state:
 		State.PAUSE:
+			if item.begins_with("save_slot_"):
+				var idx := int(item.trim_prefix("save_slot_"))
+				var slot := "slot_%d" % idx
+				if save_to_slot(slot) and hud != null:
+					hud.show_toast(L10N.t("ui.slots.saved", [idx]))
+				return
 			match item:
 				"settings":
 					open_settings()
 				"resume":
 					_resume()
 				"restart":
-					start_run()
+					overlay.request_restart()
+				"confirm_restart":
+					start_new_story()
 				"menu":
 					_show_title()
 		State.DEAD:
 			if item == "checkpoint":
-				continue_run()
+				respawn_run()
 			else:
 				_show_title()
 		State.CLEARED:
@@ -490,7 +851,13 @@ func _on_overlay_choice(item: String) -> void:
 
 
 func _quit() -> void:
+	if is_instance_valid(level) and is_instance_valid(player):
+		_autosave(_finale_pending or state == State.CLEARED)
 	get_tree().quit()
+
+
+func _exit_tree() -> void:
+	InkR.tex_paper = null
 
 
 func _on_console_toggled() -> void:
@@ -501,15 +868,23 @@ func _on_console_toggled() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
 		CTL.clear_touch()
+		if is_instance_valid(level) and is_instance_valid(player):
+			_autosave(_finale_pending or state == State.CLEARED)
 		if state == State.PLAY and is_instance_valid(overlay):
 			_pause()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		if settings.visible:
 			settings.go_back()
+		elif state == State.TITLE and title_screen.has_method("handle_back") and title_screen.handle_back():
+			return
+		elif state == State.PAUSE and overlay.has_method("handle_back") and overlay.handle_back():
+			return
 		elif state == State.PLAY:
 			_pause()
 		elif state == State.PAUSE:
 			_resume()
+		elif state == State.GUIDE:
+			control_guide.dismiss()
 	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
 		_quit()
 

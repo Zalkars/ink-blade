@@ -131,6 +131,8 @@ func _run(line: String) -> String:
 			return _cmd_spawn(parts.slice(1))
 		"kill":
 			return _cmd_kill()
+		"level":
+			return _cmd_level(parts.slice(1))
 		"clear":
 			_lines.clear()
 			_refresh()
@@ -146,6 +148,7 @@ func _cmd_help() -> String:
 		"spawn grunt [x] [y] — создать врага\n" +
 		"kill — убрать всех врагов\n" +
 		"fps — показать счётчик кадров и переключить отладку HUD\n" +
+		"level [id] — загрузить уровень (ch01_hall, arena_01)\n" +
 		"clear — очистить журнал"
 	)
 
@@ -219,6 +222,20 @@ func _cmd_spawn(args: Array) -> String:
 	if not flow.level.spawn_enemy(kind, pos):
 		return _reply("неизвестный враг: " + kind)
 	return _reply("spawn %s в %.0f, %.0f" % [kind, pos.x, pos.y])
+
+
+func _cmd_level(args: Array) -> String:
+	if flow == null:
+		return _reply("игра не запущена")
+	if args.is_empty():
+		var keys := PackedStringArray()
+		for k in flow.LEVELS.keys():
+			keys.append(str(k))
+		return _reply("уровень: %s · доступно: %s" % [flow.level_id, ", ".join(keys)])
+	var wanted := str(args[0]).strip_edges()
+	if not flow.load_level(wanted):
+		return _reply("неизвестный уровень: " + wanted)
+	return _reply("уровень -> " + wanted)
 
 
 func _cmd_kill() -> String:

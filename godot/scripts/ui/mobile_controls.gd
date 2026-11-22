@@ -2,12 +2,35 @@ extends Control
 
 ## Сенсорный слой текущего GameFlow. Каждый палец владеет своим действием.
 ## --touch включает тот же слой на ПК для проверки без Android-устройства.
+##
+## Схема по образцу мобильной Dead Cells:
+## - плавающий стик появляется под пальцем в любой точке левой части экрана
+##   и тянется за пальцем, если тот уходит дальше радиуса;
+## - направление делится на восемь секторов, бег сразу на полной скорости;
+## - кнопки стоят дугой под правым большим пальцем, прыжок — самая крупная в углу;
+## - зона нажатия шире рисунка, при касании между кнопками выбирается ближайшая;
+## - палец можно перекатить с кнопки на соседнюю, не отрывая его от экрана;
+## - быстрый горизонтальный свайп по свободной правой части — рывок в ту сторону;
+## - недоступные действия приглушены, при игре с геймпада слой скрывается.
 const FONT := preload("res://assets/fonts/PTSerif-Bold.ttf")
 const INK := Color("#17130f")
 const RED := Color("#9c1f24")
 const PAPER := Color("#f1e6d0")
-const RADIUS := 52.0
-const STICK_RADIUS := 84.0
+# Зона нажатия относительно нарисованного радиуса.
+const HIT_SCALE := 1.3
+# Порог перехода пальца на соседнюю кнопку: нужно выйти за свою кнопку.
+const SLIDE_RELEASE := 1.15
+# Доля безопасной ширины слева, где появляется плавающий стик.
+const MOVE_ZONE := 0.45
+const MOVE_ZONE_TOP := 0.22
+const STICK_DEADZONE := 0.2
+const SWIPE_DIST := 64.0
+const SWIPE_MS := 260
+const BASE_RADIUS := {
+	"move": 84.0, "jump": 64.0, "attack": 60.0, "dash": 54.0,
+	"heal": 46.0, "swap": 42.0, "pause": 38.0,
+}
+const LETTERS := {"jump": "A", "attack": "X", "dash": "B", "heal": "Y"}
 var editing := false
 var selected_element := "move"
 var edit_pointer := -1
@@ -19,6 +42,7 @@ var stick_center := Vector2.ZERO
 var stick_tip := Vector2.ZERO
 var safe := Rect2()
 var _last_state := -1
+var _last_device := ""
 var _mouse_down := false
 var feedback := {}
 
@@ -52,7 +76,7 @@ func _layout() -> void:
 			child.offset_top = safe.position.y
 			child.offset_right = safe.end.x - get_viewport_rect().size.x
 			child.offset_bottom = safe.end.y - get_viewport_rect().size.y
-	stick_center = element_center("move", safe.position + Vector2(160.0, safe.size.y - 150.0))
+	stick_center = home_center()
 	stick_tip = stick_center
 	queue_redraw()
 
@@ -68,6 +92,11 @@ func _process(_delta: float) -> void:
 	if _last_state != flow.state:
 		reset()
 		_last_state = flow.state
+	if CTL.device != _last_device:
+		# Геймпад перехватил управление: отпускаем всё, что держали пальцы.
+		if CTL.device == "gamepad":
+			reset()
+		_last_device = CTL.device
 	for action in buttons():
 		var target := 1.0 if CTL.touch_down.get(action, false) else 0.0
 		feedback[action] = move_toward(float(feedback.get(action, 0.0)), target, _delta * 12.0)
@@ -80,14 +109,21 @@ func _notification(what: int) -> void:
 		reset()
 
 
+## Как в мобильной Dead Cells: пока играют с геймпада, кнопки не закрывают
+## картинку. Первое касание экрана возвращает их.
+func hidden() -> bool:
+	return not editing and CTL.device == "gamepad"
+
+
+## Раскладка по умолчанию: дуга под правый большой палец.
 func buttons() -> Dictionary:
 	var end := safe.end
 	var result := {
-		"jump": end - Vector2(90.0, 102.0),
-		"attack": end - Vector2(214.0, 184.0),
-		"dash": end - Vector2(90.0, 274.0),
-		"swap": end - Vector2(338.0, 94.0),
-		"heal": end - Vector2(338.0, 274.0),
+		"jump": end - Vector2(100.0, 100.0),
+		"attack": end - Vector2(238.0, 120.0),
+		"dash": end - Vector2(118.0, 250.0),
+		"heal": end - Vector2(262.0, 262.0),
+		"swap": end - Vector2(376.0, 92.0),
 		"pause": Vector2(end.x - 60.0, safe.position.y + 58.0),
 	}
 	for action in result:
@@ -95,15 +131,27 @@ func buttons() -> Dictionary:
 	return result
 
 
-func action_at(pos: Vector2) -> String:
+## Ближайшая кнопка в нормированных радиусах: крупная кнопка не проигрывает
+## мелкой, а касание в щели между ними уходит той, к которой палец ближе.
+func action_at(pos: Vector2, reach := HIT_SCALE) -> String:
+	var centers := buttons()
 	var nearest := ""
-	var distance := INF
-	for action in buttons():
-		var d := pos.distance_to(buttons()[action])
-		if d <= element_radius(action) + 6.0 and d < distance:
-			distance = d
+	var best := INF
+	for action in centers:
+		var d: float = pos.distance_to(centers[action]) / element_radius(action)
+		# Пауза ловит только точное касание: её нельзя задеть в бою.
+		var limit := minf(reach, 1.1) if action == "pause" else reach
+		if d <= limit and d < best:
+			best = d
 			nearest = action
 	return nearest
+
+
+func in_move_zone(pos: Vector2) -> bool:
+	if CTL.touch_style == "floating":
+		return pos.x <= safe.position.x + safe.size.x * MOVE_ZONE \
+			and pos.y >= safe.position.y + safe.size.y * MOVE_ZONE_TOP
+	return pos.distance_to(home_center()) <= element_radius("move") * 1.6
 
 
 func _input(event: InputEvent) -> void:
@@ -151,32 +199,68 @@ func _press(id: int, pos: Vector2) -> void:
 			flow._pause()
 			reset()
 			return
-		fingers[id] = {"action": action}
-		CTL.touch_enter(action)
-		CTL.touch_tap(action)
-	elif stick_id == -1 and ((CTL.touch_style == "floating" and pos.distance_to(home_center()) <= element_radius("move") * 2.0) or (CTL.touch_style != "floating" and pos.distance_to(home_center()) <= element_radius("move") * 1.25)):
+		_hold(id, action)
+	elif stick_id == -1 and in_move_zone(pos):
 		stick_id = id
 		stick_center = clamp_center(pos, element_radius("move")) if CTL.touch_style == "floating" else home_center()
 		CTL.stick_start()
 		_move_stick(pos)
+	elif CTL.swipe_dash:
+		fingers[id] = {"swipe": true, "start": pos, "t": Time.get_ticks_msec()}
+
+
+func _hold(id: int, action: String) -> void:
+	fingers[id] = {"action": action}
+	CTL.touch_enter(action)
+	CTL.touch_tap(action)
+	CTL.haptic()
 
 
 func _move_stick(pos: Vector2) -> void:
-	var delta := (pos - stick_center).limit_length(element_radius("move"))
+	var r := element_radius("move")
+	var delta := pos - stick_center
+	# Плавающий стик тянется за пальцем: смена направления не требует
+	# возвращать палец через весь круг.
+	if CTL.touch_style == "floating" and delta.length() > r:
+		stick_center = pos - delta.normalized() * r
+		delta = pos - stick_center
+	delta = delta.limit_length(r)
 	stick_tip = stick_center + delta
-	var axis := delta / element_radius("move")
-	if axis.length() < 0.16:
-		axis = Vector2.ZERO
-	if CTL.touch_style == "dpad":
-		axis = Vector2(signf(axis.x) if absf(axis.x) > 0.28 else 0.0, signf(axis.y) if absf(axis.y) > 0.28 else 0.0)
+	var axis := CTL.sector(delta / r, STICK_DEADZONE)
 	CTL.stick_move(axis.x, axis.y)
 
 
 func _drag(id: int, pos: Vector2) -> void:
 	if id == stick_id:
 		_move_stick(pos)
-	# Боевые кнопки сохраняют захват до отпускания пальца: небольшой
-	# сдвиг большого пальца не отменяет прыжок и не включает соседний рывок.
+		return
+	if not fingers.has(id):
+		return
+	var held: Dictionary = fingers[id]
+	if held.has("action"):
+		if CTL.slide_buttons:
+			_slide(id, held, pos)
+	elif held.has("swipe") and not held.get("done", false):
+		var d: Vector2 = pos - held.start
+		if Time.get_ticks_msec() - int(held.t) <= SWIPE_MS \
+				and absf(d.x) >= SWIPE_DIST and absf(d.x) > absf(d.y) * 1.2:
+			held["done"] = true
+			CTL.touch_dash(signf(d.x))
+			CTL.haptic()
+
+
+## Перекат пальца с кнопки на кнопку. Гистерезис: палец должен покинуть свою
+## кнопку и оказаться внутри рисунка соседней, поэтому небольшой сдвиг
+## большого пальца не отменяет прыжок и не включает соседний рывок.
+func _slide(id: int, held: Dictionary, pos: Vector2) -> void:
+	var current: String = held.action
+	if pos.distance_to(buttons()[current]) <= element_radius(current) * SLIDE_RELEASE:
+		return
+	var next := action_at(pos, 1.0)
+	if next.is_empty() or next == current or next == "pause":
+		return
+	CTL.touch_exit(current)
+	_hold(id, next)
 
 
 func _release(id: int, pos: Vector2, canceled := false) -> void:
@@ -190,6 +274,8 @@ func _release(id: int, pos: Vector2, canceled := false) -> void:
 	fingers.erase(id)
 	if held.has("action"):
 		CTL.touch_exit(held.action)
+		return
+	if held.has("swipe"):
 		return
 	if canceled or held.state != flow.state or pos.distance_to(held.start) > 36.0:
 		return
@@ -210,13 +296,25 @@ func _release(id: int, pos: Vector2, canceled := false) -> void:
 		var start: Vector2 = held.start - panel.position
 		for i in panel.actions.size():
 			if panel.item_rect(i).has_point(local) and panel.item_rect(i).has_point(start):
-				if panel == flow.title_screen:
+				if panel.has_method("activate"):
 					panel.activate(i)
 				else:
 					panel.selected = i
 					panel.chosen.emit(panel.actions[i])
 				panel.queue_redraw()
 				break
+
+
+## Доступно ли действие сейчас: недоступные кнопки приглушаются.
+func available(action: String) -> bool:
+	if editing or flow == null or not is_instance_valid(flow.player):
+		return true
+	match action:
+		"heal":
+			return flow.player.soul >= Player.HEAL_COST and flow.player.hp < Player.MAX_HP
+		"swap":
+			return flow.player.weapons.size() > 1
+	return true
 
 
 ## Неровный контур и полупрозрачная тушь из v0.2; форма стабильна между кадрами.
@@ -228,82 +326,93 @@ func _ink_disc(c: Vector2, radius: float, fill: Color, edge: Color) -> void:
 		points.append(c + Vector2.from_angle(angle) * r)
 	draw_colored_polygon(points, fill)
 	points.append(points[0])
-	draw_polyline(points, Color(INK, 0.45), 5.0, true)
+	draw_polyline(points, Color(INK, 0.45 * edge.a), 5.0, true)
 	draw_polyline(points, edge, 2.0, true)
 
 
 func _draw() -> void:
-	if (flow.state != flow.State.PLAY and not editing) or flow.console.visible:
+	if (flow.state != flow.State.PLAY and not editing) or flow.console.visible or hidden():
 		return
 	if editing:
 		draw_rect(Rect2(Vector2.ZERO, size), PAPER)
 	var home := home_center()
 	var center := stick_center if stick_id >= 0 else home
 	var cream := Color("#302923") if editing else Color("#f6edda")
+	var r := element_radius("move")
 	if CTL.touch_style != "dpad":
-		_ink_disc(center, element_radius("move"), Color(INK, 0.14), Color(cream, 0.65))
+		_ink_disc(center, r, Color(INK, 0.14), Color(cream, 0.65))
 	else:
-		var r := element_radius("move")
 		var cross := PackedVector2Array()
 		for point in [Vector2(-0.34,-1), Vector2(0.34,-1), Vector2(0.34,-0.34), Vector2(1,-0.34), Vector2(1,0.34), Vector2(0.34,0.34), Vector2(0.34,1), Vector2(-0.34,1), Vector2(-0.34,0.34), Vector2(-1,0.34), Vector2(-1,-0.34), Vector2(-0.34,-0.34)]:
 			cross.append(center + point * r)
 		draw_colored_polygon(cross, Color(INK, 0.22))
 		cross.append(cross[0])
 		draw_polyline(cross, Color(cream, 0.8), 3, true)
-	draw_arc(center, 33.0, 0.0, TAU, 32, Color(cream, 0.3), 1.5, true)
+	draw_arc(center, r * 0.39, 0.0, TAU, 32, Color(cream, 0.3), 1.5, true)
 	for direction in [-1.0, 1.0]:
-		var arrow := center + Vector2(direction * 57.0, 0.0)
+		var arrow := center + Vector2(direction * r * 0.68, 0.0)
 		draw_polyline(PackedVector2Array([arrow + Vector2(-direction * 12.0, -10.0), arrow, arrow + Vector2(-direction * 12.0, 10.0)]), Color(cream, 0.85), 3.0, true)
 	if stick_id >= 0:
-		_ink_disc(stick_tip, 27.0, Color(cream, 0.55), Color(cream, 0.9))
+		_ink_disc(stick_tip, r * 0.32, Color(cream, 0.55), Color(cream, 0.9))
 	if CTL.touch_style == "dpad":
-		var r := element_radius("move")
 		for direction in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
 			var c: Vector2 = center + direction * r * 0.6
 			draw_rect(Rect2(c - Vector2.ONE * r * 0.22, Vector2.ONE * r * 0.44), Color(cream, 0.6))
 	if editing:
-		draw_arc(home, element_radius("move") + 7, 0, TAU, 64, RED if selected_element == "move" else Color(INK, 0.3), 3, true)
-	var letters := {"jump": "A", "attack": "X", "dash": "B", "heal": "Y"}
-	for action in buttons():
-		var c: Vector2 = buttons()[action]
+		draw_arc(home, r + 7, 0, TAU, 64, RED if selected_element == "move" else Color(INK, 0.3), 3, true)
+	var centers := buttons()
+	for action in centers:
+		var c: Vector2 = centers[action]
 		var press := float(feedback.get(action, 0.0))
 		var radius := element_radius(action) * (1.0 + press * 0.045)
+		var k := radius / 52.0
+		var dim := 1.0 if available(action) else 0.42
 		if editing:
 			draw_arc(c, radius + 7, 0, TAU, 64, RED if selected_element == action else Color(INK, 0.3), 3, true)
-		var fill := Color(INK, 0.22).lerp(Color(cream, 0.78), press)
-		var edge := Color(cream, 0.78).lerp(RED, press)
-		var text := cream.lerp(INK, press)
+		var fill := Color(INK, 0.22 * dim).lerp(Color(cream, 0.78), press)
+		var edge := Color(cream, 0.78 * dim).lerp(RED, press)
+		var text := Color(cream, dim).lerp(INK, press)
 		_ink_disc(c, radius, fill, edge)
 		if action == "pause":
 			for x in [-7.0, 7.0]:
 				draw_line(c + Vector2(x, -12.0), c + Vector2(x, 12.0), text, 4.0, true)
 		elif action == "swap":
 			for direction in [-1.0, 1.0]:
-				var y: float = -8.0 * direction
-				draw_line(c + Vector2(-19, y), c + Vector2(19, y), text, 2.5, true)
-				var tip := c + Vector2(direction * 19, y)
+				var y: float = -8.0 * direction * k
+				draw_line(c + Vector2(-19, y) * Vector2(k, 1), c + Vector2(19, y) * Vector2(k, 1), text, 2.5, true)
+				var tip := c + Vector2(direction * 19 * k, y)
 				draw_polyline(PackedVector2Array([tip + Vector2(-direction * 7, -6), tip, tip + Vector2(-direction * 7, 6)]), text, 2.5, true)
 		else:
 			# Тень сохраняет читаемость светлых букв и на бумаге, и на туши.
-			draw_string(FONT, c + Vector2(-radius + 1, 11), letters[action], HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 32, Color(INK, 0.45 * (1.0 - press)))
-			draw_string(FONT, c + Vector2(-radius, 10), letters[action], HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 32, text)
+			var letter_size := int(round(32.0 * k))
+			var baseline := 10.0 * k
+			draw_string(FONT, c + Vector2(-radius + 1, baseline + 1), LETTERS[action], HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, letter_size, Color(INK, 0.45 * (1.0 - press) * dim))
+			draw_string(FONT, c + Vector2(-radius, baseline), LETTERS[action], HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, letter_size, text)
 		if action != "pause":
-			draw_string(FONT, c + Vector2(-radius, 32), L10N.t("mobile." + action), HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 13, text)
+			draw_string(FONT, c + Vector2(-radius, 32.0 * k), L10N.t("mobile." + action), HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 13, text)
 		if action == "dash" and is_instance_valid(flow.player):
 			var ready: float = flow.player.dash_ready()
 			if ready < 1.0 and ready > 0.0:
 				draw_arc(c, radius - 6.0, -PI * 0.5, -PI * 0.5 + TAU * ready, 48, RED, 3.0, true)
+			elif ready <= 0.0:
+				draw_arc(c, radius - 6.0, 0.0, TAU, 32, Color(INK, 0.35), 2.0, true)
 
-		if action == "heal" and is_instance_valid(flow.player) and flow.player.healing:
-			var progress: float = clampf(flow.player.heal_t / Player.HEAL_TIME, 0.0, 1.0)
-			draw_arc(c, radius - 6.0, -PI * 0.5, -PI * 0.5 + TAU * progress, 48, InkR.GOLD, 3.0, true)
+		if action == "heal" and is_instance_valid(flow.player):
+			if flow.player.healing:
+				var progress: float = clampf(flow.player.heal_t / Player.HEAL_TIME, 0.0, 1.0)
+				draw_arc(c, radius - 6.0, -PI * 0.5, -PI * 0.5 + TAU * progress, 48, InkR.GOLD, 3.0, true)
+			else:
+				# Как счётчик фляг Dead Cells: видно, сколько души до лечения.
+				var charge: float = clampf(flow.player.soul / Player.HEAL_COST, 0.0, 1.0)
+				if charge > 0.0:
+					draw_arc(c, radius - 6.0, -PI * 0.5, -PI * 0.5 + TAU * charge, 48, Color(InkR.GOLD, 0.35 + 0.4 * dim), 2.0, true)
 
 
 func element_scale(action: String) -> float:
 	return float(CTL.touch_layout.get(action, {}).get("scale", 1.0))
 
 func element_radius(action: String) -> float:
-	return (STICK_RADIUS if action == "move" else (38.0 if action == "pause" else RADIUS)) * element_scale(action)
+	return float(BASE_RADIUS.get(action, 52.0)) * element_scale(action)
 
 func clamp_center(pos: Vector2, radius: float) -> Vector2:
 	var top := safe.position.y + radius
@@ -319,7 +428,7 @@ func element_center(action: String, fallback: Vector2) -> Vector2:
 	return Vector2(clampf(pos.x, safe.position.x + radius + 8, safe.end.x - radius - 8), clampf(pos.y, safe.position.y + radius + 8, safe.end.y - radius - 8))
 
 func home_center() -> Vector2:
-	return element_center("move", safe.position + Vector2(160.0, safe.size.y - 150.0))
+	return element_center("move", safe.position + Vector2(170.0, safe.size.y - 160.0))
 
 func begin_edit() -> void:
 	editing = true

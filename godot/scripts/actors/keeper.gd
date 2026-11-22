@@ -3,10 +3,10 @@ extends CharacterBody2D
 
 ## Хранитель Первого Взмаха — босс финальной арены.
 ## Большая фигура из перечёркнутых имён. Пока красная печать на груди закрыта,
-## удары не снимают здоровье: печать открывается после тяжёлого удара сверху.
+## удары не снимают здоровье: печать открывается после взмаха и тяжёлого удара сверху.
 ## Тяжёлая кисть ломает печать быстрее клинка, потому что бьёт сильнее.
 ##
-## Фаза 1: волна по полу, удар сверху, призыв двух клякс.
+## Фаза 1: волна по полу, удар сверху, редкий призыв одной кляксы.
 ## Фаза 2: волна в обе стороны, дождь чернил, короче замах и длиннее окно.
 
 signal died(keeper: Keeper)
@@ -20,7 +20,8 @@ const DROP_SCENE := preload("res://scenes/actors/ink_drop.tscn")
 
 const GRAVITY := 1900.0
 const MAX_FALL := 950.0
-const SEAL_TIME := 1.3
+const SEAL_TIME := 2.4
+const SWEEP_OPEN_TIME := 1.8
 const TOUCH_RANGE := Vector2(58.0, 76.0)
 const TOUCH_COOLDOWN := 0.9
 const KNOCKBACK := 60.0
@@ -50,7 +51,7 @@ var target: Player
 var facing := -1
 var state_t := 0.0
 var attack_cd := 0.0
-var summon_cd := 12.0
+var summon_cd := 20.0
 var rain_t := 2.0
 var seal_open := false
 var seal_t := 0.0
@@ -104,6 +105,9 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var par := get_parent()
+	if par is Level and par.is_frozen():
+		return
 	if dead:
 		return
 	_t += delta
@@ -127,16 +131,16 @@ func _physics_process(delta: float) -> void:
 			engaged = true
 			state = State.STALK
 			attack_cd = 0.9
-			summon_cd = 12.0
+			summon_cd = 20.0
 		_apply_gravity(delta)
 		move_and_slide()
 		queue_redraw()
 		return
 
-	if phase == 2:
+	if phase == 2 and state == State.STALK and not seal_open:
 		rain_t -= delta
 		if rain_t <= 0.0:
-			rain_t = 2.6
+			rain_t = 4.5
 			_rain()
 
 	match state:
@@ -148,14 +152,14 @@ func _physics_process(delta: float) -> void:
 			if state_t <= 0.0:
 				_sweep()
 				state = State.RECOVER
-				state_t = 1.25 if phase == 2 else 0.9
+				state_t = SWEEP_OPEN_TIME
 		State.WINDUP_SLAM:
 			_stop(delta)
 			state_t -= delta
 			if state_t <= 0.0:
 				_slam()
 				state = State.RECOVER
-				state_t = 1.25 if phase == 2 else 0.9
+				state_t = 2.1
 		State.SUMMON:
 			_stop(delta)
 			state_t -= delta
@@ -166,9 +170,9 @@ func _physics_process(delta: float) -> void:
 		State.RECOVER:
 			_stop(delta)
 			state_t -= delta
-			if state_t <= 0.0:
+			if state_t <= 0.0 and not seal_open:
 				state = State.STALK
-				attack_cd = 0.35 if phase == 2 else 0.6
+				attack_cd = 0.9 if phase == 2 else 1.1
 		State.STAGGER:
 			_stop(delta)
 			state_t -= delta
@@ -181,7 +185,8 @@ func _physics_process(delta: float) -> void:
 		_:
 			_stop(delta)
 
-	if absf(target.global_position.x - global_position.x) < TOUCH_RANGE.x \
+	if state != State.RECOVER and state != State.STAGGER and not seal_open \
+		and absf(target.global_position.x - global_position.x) < TOUCH_RANGE.x \
 		and absf(target.global_position.y - global_position.y) < TOUCH_RANGE.y:
 		_touch_player(target.global_position.x - global_position.x)
 
@@ -204,19 +209,23 @@ func _tick_stalk(delta: float) -> void:
 	if attack_cd > 0.0:
 		return
 	if phase == 1 and summon_cd <= 0.0:
-		summon_cd = 12.0
+		summon_cd = 20.0
 		state = State.SUMMON
 		state_t = 0.7
 		return
 	if _next_sweep:
 		_next_sweep = false
 		state = State.WINDUP_SWEEP
-		state_t = windup if phase == 1 else windup * 0.62
+		state_t = _windup_time()
 	else:
 		_next_sweep = true
 		slam_x = clampf(target.global_position.x, min_x, max_x)
 		state = State.WINDUP_SLAM
-		state_t = windup if phase == 1 else windup * 0.62
+		state_t = _windup_time()
+
+
+func _windup_time() -> float:
+	return maxf(windup, 0.72) if phase == 1 else maxf(windup * 0.9, 0.62)
 
 
 func _stop(delta: float) -> void:
@@ -243,6 +252,8 @@ func open_seal(duration := SEAL_TIME) -> void:
 
 
 func _sweep() -> void:
+	# The exhausted brush exposes the seal after either readable attack.
+	open_seal(SWEEP_OPEN_TIME)
 	var dir := 1.0 if target.global_position.x >= global_position.x else -1.0
 	_spawn_wave(dir)
 	if phase == 2:
@@ -273,11 +284,13 @@ func _slam() -> void:
 func _on_drop_landed() -> void:
 	if not dead:
 		open_seal()
+		state = State.RECOVER
+		state_t = maxf(state_t, SEAL_TIME)
 
 
 func _summon() -> void:
 	summon.emit(global_position + Vector2(-96.0, 20.0), &"enemy.blot", 1)
-	summon.emit(global_position + Vector2(96.0, 20.0), &"enemy.blot", 1)
+	# One add per summon leaves room to learn the first boss instead of flooding the arena.
 
 
 func _rain() -> void:
@@ -295,14 +308,14 @@ func hit(amount: int, from_dir: int, knock: float = KNOCKBACK) -> void:
 		return
 	if not seal_open:
 		clang_t = 0.2
-		velocity.x = -from_dir * 24.0
+		velocity.x = from_dir * 24.0
 		return
 	var dealt := amount + (1 if amount >= 3 else 0)
 	hp -= dealt
 	InkFx.text_fx(global_position.x, global_position.y - 30, "-%d" % dealt, 20, InkR.RED, false)
 	InkFx.ink_burst(global_position.x, global_position.y, 9, 150, [InkR.INK, InkR.RED], 4, false, null, 0, 0, 1000, global_position.y + 25)
 	hit_t = HURT_TIME
-	velocity.x = -from_dir * knock
+	velocity.x = from_dir * knock
 	if hp <= 0:
 		_die()
 		return
@@ -335,14 +348,30 @@ func _draw() -> void:
 	# The heavy brush follows anticipation and a short follow-through.
 	var pose := 0.0
 	if state == State.WINDUP_SWEEP or state == State.WINDUP_SLAM:
-		pose = 1.0 - clampf(state_t / maxf(windup * (0.62 if phase == 2 else 1.0), 0.01), 0, 1)
+		pose = 1.0 - clampf(state_t / maxf(_windup_time(), 0.01), 0, 1)
 	var angle := -0.3 - pose * 1.7
 	if state == State.RECOVER:
 		angle = 0.9
 	var hand := Vector2(facing * 25, -30)
 	var tip := hand + Vector2(cos(angle) * facing, sin(angle)) * 68
 	draw_line(hand, tip, INK, 9, true)
-	draw_line(tip, tip + Vector2(facing * 9, 15), RED, 14, true)
+	# Split, soaked bristles follow the same pose; combat geometry is unchanged.
+	var brush_axis := (tip - hand).normalized()
+	var brush_side := brush_axis.orthogonal()
+	var bristles := PackedVector2Array([tip - brush_side * 8, tip + brush_side * 8,
+		tip + brush_axis * 29 + brush_side * 5, tip + brush_axis * 20 + brush_side * 2,
+		tip + brush_axis * 33, tip + brush_axis * 24 - brush_side * 4,
+		tip + brush_axis * 30 - brush_side * 7])
+	draw_colored_polygon(bristles, RED if seal_open else INK)
+	draw_line(tip - brush_side * 8, tip + brush_side * 8, RED, 4, true)
+	for strand in 3:
+		var start := tip + brush_side * float(strand * 4 - 4)
+		draw_line(start, start + brush_axis * (19 + strand * 3), Color(BONE, 0.36), 1, true)
+	if state == State.WINDUP_SWEEP or state == State.WINDUP_SLAM:
+		for drop in 3:
+			var fall := fmod(_t * 50 + float(drop) * 16, 48.0)
+			var spot := tip + brush_axis * 27 + Vector2(float(drop - 1) * 7, fall)
+			draw_line(spot - Vector2(0, 4), spot, Color(RED, 0.6 * (1.0 - fall / 48.0)), 2, true)
 
 	# Тень и ряса из перечёркнутых строк.
 	draw_circle(Vector2(0.0, 20.0), 36.0, Color(INK, 0.14))
@@ -366,17 +395,9 @@ func _draw() -> void:
 	# Плечи и руки. Правая рука держит кисть и двигается на замахе.
 	var arm_dir := float(facing)
 	draw_line(Vector2(-16.0, -52.0), Vector2(-40.0, -22.0), Color(ink, 0.92), 9.0)
-	var brush_len := 46.0
-	if state == State.WINDUP_SWEEP:
-		brush_len = 62.0
-	elif state == State.WINDUP_SLAM:
-		brush_len = 34.0
-	draw_line(Vector2(16.0, -52.0), Vector2(16.0 + arm_dir * 20.0, -52.0 + brush_len * 0.4),
-		Color(ink, 0.92), 9.0)
-	draw_line(Vector2(16.0 + arm_dir * 20.0, -52.0 + brush_len * 0.4),
-		Vector2(16.0 + arm_dir * 34.0, -52.0 + brush_len),
-		Color(INK_SOFT, 0.95), 4.0)
-	draw_circle(Vector2(16.0 + arm_dir * 34.0, -52.0 + brush_len), 5.0, RED)
+	var elbow := Vector2(16.0 + arm_dir * 16.0, -36.0)
+	draw_line(Vector2(16.0, -52.0), elbow, Color(ink, 0.92), 9.0)
+	draw_line(elbow, hand, Color(ink, 0.92), 7.0)
 
 	# Голова и зачёркнутое имя вместо лица.
 	InkR.blob(sway * 0.5, -74.0, 17.0, InkR.RED if flash else InkR.CREAM,
@@ -406,7 +427,7 @@ func _draw() -> void:
 
 	# Телеграфы: линия по полу перед волной и столб перед ударом сверху.
 	if state == State.WINDUP_SWEEP:
-		var a := 0.35 + 0.35 * (1.0 - clampf(state_t / maxf(windup, 0.01), 0.0, 1.0))
+		var a := 0.35 + 0.35 * (1.0 - clampf(state_t / maxf(_windup_time(), 0.01), 0.0, 1.0))
 		draw_line(Vector2(-120.0, 20.0), Vector2(120.0, 20.0), Color(RED, a), 4.0)
 	elif state == State.WINDUP_SLAM:
 		var lx := slam_x - global_position.x

@@ -1,0 +1,18 @@
+{
+  "ru": {
+    "guide.title": "Искусство владеть клинком",
+    "guide.move": "Движение",
+    "guide.done": "Понятно",
+    "controls.bind_note": "Выберите действие, чтобы изменить его назначение.",
+    "controls.capture_note": "Ожидание ввода: 8 секунд. Занятые назначения будут заменены.",
+    "controls.layout_note": "Перетаскивайте элементы и меняйте размер каждого отдельно. Учитываются пропорции экрана и безопасная область."
+  },
+  "en": {
+    "guide.title": "The art of the blade",
+    "guide.move": "Movement",
+    "guide.done": "Got it",
+    "controls.bind_note": "Select an action to change its binding.",
+    "controls.capture_note": "Waiting for input: 8 seconds. Existing bindings will be replaced.",
+    "controls.layout_note": "Drag each control and adjust its size individually. Layout respects the screen proportions and safe area."
+  }
+}

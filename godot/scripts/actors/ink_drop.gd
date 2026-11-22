@@ -19,6 +19,7 @@ var falling := false
 var fall_speed := 0.0
 var _t := 0.0
 var _done := false
+var _hit_player := false
 ## Уровень пола: на этой высоте капля считается приземлившейся.
 var floor_y := 760.0
 
@@ -36,6 +37,9 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var par := get_parent()
+	if par is Level and par.is_frozen():
+		return
 	if _done:
 		return
 	_t += delta
@@ -64,11 +68,13 @@ func _physics_process(delta: float) -> void:
 func _on_body_entered(body: Node2D) -> void:
 	if _done:
 		return
-	if body is Player:
+	if body is Player and not _hit_player:
+		_hit_player = true
+		set_deferred("monitoring", false)
 		body.take_damage(damage, 1.0)
 		CombatFx.burst(self, global_position, Vector2.UP, RED, 18)
-		_done = true
-		queue_free()
+		# Keep falling after one hit: the heavy slam must still reach the floor
+		# and expose the seal, including when the player mistimes a dodge.
 
 
 func _finish() -> void:
@@ -89,5 +95,9 @@ func _draw() -> void:
 	for i in 4:
 		draw_circle(Vector2(sin(_t * 17 + i) * 2, -float(i + 1) * 10), 7.0 - i * 1.5, Color(INK, 0.4 - i * 0.08))
 	draw_circle(Vector2(0.0, -6.0), 6.0, Color(INK, 0.25))
-	draw_circle(Vector2.ZERO, RADIUS, INK)
+	# A heavy drop stretches into a point while falling; its hit radius is unchanged.
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(0, -23), Vector2(6, -8), Vector2(10, 0), Vector2(7, 8),
+		Vector2(0, 11), Vector2(-7, 8), Vector2(-10, 0), Vector2(-6, -8)]), INK)
+	draw_line(Vector2(-3, -8), Vector2(-4, 1), Color(0.94, 0.89, 0.78, 0.65), 1.8, true)
 	draw_circle(Vector2(-3.0, -3.0), 3.0, Color(RED, 0.85))

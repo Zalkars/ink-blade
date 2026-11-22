@@ -68,6 +68,9 @@ func configure(def: EntityDef, overrides: Dictionary = {}) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var par := get_parent()
+	if par is Level and par.is_frozen():
+		return
 	if dead:
 		return
 	_wob += delta
@@ -112,7 +115,7 @@ func hit(damage: int, from_dir: int, knock: float = KNOCKBACK) -> void:
 	InkFx.text_fx(global_position.x, global_position.y - 30, "-%d" % damage, 20, InkR.RED, false)
 	InkFx.ink_burst(global_position.x, global_position.y, 9, 150, [InkR.INK, InkR.RED], 4, false, null, 0, 0, 1000, global_position.y + 25)
 	hit_t = HURT_TIME
-	velocity.x = -from_dir * knock
+	velocity.x = from_dir * knock
 	velocity.y = -180.0
 	if hp <= 0:
 		InkFx.ink_burst(global_position.x, global_position.y, 22, 260, null, 6, true, null, 0, 0, 1000, global_position.y + 25)
@@ -145,6 +148,15 @@ func _draw() -> void:
 	InkR.srand(650)
 	InkR.blob(0, 1, 18, fill, InkR.INK, 2.4, 1.0, 1.0, 12, 0.16)
 	InkR.hatch(InkR.circle_pts(0, 1, 16, 12), 8, 0.12)
+	# Wet fringe and pale paper glints give the body volume without changing its collider.
+	for rim in 5:
+		var rx := -15.0 + float(rim) * 7.5
+		var ry := 9.0 + sin(_wob * 4.0 + float(rim) * 1.7) * 2.5
+		InkR.poly([Vector2(rx, ry), Vector2(rx + sin(_wob * 3.0 + rim) * 3.0, ry + 7.0)],
+			2.6, InkR.INK, 0.8, 0.4)
+	InkR.poly([Vector2(-11, -5), Vector2(-8, -10), Vector2(-2, -12)],
+		2.2, InkR.PAPER_LIGHT, 0.8, 0.3)
+	InkR.blob(-12, 1, 1.8, InkR.PAPER_LIGHT, null, 1.0, 0.7, 0.2, 7, 0.1, false)
 	for i in 2:
 		var x := -6.0 + i * 12.0
 		InkR.blob(x, -4, 4.0, InkR.CREAM, InkR.INK, 1.3)

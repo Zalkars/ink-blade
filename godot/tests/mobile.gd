@@ -37,6 +37,7 @@ func shot(name: String) -> void:
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	SaveGame.erase_slot(SaveGame.AUTOSAVE)
 	flow = preload("res://scenes/flow/game_flow.tscn").instantiate()
 	add_child(flow)
 	await frames()
@@ -48,6 +49,9 @@ func _ready() -> void:
 	touch(0, Vector2(360, 458), false)
 	check(flow.state == flow.State.TITLE, "menu drag canceled")
 	tap(Vector2(160, 458))
+	check(flow.state == flow.State.GUIDE, "tap Play opens the single controls guide")
+	await frames(45)
+	tap(flow.control_guide._button.get_global_rect().get_center())
 	check(flow.state == flow.State.CUTSCENE, "tap Play opens intro")
 	await frames()
 	var index: int = flow.cutscene.index
@@ -97,6 +101,9 @@ func _ready() -> void:
 	flow.player.take_damage(999, 1.0)
 	await frames()
 	check(flow.state == flow.State.DEAD, "death overlay")
+	tap(flow.overlay.position + flow.overlay.item_rect(0).get_center())
+	check(flow.state == flow.State.DEAD, "death reveal blocks accidental touch")
+	await frames(int(ceil(Engine.physics_ticks_per_second * 1.1)))
 	tap(flow.overlay.position + flow.overlay.item_rect(0).get_center())
 	check(flow.state == flow.State.PLAY, "tap checkpoint respawns")
 	await frames()

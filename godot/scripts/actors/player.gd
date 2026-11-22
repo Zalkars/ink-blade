@@ -2,11 +2,9 @@ class_name Player
 extends CharacterBody2D
 
 ## Игрок новой основы. CharacterBody2D + один таймлайн в _physics_process.
-## Цифры — первый проход по docs/baseline/2026-10-28/feel.md:
-##   падение медленнее (гравитация -25%, максимальная скорость падения -20%),
-##   прыжок выше примерно на 12% при более долгом полёте,
-##   рывок длиннее на 12%, у атаки появился кулдаун.
-## Всё это замеряется на новом контроллере и правится по ощущениям.
+## Цифры по docs/baseline/2026-10-28/feel.md:
+##   фиксированная высота прыжка, замедленное падение, удлинённый рывок, небольшой кулдаун атаки,
+##   плюс 0.2-возвраты: hitstop, i-frames рывка (0.19 с) и проваливание сквозь one-way.
 
 signal hp_changed(hp: int, max_hp: int)
 signal died
@@ -29,6 +27,10 @@ const JUMP_BUFFER := 0.13
 const DASH_SPEED := 980.0
 const DASH_TIME := 0.15
 const DASH_COOLDOWN := 0.34
+const DASH_IFRAMES := 0.19
+# Буфер нажатий атаки и рывка (как в Dead Cells): нажатие чуть раньше
+# окончания восстановления не теряется, особенно на сенсорном экране.
+const INPUT_BUFFER := 0.12
 
 const ATTACK_TIME := 0.18
 const ATTACK_COOLDOWN := 0.08
@@ -44,6 +46,17 @@ const BONE := Color("#d9cdb8")
 
 # Слой столкновений врагов: по нему бьёт атака игрока.
 const ENEMY_LAYER := 4
+const SOLID_MASK := 1
+const ONE_WAY_MASK := 8
+const GROUND_MASK := SOLID_MASK | ONE_WAY_MASK
+
+# (windup, active, recover, reach, dmg, knock)
+const BLADE_ATTACKS := [
+	null,
+	[0.05, 0.10, 0.10, 66.0, 1.0, 280.0],
+	[0.045, 0.10, 0.11, 70.0, 1.0, 320.0],
+	[0.07, 0.12, 0.16, 78.0, 2.0, 420.0],
+]
 
 var hp := MAX_HP
 var facing := 1
@@ -56,6 +69,10 @@ var air_dash := true
 
 var coyote := 0.0
 var jump_buf := 0.0
+var attack_buf := 0.0
+var dash_buf := 0.0
+var _dash_hint := 0.0
+var drop_t := 0.0
 var iframes := 0.0
 var hurt_t := 0.0
 var attack_t := 0.0
@@ -73,7 +90,7 @@ var attack_dir := "fwd"
 var swing_active := 0.1
 var swing_recover := 0.1
 var swing_windup := 0.05
-var swing_reach := Vector2(66,58)
+var swing_reach := Vector2(66, 58)
 var swing_damage := 1
 var swing_knock := 280.0
 var _hit_targets := {}
@@ -94,12 +111,22 @@ var _spawn := Vector2.ZERO
 
 func _ready() -> void:
 	_spawn = global_position
+	collision_mask = GROUND_MASK
 	# На старте открыт только клинок: кисть выдаёт Переписчик.
 	var all := WDB.all()
 	if not all.is_empty():
 		unlock_weapon(String(all[0].id), false)
 	hp_changed.emit(hp, MAX_HP)
 	spawn_effect()
+
+
+func _flow() -> Node:
+	var cur := get_parent()
+	while cur != null:
+		if cur.has_method("freeze"):
+			return cur
+		cur = cur.get_parent()
+	return null
 
 
 ## Открывает оружие по карточке. Возвращает false, если карточки нет
@@ -165,7 +192,7 @@ func _equip(index: int) -> void:
 	weapon = weapons[weapon_index]
 	attack_t = 0.0
 	attack_windup = 0.0
-	attack_cd = 0.0
+	# Switching cancels the swing, but retains its recovery time.
 	_struck = false
 	weapon_changed.emit(weapon_name())
 
@@ -182,7 +209,39 @@ func weapon_name() -> String:
 	return L10N.t(weapon.display_name_key)
 
 
+func _on_one_way_only() -> bool:
+	if not is_on_floor():
+		return false
+	var found_one_way := false
+	for i in get_slide_collision_count():
+		var col := get_slide_collision(i)
+		if col.get_normal().y >= -0.5:
+			continue
+		var layer := PhysicsServer2D.body_get_collision_layer(col.get_collider_rid())
+		if (layer & SOLID_MASK) != 0:
+			return false
+		if (layer & ONE_WAY_MASK) != 0:
+			found_one_way = true
+	return found_one_way
+
+
+## Вниз + прыжок на односторонней платформе: игрок проваливается сквозь неё.
+func try_drop_through() -> bool:
+	if not _on_one_way_only():
+		return false
+	drop_t = 0.22
+	collision_mask = SOLID_MASK
+	global_position.y += 3.0
+	coyote = 0.0
+	jump_buf = 0.0
+	InkFx.dust(global_position.x, global_position.y + 23.0, 4, 0.0)
+	return true
+
+
 func _physics_process(delta: float) -> void:
+	var par := get_parent()
+	if par is Level and par.is_frozen():
+		return
 	_wob += delta
 	combo_time = maxf(0.0, combo_time - delta)
 	_dust_time -= delta
@@ -193,6 +252,10 @@ func _physics_process(delta: float) -> void:
 	attack_t = maxf(0.0, attack_t - delta)
 	attack_windup = maxf(0.0, attack_windup - delta)
 	attack_cd = maxf(0.0, attack_cd - delta)
+	if drop_t > 0.0:
+		drop_t = maxf(0.0, drop_t - delta)
+		if drop_t <= 0.0:
+			collision_mask = GROUND_MASK
 	if attack_t > 0.0 and attack_windup <= 0.0:
 		_strike()
 		_struck = true
@@ -206,17 +269,26 @@ func _physics_process(delta: float) -> void:
 
 	coyote = maxf(0.0, coyote - delta)
 	jump_buf = maxf(0.0, jump_buf - delta)
+	attack_buf = maxf(0.0, attack_buf - delta)
+	dash_buf = maxf(0.0, dash_buf - delta)
 
 	if is_on_floor():
 		coyote = COYOTE_TIME
 		air_dash = true
 
 	if CTL.pressed("jump"):
-		jump_buf = JUMP_BUFFER
+		if not (CTL.axis_y() > 0.4 and try_drop_through()):
+			jump_buf = JUMP_BUFFER
 	if CTL.pressed("dash"):
-		_try_dash()
+		dash_buf = INPUT_BUFFER
+		_dash_hint = CTL.dash_hint
+	if dash_buf > 0.0 and _try_dash():
+		dash_buf = 0.0
 	if CTL.pressed("attack"):
-		_try_attack()
+		attack_buf = INPUT_BUFFER
+	# Удержание атаки — серия: следующий удар сразу после восстановления.
+	if (attack_buf > 0.0 or (CTL.hold_attack and CTL.down("attack"))) and _try_attack():
+		attack_buf = 0.0
 	if CTL.pressed("swap"):
 		next_weapon()
 
@@ -303,26 +375,40 @@ func _apply_run(ax: float, delta: float) -> void:
 		velocity.x = move_toward(velocity.x, ax * RUN_SPEED, accel * delta)
 
 
-func _try_dash() -> void:
+func _try_dash() -> bool:
 	if dash_cd > 0.0 or hurt_t > 0.0 or attack_t > 0.0 or dead:
-		return
+		return false
 	if not is_on_floor() and not air_dash:
-		return
+		return false
 	var ax := CTL.axis_x()
-	dash_dir = 1.0 if ax > 0.05 else (-1.0 if ax < -0.05 else float(facing))
+	if _dash_hint != 0.0:
+		# Свайп задаёт направление сам, независимо от стика.
+		dash_dir = signf(_dash_hint)
+	else:
+		dash_dir = 1.0 if ax > 0.05 else (-1.0 if ax < -0.05 else float(facing))
+	_dash_hint = 0.0
 	facing = int(dash_dir)
 	SND.dash()
 	InkFx.dust(global_position.x, global_position.y + 23, 8, -facing)
+	InkFx.ring(global_position.x, global_position.y, 6, 34, InkR.INK_SOFT, 0.28, 2)
 	CTL.rumble(0.15, 0.35, 90)
 	dash_t = DASH_TIME
 	dash_cd = DASH_COOLDOWN
+	iframes = maxf(iframes, DASH_IFRAMES)
 	if not is_on_floor():
 		air_dash = false
+	return true
 
 
-func _try_attack() -> void:
+func _try_attack() -> bool:
 	if attack_cd > 0.0 or weapon == null or hurt_t > 0.0 or dash_t > 0.0 or dead:
-		return
+		return false
+	var par := get_parent()
+	if par is Level:
+		par.hitstop = 0.0
+	var fl := _flow()
+	if fl != null:
+		fl.hitstop = 0.0
 	healing = false
 	heal_t = 0.0
 	attack_step = attack_step % 3 + 1 if combo_time > 0 else 1
@@ -338,7 +424,7 @@ func _try_attack() -> void:
 	swing_damage = weapon.damage
 	swing_knock = weapon.knockback
 	if String(weapon.id) == "weapon.blade":
-		var profile: Array = InkPlayer.ATTACKS[attack_step]
+		var profile: Array = BLADE_ATTACKS[attack_step]
 		swing_windup = profile[0]
 		swing_active = profile[1]
 		swing_recover = profile[2]
@@ -352,6 +438,22 @@ func _try_attack() -> void:
 	if attack_windup <= 0.0:
 		_strike()
 		_struck = true
+	return true
+
+
+func active_attack_hitbox() -> Rect2:
+	if attack_t <= 0.0 or attack_windup > 0.0 or weapon == null:
+		return Rect2()
+	var reach: Vector2 = swing_reach
+	var center := global_position
+	if attack_dir != "fwd":
+		reach = Vector2(54, swing_reach.x)
+		center += Vector2(0, -23 - reach.y * 0.5 + 10 if attack_dir == "up" else 23 + reach.y * 0.5 - 12)
+	elif weapon.hit_both_sides:
+		reach = Vector2(swing_reach.x * 2.0, swing_reach.y)
+	else:
+		center += Vector2(swing_reach.x * 0.5 * attack_facing, 0.0)
+	return Rect2(center - reach * 0.5, reach)
 
 
 func _strike() -> void:
@@ -370,7 +472,7 @@ func _strike() -> void:
 		# Кисть бьёт вокруг: широкая фигура без смещения вперёд.
 		reach = Vector2(swing_reach.x * 2.0, swing_reach.y)
 	else:
-		center += Vector2(swing_reach.x * 0.5 * facing, 0.0)
+		center += Vector2(swing_reach.x * 0.5 * attack_facing, 0.0)
 	var shape := RectangleShape2D.new()
 	shape.size = reach
 	var params := PhysicsShapeQueryParameters2D.new()
@@ -380,9 +482,13 @@ func _strike() -> void:
 	params.collide_with_areas = false
 	params.collide_with_bodies = true
 	var found := get_world_2d().direct_space_state.intersect_shape(params, 8)
+	var fl := _flow()
 	for hit in found:
 		var body = hit.get("collider")
 		if body != null and body.has_method("hit") and not _hit_targets.has(body.get_instance_id()):
+			var sight := PhysicsRayQueryParameters2D.create(global_position, body.global_position, SOLID_MASK)
+			if not get_world_2d().direct_space_state.intersect_ray(sight).is_empty():
+				continue
 			_hit_targets[body.get_instance_id()] = true
 			var hp_before := int(body.get("hp"))
 			body.hit(swing_damage, attack_facing, swing_knock)
@@ -391,13 +497,16 @@ func _strike() -> void:
 				CombatFx.burst(self, body.global_position, Vector2(attack_facing, -0.35))
 				InkFx.add_shake(3.0)
 				InkFx.sparks(body.global_position.x, body.global_position.y, 0.0, 7, InkR.CREAM)
+				if fl != null:
+					fl.add_combo()
+					fl.freeze(0.075 if (swing_damage >= 2 or int(body.get("hp")) <= 0) else 0.055)
 				if attack_dir == "down":
 					velocity.y = -660
 					air_dash = true
 					InkFx.ring(global_position.x, global_position.y + 23, 8, 44, InkR.RED)
 				SND.hit(swing_damage >= 3)
 	var start := global_position + Vector2(0, -4)
-	var ray := PhysicsRayQueryParameters2D.create(start, start + Vector2(swing_reach.x * attack_facing, 0), 1)
+	var ray := PhysicsRayQueryParameters2D.create(start, start + Vector2(swing_reach.x * attack_facing, 0), SOLID_MASK)
 	var wall := get_world_2d().direct_space_state.intersect_ray(ray)
 	if not wall.is_empty():
 		CombatFx.burst(self, wall.position, wall.normal, BONE, 8)
@@ -422,6 +531,9 @@ func take_damage(amount: int, from_dir: float) -> void:
 	CTL.rumble(0.9, 0.5, 220)
 	SND.hurt()
 	CombatFx.burst(self, global_position, Vector2(from_dir, -0.6), RED, 20)
+	var fl := _flow()
+	if fl != null:
+		fl.freeze(0.09 if hp == 0 else 0.075)
 	var away := 1.0 if from_dir == 0.0 else from_dir
 	velocity = Vector2(away * HURT_KNOCKBACK.x, HURT_KNOCKBACK.y)
 	hp_changed.emit(hp, MAX_HP)
@@ -429,6 +541,9 @@ func take_damage(amount: int, from_dir: float) -> void:
 		dead = true
 		InkFx.ink_burst(global_position.x, global_position.y, 34, 440, [INK, RED], 7, true, null, 0, 0, 1300, global_position.y + 23)
 		InkFx.ring(global_position.x, global_position.y, 10, 140, RED, 0.7, 4)
+		InkFx.add_shake(16.0, 0.02)
+		InkFx.flash_screen(0.35, RED)
+		CTL.rumble(1.0, 0.8, 500)
 		SND.death()
 		velocity = Vector2(-facing * 180.0, -220.0)
 		died.emit()
@@ -443,6 +558,8 @@ func respawn() -> void:
 	dash_t = 0.0
 	dash_cd = 0.0
 	air_dash = true
+	drop_t = 0.0
+	collision_mask = GROUND_MASK
 	healing = false
 	heal_t = 0.0
 	heal_flash = 0.0
@@ -450,11 +567,16 @@ func respawn() -> void:
 	attack_cd = 0.0
 	attack_windup = 0.0
 	hurt_t = 0.0
+	attack_buf = 0.0
+	dash_buf = 0.0
+	_dash_hint = 0.0
 	hp_changed.emit(hp, MAX_HP)
 	spawn_effect()
 
 
 func dash_ready() -> float:
+	if not is_on_floor() and not air_dash:
+		return 0.0
 	if DASH_COOLDOWN <= 0.0:
 		return 1.0
 	return clampf(1.0 - dash_cd / DASH_COOLDOWN, 0.0, 1.0)
@@ -497,7 +619,7 @@ func _process(delta: float) -> void:
 		_visual.scarf_step()
 		_visual.scarf_acc -= 1.0 / 60.0
 	var ray := PhysicsRayQueryParameters2D.create(
-		global_position + Vector2(0, 22), global_position + Vector2(0, 720), 1)
+		global_position + Vector2(0, 22), global_position + Vector2(0, 720), GROUND_MASK)
 	var ground := get_world_2d().direct_space_state.intersect_ray(ray)
 	_visual.ground_y = ground.position.y if not ground.is_empty() else 10000.0
 	queue_redraw()
@@ -524,6 +646,7 @@ func spawn_effect() -> void:
 	InkFx.dust(global_position.x, global_position.y + 23, 26, 0)
 	InkFx.ring(global_position.x, global_position.y + 10, 6, 70, InkR.INK_SOFT, 0.5, 3)
 	InkFx.ink_burst(global_position.x, global_position.y, 16, 120, [BONE, INK], 5, false, null, 0, -40, -50, 0, false)
+
 
 func spawn_slash() -> void:
 	var a0 := -1.2 if attack_facing > 0 else PI + 1.2

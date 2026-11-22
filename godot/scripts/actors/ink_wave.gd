@@ -31,6 +31,9 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var par := get_parent()
+	if par is Level and par.is_frozen():
+		return
 	if _done:
 		return
 	_t += delta
@@ -72,5 +75,10 @@ func _draw() -> void:
 			var y := -12.0 + k * 7.0 + sin(_t * 12.0 + i * 0.8 + k) * 3.0
 			pts.append(Vector2(x * dir, y))
 		draw_polyline(pts, Color(INK, 0.85 - k * 0.22), 4.0 - k)
+	# Detached beads on the crest convey moving liquid without altering the hazard.
+	for i in 5:
+		var phase := fmod(_t * 2.8 + i * 0.21, 1.0)
+		var bead := Vector2((-22.0 + phase * 38.0) * dir, -10.0 - sin(phase * PI) * (13.0 + i * 2.0))
+		draw_circle(bead, 2.6 - i * 0.3, Color(INK, 0.8 - phase * 0.4))
 	draw_circle(Vector2(-dir * 22.0, 8.0), 3.0, Color(RED, 0.8))
 	draw_circle(Vector2(-dir * 8.0, 12.0), 2.0, Color(RED, 0.55))

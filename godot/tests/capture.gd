@@ -14,18 +14,18 @@ func _init() -> void:
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	SaveGame.erase_slot(SaveGame.AUTOSAVE)
 	await get_tree().process_frame
 	var flow = preload("res://scenes/flow/game_flow.tscn").instantiate()
 	add_child(flow)
 	await get_tree().process_frame
 
-	await _wait(8)
+	await _wait(12)
 	await _shot("skeleton-title")
 
 	flow.start_run(true)
-	# Keep the capture sequence alive while arranging combat shots.
 	flow.player.iframes = 9999.0
-	await _wait(2)
+	await _wait(4)
 	await _shot("skeleton-cutscene")
 	for i in 4:
 		flow.cutscene.advance()
@@ -46,9 +46,20 @@ func _ready() -> void:
 	for i in 6:
 		flow.dialogue.advance()
 	await _wait(2)
-	# Ручной диалог не помечает триггер: иначе warp через Архив запустит его снова.
 	if not flow.level.fired_triggers.has("archivist"):
 		flow.level.fired_triggers.append("archivist")
+
+	flow.console.open()
+	flow.console.execute("warp 3200 520")
+	flow.console.close()
+	await _wait(40)
+	await _shot("zone-archive")
+
+	flow.console.open()
+	flow.console.execute("warp 8200 520")
+	flow.console.close()
+	await _wait(40)
+	await _shot("zone-gallery")
 
 	flow.console.open()
 	flow.console.execute("warp 700 500")
@@ -87,6 +98,13 @@ func _ready() -> void:
 	await _shot("skeleton-pause")
 
 	flow._resume()
+	flow.player.iframes = 0.0
+	flow.player.take_damage(99, -1.0)
+	await _wait(140)
+	await _shot("skeleton-death")
+	flow.continue_run()
+	await _wait(12)
+
 	flow.console.open()
 	flow.console.execute("help")
 	flow.console.execute("warp 900 480")

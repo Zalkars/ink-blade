@@ -1,9 +1,9 @@
 class_name Level
 extends Node2D
 
-## Уровень как сцена + данные, а не массив в коде (см. docs/tech-brief.md).
-## Пока данные простые: прямоугольные платформы, точки спавна врагов, границы.
-## Следующий шаг — TileMapLayer вместо прямоугольников, схема уже под это написана.
+## Уровень как сцена + данные.
+## Гибридный фон: параллакс-небо с затмением и холмами + запечённые полосы по 1280 px
+## с декором 4 зон + живые свечи, трава и пыль в видимой области камеры.
 
 signal cleared
 signal checkpoint_reached(id: String, pos: Vector2)
@@ -13,14 +13,9 @@ signal trigger_reached(id: String, spec: Dictionary)
 const DEFAULT_DATA := "res://content/levels/arena_01.json"
 ## Временные ID не попадают в сохранение: дети деления, призывы босса, debug-спавн.
 const TEMP_ID_PREFIXES := ["split_", "summon_", "spawn_"]
+const LevelDecor := preload("res://scripts/world/level_decor.gd")
 
 const PAPER := Color("#f1e6d0")
-const RIDGE_FAR := Color("#d5c8b1")
-const RIDGE_MID := Color("#b6a891")
-const RIDGE_NEAR := Color("#7d7261")
-const INK_DARK := Color("#17130f")
-const INK_EDGE := Color("#4a4136")
-const RED := Color("#9c1f24")
 
 @export_file("*.json") var data_path := DEFAULT_DATA
 
@@ -37,17 +32,119 @@ var fired_triggers: Array[String] = []
 var boss: Keeper
 var tile_layer: TileMapLayer
 var one_way_cells := 0
+var hitstop := 0.0
 var data: Dictionary = {}
 ## Состояние мира из автосейва: какой чекпоинт пройден и кого уже нет.
 ## Задаётся до add_child(), потому что _ready() сразу строит уровень.
 var world_state: Dictionary = {}
 
 var _player: Player
+var _backdrop: _BackdropLayer
+var _strips_root: Node2D
+var _fallback: _FallbackLayer
+var _dynamic: _DynamicDecorLayer
+var _baked_strips: Dictionary = {}
+var _candles: Array = []
+var _grass: Array = []
+var _dust: Array = []
+
+
+class _BackdropLayer extends Node2D:
+	var owner_level: Level
+	var cam_x := 640.0
+	var vp_w := 1280.0
+	var vp_h := 720.0
+
+	func _process(_delta: float) -> void:
+		var cam := get_viewport().get_camera_2d()
+		var vp := get_viewport_rect().size
+		if cam != null:
+			cam_x = cam.get_screen_center_position().x
+		vp_w = maxf(1280.0, vp.x)
+		vp_h = maxf(720.0, vp.y)
+		queue_redraw()
+
+	func _draw() -> void:
+		if is_instance_valid(owner_level):
+			var lid := String(owner_level.data.get("id", "ch01_hall"))
+			LevelDecor.draw_backdrop(self, cam_x, vp_w, vp_h, lid)
+
+
+class _FallbackLayer extends Node2D:
+	var owner_level: Level
+
+	func _process(_delta: float) -> void:
+		if is_instance_valid(owner_level) and not owner_level._all_strips_baked():
+			queue_redraw()
+
+	func _draw() -> void:
+		if not is_instance_valid(owner_level):
+			return
+		var cam := get_viewport().get_camera_2d()
+		var cam_x := cam.get_screen_center_position().x if cam != null else 640.0
+		var half_w := maxf(640.0, get_viewport_rect().size.x * 0.5) + 120.0
+		var vx0 := cam_x - half_w
+		var vx1 := cam_x + half_w
+		var total := owner_level._strip_count()
+		InkR.init_static()
+		InkR.set_canvas(self)
+		InkR.begin_frame(0.0)
+		var drawn := false
+		for i in total:
+			if owner_level._baked_strips.has(i):
+				continue
+			var sx0 := float(i) * LevelDecor.STRIP_W
+			var sx1 := sx0 + LevelDecor.STRIP_W
+			if sx1 < vx0 or sx0 > vx1:
+				continue
+			drawn = true
+			for spec in owner_level.data.get("solids", []):
+				var r := owner_level._rect_of(spec)
+				if r.end.x >= sx0 - 32.0 and r.position.x <= sx1 + 32.0:
+					LevelDecor.draw_surface(r, false, owner_level.bounds, owner_level.data.get("solids", []))
+			for spec in owner_level.data.get("one_ways", []):
+				var r := owner_level._rect_of(spec)
+				if r.end.x >= sx0 - 32.0 and r.position.x <= sx1 + 32.0:
+					LevelDecor.draw_surface(r, true, owner_level.bounds)
+		if not drawn:
+			visible = false
+
+
+class _DynamicDecorLayer extends Node2D:
+	var owner_level: Level
+	var t := 0.0
+
+	func _process(delta: float) -> void:
+		t += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		if not is_instance_valid(owner_level):
+			return
+		var cam := get_viewport().get_camera_2d()
+		var cam_x := cam.get_screen_center_position().x if cam != null else 640.0
+		var half_w := maxf(640.0, get_viewport_rect().size.x * 0.5) + 140.0
+		var vx0 := cam_x - half_w
+		var vx1 := cam_x + half_w
+		InkR.init_static()
+		InkR.set_canvas(self)
+		InkR.begin_frame(t)
+		for c in owner_level._candles:
+			if c.x >= vx0 and c.x <= vx1:
+				LevelDecor.draw_candle_dynamic(c.x, c.y, t, c.s)
+		for g in owner_level._grass:
+			if g.x >= vx0 and g.x <= vx1:
+				LevelDecor.draw_grass_tuft(g.x, g.y, t, g.seed)
+		for d in owner_level._dust:
+			if d.x >= vx0 and d.x <= vx1:
+				var yy: float = d.y + sin(t * d.sp + d.ph) * 14.0
+				InkR.fill_circle_color(d.x + sin(t * 0.25 + d.ph) * 6.0, yy, d.r, InkR.INK, d.a)
 
 
 func _ready() -> void:
 	_load_data()
 	_build()
+	_build_visual_layers()
 	queue_redraw()
 
 
@@ -91,6 +188,149 @@ func _build() -> void:
 		index += 1
 
 
+func _build_visual_layers() -> void:
+	_backdrop = _BackdropLayer.new()
+	_backdrop.name = "Backdrop"
+	_backdrop.z_index = -10
+	_backdrop.owner_level = self
+	add_child(_backdrop)
+
+	_strips_root = Node2D.new()
+	_strips_root.name = "Strips"
+	_strips_root.z_index = -5
+	add_child(_strips_root)
+
+	_fallback = _FallbackLayer.new()
+	_fallback.name = "StripFallback"
+	_fallback.z_index = -4
+	_fallback.owner_level = self
+	add_child(_fallback)
+
+	_populate_dynamic_decor()
+	_dynamic = _DynamicDecorLayer.new()
+	_dynamic.name = "DynamicDecor"
+	_dynamic.z_index = -2
+	_dynamic.owner_level = self
+	add_child(_dynamic)
+
+	if DisplayServer.get_name() != "headless":
+		_bake_strips_async()
+
+
+func _populate_dynamic_decor() -> void:
+	_candles.clear()
+	_grass.clear()
+	_dust.clear()
+	var lid := String(data.get("id", "ch01_hall"))
+	if lid == "ch01_hall":
+		for x in [92.0, 520.0, 1320.0, 2370.0, 3210.0, 3320.0, 3810.0, 4480.0, 5720.0, 6830.0, 7160.0, 8400.0, 9390.0, 10280.0, 11350.0, 12780.0, 13910.0]:
+			var feet := LevelDecor._floor_y_at(x, data)
+			_candles.append({"x": x, "y": feet, "s": 0.8 if x < 11264.0 else 1.0})
+	else:
+		_candles.append({"x": 92.0, "y": 576.0, "s": 1.0})
+		_candles.append({"x": 1240.0, "y": 576.0, "s": 0.9})
+		_candles.append({"x": 2360.0, "y": 512.0, "s": 0.8})
+
+	var gi := 0
+	for spec in data.get("solids", []):
+		var r := _rect_of(spec)
+		if r.position.x < 2560.0 and r.size.y >= 96.0 and r.size.x >= 400.0:
+			var gx := r.position.x + 90.0
+			while gx < r.end.x - 90.0:
+				_grass.append({"x": gx, "y": r.position.y, "seed": gi})
+				gx += 173.0 + float((gi * 97) % 229)
+				gi += 1
+
+	var seed_v := 713
+	var rnd := func() -> float:
+		seed_v = int((seed_v * 16807) % 2147483647)
+		return float(seed_v - 1) / 2147483646.0
+	var count := int(bounds.size.x / 160.0)
+	for i in count:
+		_dust.append({
+			"x": 40.0 + rnd.call() * (bounds.size.x - 80.0),
+			"y": 90.0 + rnd.call() * 440.0,
+			"r": 1.2 + rnd.call() * 2.4,
+			"a": 0.05 + rnd.call() * 0.11,
+			"sp": 0.25 + rnd.call() * 0.55,
+			"ph": rnd.call() * 10.0,
+		})
+
+
+func _strip_count() -> int:
+	return maxi(1, int(ceil(bounds.size.x / LevelDecor.STRIP_W)))
+
+
+func _all_strips_baked() -> bool:
+	return _baked_strips.size() >= _strip_count()
+
+
+func _bake_strips_async() -> void:
+	var total := _strip_count()
+	var sub := SubViewport.new()
+	sub.size = Vector2i(int(LevelDecor.STRIP_W), int(LevelDecor.STRIP_H))
+	sub.render_target_update_mode = SubViewport.UPDATE_ONCE
+	sub.transparent_bg = true
+	var node := InkBakeNode.new()
+	node.w = LevelDecor.STRIP_W
+	node.h = LevelDecor.STRIP_H
+	sub.add_child(node)
+	add_child(sub)
+
+	var lid := String(data.get("id", "ch01_hall"))
+	while is_instance_valid(self) and is_inside_tree():
+		var focus_x := spawn_point.x
+		if is_instance_valid(_player):
+			focus_x = _player.global_position.x
+		elif get_viewport() != null and get_viewport().get_camera_2d() != null:
+			focus_x = get_viewport().get_camera_2d().get_screen_center_position().x
+		var best := -1
+		var best_dist := 2600.0
+		for i in total:
+			if _baked_strips.has(i):
+				continue
+			var cx := (float(i) + 0.5) * LevelDecor.STRIP_W
+			var d := absf(cx - focus_x)
+			if d < best_dist:
+				best_dist = d
+				best = i
+		if best < 0:
+			if _baked_strips.size() >= total:
+				break
+			await get_tree().process_frame
+			continue
+		var strip_i := best
+		node.fn = func(cv: CanvasItem):
+			InkR.init_static()
+			InkR.set_canvas(cv)
+			InkR.begin_frame(0.0)
+			InkR.t_translate(-float(strip_i) * LevelDecor.STRIP_W, 0.0)
+			LevelDecor.draw_strip_decor(strip_i, lid, data, bounds)
+			InkR.set_canvas(null)
+		node.queue_redraw()
+		sub.render_target_update_mode = SubViewport.UPDATE_ONCE
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+		if not is_instance_valid(self) or not is_instance_valid(sub):
+			break
+		var tex := sub.get_texture()
+		if tex != null:
+			var img := tex.get_image()
+			if img != null and not img.is_empty():
+				img.convert(Image.FORMAT_RGBA8)
+				var sp := Sprite2D.new()
+				sp.name = "Strip_%d" % strip_i
+				sp.centered = false
+				sp.position = Vector2(float(strip_i) * LevelDecor.STRIP_W, 0.0)
+				sp.texture = ImageTexture.create_from_image(img)
+				_strips_root.add_child(sp)
+				_baked_strips[strip_i] = sp
+				if is_instance_valid(_fallback):
+					_fallback.queue_redraw()
+	if is_instance_valid(sub):
+		sub.queue_free()
+
+
 ## Триггеры — точки сюжета. Срабатывают один раз, когда игрок доходит до x.
 ## Сам разговор запускает game_flow: уровень не знает про UI.
 func _build_triggers() -> void:
@@ -106,6 +346,10 @@ func _build_triggers() -> void:
 			npc.name = "Scribe_" + id
 			npc.position = Vector2(float(spec.get("x", 0)), float(spec.get("y", 600)))
 			add_child(npc)
+
+
+func is_frozen() -> bool:
+	return hitstop > 0.0
 
 
 func _physics_process(_delta: float) -> void:
@@ -145,12 +389,10 @@ func _rect_of(d: Dictionary) -> Rect2:
 
 
 ## Геометрия уровня растеризуется в TileMapLayer: коллизия и картинка
-## берутся из одного тайлсета. Прямоугольники в JSON — временный формат
-## авторинга; будущий редактор будет писать клетки напрямую.
+## берутся из одного тайлсета.
 func _build_tiles() -> void:
 	tile_layer = TileMapLayer.new()
 	tile_layer.name = "Tiles"
-	# Keep tile physics; draw continuous v0.2 surfaces instead of the atlas.
 	tile_layer.self_modulate.a = 0.0
 	tile_layer.tile_set = InkTileset.build()
 	add_child(tile_layer)
@@ -305,14 +547,10 @@ func is_temporary_id(id: String) -> bool:
 
 func _on_enemy_died(node: Node) -> void:
 	var placement_id := String(node.get_meta("placement_id", ""))
-	# Дети деления, призванные кляксы и debug-спавн — временные:
-	# их не надо помнить в сохранении, иначе файл пухнет мусором.
 	if not placement_id.is_empty() and not is_temporary_id(placement_id) \
 		and not killed_ids.has(placement_id):
 		killed_ids.append(placement_id)
 	enemies.erase(node)
-	# Смерть босса заканчивает бой: призванные кляксы не должны держать зал.
-	# Остальные расстановки уровня остаются на своих местах.
 	if node is Keeper:
 		for e in enemies.duplicate():
 			if is_instance_valid(e) and String(e.get_meta("placement_id", "")).begins_with("summon_"):
@@ -330,68 +568,3 @@ func camera_limits() -> Dictionary:
 		"right": int(bounds.end.x),
 		"bottom": int(bounds.end.y),
 	}
-
-
-func _draw() -> void:
-	var w := bounds.size.x
-	var h := bounds.size.y
-	draw_rect(Rect2(0.0, 0.0, w, h), PAPER)
-
-	draw_circle(Vector2(w * 0.45, 165.0), 112.0, Color(RED, 0.88))
-	draw_circle(Vector2(w * 0.45, 165.0), 116.0, Color(RED, 0.25))
-
-	_ridge(h * 0.70, 86.0, RIDGE_FAR)
-	_ridge(h * 0.82, 64.0, RIDGE_MID)
-	_ridge(h * 0.94, 40.0, RIDGE_NEAR)
-
-	for i in 14:
-		var x := 90.0 + i * (w - 160.0) / 14.0
-		var y := 120.0 + fmod(x * 0.31, 90.0)
-		draw_line(Vector2(x, y), Vector2(x + 7.0, y - 4.0), Color(INK_DARK, 0.22), 1.5)
-		draw_line(Vector2(x + 7.0, y - 4.0), Vector2(x + 13.0, y + 1.0), Color(INK_DARK, 0.22), 1.5)
-
-	InkR.init_static()
-	InkR.set_canvas(self)
-	InkR.begin_frame(0.0)
-	for spec in data.get("solids", []):
-		_draw_surface(_rect_of(spec), false)
-	for spec in data.get("one_ways", []):
-		_draw_surface(_rect_of(spec), true)
-	var stains := get_node_or_null("CombatInk") as CombatFx
-	if stains != null:
-		stains.draw_terrain(self)
-
-
-func _draw_surface(rect: Rect2, one_way: bool) -> void:
-	# Match the rounded tile collision bounds exactly.
-	var tile := float(InkTileset.SIZE)
-	var start := (rect.position / tile).round() * tile
-	var end := (rect.end / tile).round() * tile
-	var size := end - start
-	if size.x <= 0.0 or size.y <= 0.0:
-		return
-	if size.y >= 96.0 and end.y >= bounds.end.y:
-		InkR.fill_rect_gradient(start.x, start.y, size.x, size.y, InkR.tex_floor_grad)
-		InkR.line(start.x, start.y, end.x, start.y, 4.5, InkR.INK, 1.0, 0.8)
-		InkR.line(start.x + 3, start.y + 6, end.x - 3, start.y + 6,
-			1.4, InkR.INK, 0.25, 0.5)
-		InkR.hatch([start + Vector2(0, 8), Vector2(end.x, start.y + 8),
-			end, Vector2(start.x, end.y)], 17, 0.08)
-	else:
-		InkWorld.platform(start.x, start.y, size.x, size.y, one_way)
-
-
-func _ridge(base_y: float, amp: float, col: Color) -> void:
-	var pts := PackedVector2Array()
-	var w := bounds.size.x
-	var h := bounds.size.y
-	var x := -48.0
-	while x <= w + 48.0:
-		var y := base_y - sin(x * 0.006) * amp - sin(x * 0.017 + 1.7) * amp * 0.35
-		# Держим силуэт внутри кадра: иначе нижняя точка уходит за границу
-		# и полигон самопересекается (триангуляция падает).
-		pts.append(Vector2(x, clampf(y, 0.0, h - 2.0)))
-		x += 32.0
-	pts.append(Vector2(w + 48.0, h))
-	pts.append(Vector2(-48.0, h))
-	draw_colored_polygon(pts, col)

@@ -1,0 +1,16 @@
+{
+  "ru": {
+    "ui.new_game.title": "НАЧАТЬ НОВУЮ ИСТОРИЮ?",
+    "ui.new_game.warning": "Прогресс выбранного сохранения будет заменён.\nДругие ручные слоты и настройки сохранятся.",
+    "ui.new_game.cancel": "ОТМЕНА — СОХРАНИТЬ ПРОГРЕСС",
+    "ui.new_game.confirm": "НАЧАТЬ ЗАНОВО",
+    "ui.title.subtitle": "БУМАГА ХРАНИТ СЛЕД. ТУШЬ ПОМНИТ ИМЯ."
+  },
+  "en": {
+    "ui.new_game.title": "BEGIN A NEW STORY?",
+    "ui.new_game.warning": "Progress in the selected save will be replaced.\nOther manual slots and settings will be kept.",
+    "ui.new_game.cancel": "CANCEL — KEEP MY PROGRESS",
+    "ui.new_game.confirm": "START AGAIN",
+    "ui.title.subtitle": "PAPER KEEPS THE TRACE. INK REMEMBERS THE NAME."
+  }
+}

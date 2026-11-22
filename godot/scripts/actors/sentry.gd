@@ -30,7 +30,6 @@ var anchor := Vector2.ZERO
 
 var hit_t := 0.0
 var shoot_t := 0.6
-var _look_target := InkPlayer.new(null, 0.0, 0.0)
 var _visual = preload("res://scripts/visuals/sentry_visual.gd").new(null, -20.0, -20.0)
 var _wob := 0.0
 var recoil_t := 0.0
@@ -69,6 +68,9 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var par := get_parent()
+	if par is Level and par.is_frozen():
+		return
 	if dead:
 		return
 	_wob += delta
@@ -110,7 +112,7 @@ func hit(damage: int, from_dir: int, knock: float = KNOCKBACK) -> void:
 	InkFx.text_fx(global_position.x, global_position.y - 30, "-%d" % damage, 20, InkR.RED, false)
 	InkFx.ink_burst(global_position.x, global_position.y, 9, 150, [InkR.INK, InkR.RED], 4, false, null, 0, 0, 1000, global_position.y + 25)
 	hit_t = HURT_TIME
-	global_position.x += -from_dir * knock * 0.02
+	global_position.x += from_dir * knock * 0.02
 	if hp <= 0:
 		InkFx.ink_burst(global_position.x, global_position.y, 22, 260, null, 6, true, null, 0, 0, 1000, global_position.y + 25)
 		dead = true
@@ -126,10 +128,7 @@ func _draw() -> void:
 	InkR.set_canvas(self)
 	InkR.begin_frame(_wob)
 	if is_instance_valid(target):
-		var local_target := to_local(target.global_position)
-		_look_target.x = local_target.x - 14.0
-		_look_target.y = local_target.y - 23.0
-	_visual.g = {"player": _look_target}
+		_visual.look_pos = to_local(target.global_position)
 	_visual.t = _wob
 	_visual.hurt_t = hit_t
 	_visual.hp = hp

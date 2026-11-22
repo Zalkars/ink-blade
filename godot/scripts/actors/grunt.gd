@@ -29,7 +29,7 @@ var dead := false
 
 var hit_t := 0.0
 var touch_cd := 0.0
-var _visual := InkGrunt.new(null, -28.0, -16.0)
+var _visual = preload("res://scripts/visuals/grunt_visual.gd").new(null, -28.0, -16.0)
 var _wob := 0.0
 var attack_t := 0.0
 var attack_dir := 1.0
@@ -63,6 +63,9 @@ func configure(def: EntityDef, overrides: Dictionary = {}) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var par := get_parent()
+	if par is Level and par.is_frozen():
+		return
 	if dead:
 		return
 	_wob += delta
@@ -121,7 +124,7 @@ func hit(damage: int, from_dir: int, knock: float = KNOCKBACK) -> void:
 	InkFx.ink_burst(global_position.x, global_position.y, 9, 150, [InkR.INK, InkR.RED], 4, false, null, 0, 0, 1000, global_position.y + 25)
 	hit_t = HURT_TIME
 	attack_t = 0.0
-	velocity.x = -from_dir * knock
+	velocity.x = from_dir * knock
 	velocity.y = -180.0
 	if hp <= 0:
 		InkFx.ink_burst(global_position.x, global_position.y, 22, 260, null, 6, true, null, 0, 0, 1000, global_position.y + 25)

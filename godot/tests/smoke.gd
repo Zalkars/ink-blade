@@ -244,9 +244,9 @@ func _run() -> void:
 	keeper.summon_cd = 0.0
 	for i in 110:
 		await get_tree().physics_frame
-		if flow.level.enemy_count() >= before_summon + 2:
+		if flow.level.enemy_count() >= before_summon + 1:
 			break
-	_check(flow.level.enemy_count() == before_summon + 2, "босс призывает двух клякс")
+	_check(flow.level.enemy_count() == before_summon + 1, "босс призывает одну кляксу без перегрузки арены")
 	# Удар сверху открывает печать, когда капля доходит до пола.
 	keeper.state = Keeper.State.STALK
 	keeper.attack_cd = 999.0

@@ -31,6 +31,9 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var par := get_parent()
+	if par is Level and par.is_frozen():
+		return
 	if _done:
 		return
 	var next := global_position + velocity * delta
@@ -81,6 +84,11 @@ func _draw() -> void:
 		var k := 1.0 - float(i) / maxf(1, _trail.size())
 		InkR.srand(i + int(global_position.x))
 		InkR.blob(p.x, p.y, RADIUS * k * 0.8, INK, null, 2.0, k * 0.5, 0.8, 10, 0.13, false)
+	# Elongated wet core and loose satellite beads follow the shot direction.
+	var tail := -velocity.normalized()
+	for j in 3:
+		var bead := tail * (17.0 + j * 9.0) + tail.orthogonal() * sin(life * 19.0 + j) * 3.0
+		draw_circle(bead, 2.4 - j * 0.5, Color(INK, 0.7 - j * 0.13))
 	InkR.srand(int(global_position.x))
 	InkR.blob(0, 0, RADIUS, INK, INK, 1.5, 1.0, 1.2, 10, 0.12)
 	InkR.blob(-2, -1, RADIUS * 0.45, RED, null, 2.0, 1.0, 0.5, 10, 0.13, false)
