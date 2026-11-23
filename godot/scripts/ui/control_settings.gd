@@ -429,13 +429,12 @@ func _build_editor() -> void:
 	editor.add_child(bar)
 	var column := VBoxContainer.new()
 	bar.add_child(column)
+	selected_label = Label.new()
+	selected_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	selected_label.add_theme_color_override("font_color", INK)
+	column.add_child(selected_label)
 	var line := HBoxContainer.new()
 	column.add_child(line)
-	selected_label = Label.new()
-	selected_label.clip_text = true
-	selected_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	selected_label.add_theme_color_override("font_color", INK)
-	line.add_child(selected_label)
 	button(line, trc("save"), func(): finish_editor(true))
 	button(line, trc("cancel"), func(): finish_editor(false))
 	size_slider = slider(column, trc("size"), 65, 150, 100, func(v: float):
@@ -560,10 +559,12 @@ func _reset_page() -> void:
 			CTL.vibration_enabled = true
 			SND.set_muted(false)
 			flow.vsync_enabled = true
+			flow.frame_rate = 60
 			flow.resolution_index = 0
 			flow.save_preferences()
 		2:
 			CTL.touch_layout.clear()
+			CTL.touch_layout_legacy = false
 			CTL.touch_style = "floating"
 			CTL.touch_opacity = 0.8
 	_save()
@@ -662,6 +663,17 @@ func _build_general() -> void:
 		flow.title_screen.refresh()
 		flow.hud._rebuild_hint()
 		_relabel.call_deferred())
+	var rate_line := row(column, trc("frame_rate"))
+	var rate := OptionButton.new()
+	rate.custom_minimum_size = Vector2(_field_width(), _target_height())
+	rate.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for value in flow.FRAME_RATES:
+		rate.add_item(trc("frame_rate_value") % value, value)
+	rate.select(flow.FRAME_RATES.find(flow.frame_rate))
+	rate_line.add_child(rate)
+	rate.item_selected.connect(func(i: int):
+		flow.frame_rate = rate.get_item_id(i)
+		flow.save_preferences())
 	if not OS.has_feature("mobile"):
 		toggle(column, "fullscreen", DisplayServer.window_get_mode() in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN], func(_v: bool): flow._toggle_fullscreen())
 		var resolution_line := row(column, trc("resolution"))

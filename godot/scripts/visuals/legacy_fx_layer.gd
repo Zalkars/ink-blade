@@ -4,6 +4,7 @@ extends Node2D
 ## Also draws F2 debug hitboxes when hud.debug_on is active.
 var animate_on_death := false
 var flow: Node = null
+var _was_active := false
 
 
 func _ready() -> void:
@@ -13,17 +14,27 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if get_tree().paused and animate_on_death:
 		InkFx.update(delta)
-	queue_redraw()
+	var active := not InkFx.parts.is_empty() or not InkFx.ghosts.is_empty() \
+		or not InkFx.rings.is_empty() or not InkFx.slashes.is_empty() or not InkFx.texts.is_empty() \
+		or _show_hitboxes()
+	if active or _was_active:
+		queue_redraw()
+	_was_active = active
 
 
 func _draw() -> void:
 	InkR.init_static()
 	InkR.set_canvas(self)
 	InkR.begin_frame(InkFx.t)
-	InkFx.draw_behind()
-	InkFx.draw_front()
-	if flow != null and flow.hud != null and flow.hud.debug_on:
+	var view := (get_global_transform_with_canvas().affine_inverse() * get_viewport_rect()).grow(80.0)
+	InkFx.draw_behind(view, InkFx.particle_atlas)
+	InkFx.draw_front(view, InkFx.particle_atlas)
+	if _show_hitboxes():
 		_draw_hitboxes()
+
+
+func _show_hitboxes() -> bool:
+	return flow != null and flow.hud != null and flow.hud.visible and flow.hud.debug_on
 
 
 func _draw_hitboxes() -> void:

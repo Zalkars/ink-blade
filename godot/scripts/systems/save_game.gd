@@ -13,6 +13,7 @@ static var current_slot := AUTOSAVE
 ## Абсолютный путь -> [размер, время] последней собственной записи.
 ## Позволяет не разбирать весь JSON ради проверки предыдущего файла.
 static var _own_writes := {}
+static var _autosave_task := -1
 
 
 static func _abs(path: String) -> String:
@@ -31,6 +32,47 @@ static func _ensure_dir() -> bool:
 
 
 static func write_slot(slot: String, data: Dictionary) -> bool:
+	flush_autosave()
+	return _write_slot(slot, data)
+
+
+## Only the disk job runs off the main thread. Callers pass an owned snapshot
+## and read its receipt after joining. One job at a time keeps .tmp and .bak ordered.
+static func try_autosave(data: Dictionary) -> Array[bool]:
+	if autosave_busy():
+		return []
+	flush_autosave()
+	var slot := current_slot
+	var receipt: Array[bool] = [false]
+	_autosave_task = WorkerThreadPool.add_task(func():
+		receipt[0] = _write_autosave(slot, data),
+		false, "Ink Blade autosave")
+	return receipt
+
+
+static func autosave_busy() -> bool:
+	return _autosave_task != -1 and not WorkerThreadPool.is_task_completed(_autosave_task)
+
+
+static func flush_autosave() -> void:
+	if _autosave_task != -1:
+		WorkerThreadPool.wait_for_task_completion(_autosave_task)
+		_autosave_task = -1
+
+
+static func write_autosave(data: Dictionary) -> bool:
+	flush_autosave()
+	return _write_autosave(current_slot, data)
+
+
+static func _write_autosave(slot: String, data: Dictionary) -> bool:
+	var written := _write_slot(AUTOSAVE, data)
+	if slot in MANUAL_SLOTS:
+		written = _write_slot(slot, data) and written
+	return written
+
+
+static func _write_slot(slot: String, data: Dictionary) -> bool:
 	if not _ensure_dir():
 		push_error("save: не создаётся папка " + DIR)
 		return false
@@ -88,6 +130,7 @@ static func _is_healthy(path: String) -> bool:
 
 
 static func read_slot(slot: String) -> Dictionary:
+	flush_autosave()
 	var parsed := _read_file(_slot_path(slot))
 	if parsed.is_empty():
 		parsed = _read_file(_slot_path(slot, ".json.bak"))
@@ -177,6 +220,7 @@ static func slot_summary(slot: String) -> String:
 
 
 static func erase_slot(slot: String) -> void:
+	flush_autosave()
 	_own_writes.erase(_abs(_slot_path(slot)))
 	for suffix in [".json", ".json.bak", ".json.tmp"]:
 		var path := _abs(_slot_path(slot, suffix))

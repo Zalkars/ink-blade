@@ -100,7 +100,7 @@ func _physics_process(delta: float) -> void:
 			_touch_player(dx)
 
 	var was_airborne := not is_on_floor()
-	move_and_slide()
+	Level.move_ground_enemy(self)
 	if was_airborne and is_on_floor():
 		CombatFx.floor_mark(self, global_position, 0.65 if generation > 0 else 0.9)
 	queue_redraw()

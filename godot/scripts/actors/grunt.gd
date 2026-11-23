@@ -92,7 +92,7 @@ func _physics_process(delta: float) -> void:
 		facing = int(dir)
 	if hit_t <= 0.0:
 		velocity.x = move_toward(velocity.x, dir * speed if attack_t <= 0.0 else 0.0, 900.0 * delta)
-	move_and_slide()
+	Level.move_ground_enemy(self)
 	queue_redraw()
 
 

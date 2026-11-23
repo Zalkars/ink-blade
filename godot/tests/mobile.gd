@@ -43,6 +43,9 @@ func _ready() -> void:
 	await frames()
 	mobile = flow.mobile_controls
 	check(CTL.touch_enabled, "touch mode enabled")
+	check(not mobile.has_overlap() and mobile.buttons().swap.x < mobile.home_center().x
+		and mobile.buttons().heal.x > mobile.buttons().dash.x,
+		"default layout fits the safe area with swap on the left and heal on the outer right")
 	await shot("title")
 	# Dragging a menu row away must not start a new run.
 	var play_point: Vector2 = flow.title_screen.item_rect(0).get_center() + flow.title_screen.position
@@ -115,11 +118,13 @@ func _ready() -> void:
 	await frames()
 	flow.play_dialogue("archivist")
 	await frames()
+	check(not flow.hud.visible and not mobile._drawing_controls, "dialogue hides both HUD and touch buttons")
 	tap(Vector2(600, 500))
 	check(flow.dialogue.index == 1, "tap advances dialogue")
 	while flow.dialogue.visible:
 		flow.dialogue.advance()
 	await frames()
+	check(flow.hud.visible and mobile._drawing_controls, "finishing dialogue restores HUD and touch buttons")
 	flow.player.global_position = flow.level.spawn_point
 	flow.player.velocity = Vector2.ZERO
 	flow.player.iframes = 9999.0
@@ -135,7 +140,8 @@ func _ready() -> void:
 	await frames(4)
 	check(mobile.safe.size.x > 1280, "wide display expands canvas without stretching")
 	for a in mobile.buttons():
-		check(mobile.safe.encloses(Rect2(mobile.buttons()[a] - Vector2(58, 58), Vector2(116, 116))), "wide safe button " + a)
+		var radius: Vector2 = Vector2.ONE * mobile.element_radius(a)
+		check(mobile.safe.encloses(Rect2(mobile.buttons()[a] - radius, radius * 2.0)), "wide safe button " + a)
 	await shot("play-wide")
 	print("MOBILE_RESULT=%s (%d checks)" % ["OK" if failures == 0 else "FAIL", checks])
 	get_tree().quit(0 if failures == 0 else 1)

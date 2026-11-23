@@ -14,6 +14,7 @@ const DEFAULT_DATA := "res://content/levels/arena_01.json"
 ## Временные ID не попадают в сохранение: дети деления, призывы босса, debug-спавн.
 const TEMP_ID_PREFIXES := ["split_", "summon_", "spawn_"]
 const LevelDecor := preload("res://scripts/world/level_decor.gd")
+const BAKE_DISTANCE := 2600.0
 
 const PAPER := Color("#f1e6d0")
 
@@ -44,6 +45,8 @@ var _strips_root: Node2D
 var _fallback: _FallbackLayer
 var _dynamic: _DynamicDecorLayer
 var _baked_strips: Dictionary = {}
+var _bake_range := Vector2i(-1, -1)
+var _baking := false
 var _candles: Array = []
 var _grass: Array = []
 var _dust: Array = []
@@ -54,15 +57,20 @@ class _BackdropLayer extends Node2D:
 	var cam_x := 640.0
 	var vp_w := 1280.0
 	var vp_h := 720.0
+	var paper: Texture2D
 
 	func _process(_delta: float) -> void:
 		var cam := get_viewport().get_camera_2d()
 		var vp := get_viewport_rect().size
-		if cam != null:
-			cam_x = cam.get_screen_center_position().x
-		vp_w = maxf(1280.0, vp.x)
-		vp_h = maxf(720.0, vp.y)
-		queue_redraw()
+		var x := cam.get_screen_center_position().x if cam != null else 640.0
+		var width := maxf(1280.0, vp.x)
+		var height := maxf(720.0, vp.y)
+		if x != cam_x or width != vp_w or height != vp_h or paper != InkR.tex_paper:
+			cam_x = x
+			vp_w = width
+			vp_h = height
+			paper = InkR.tex_paper
+			queue_redraw()
 
 	func _draw() -> void:
 		if is_instance_valid(owner_level):
@@ -72,32 +80,36 @@ class _BackdropLayer extends Node2D:
 
 class _FallbackLayer extends Node2D:
 	var owner_level: Level
+	var _last_strips := Vector2i(-1, -1)
 
 	func _process(_delta: float) -> void:
 		if is_instance_valid(owner_level):
 			visible = not owner_level._all_strips_baked()
-			if visible:
+			var strips := _visible_strips()
+			if visible and strips != _last_strips:
+				_last_strips = strips
 				queue_redraw()
+
+	func _visible_strips() -> Vector2i:
+		var cam := get_viewport().get_camera_2d()
+		var cam_x := cam.get_screen_center_position().x if cam != null else 640.0
+		var half_w := maxf(640.0, get_viewport_rect().size.x * 0.5) + 120.0
+		return Vector2i(
+			maxi(0, ceili((cam_x - half_w) / LevelDecor.STRIP_W) - 1),
+			mini(owner_level._strip_count() - 1, floori((cam_x + half_w) / LevelDecor.STRIP_W)))
 
 	func _draw() -> void:
 		if not is_instance_valid(owner_level):
 			return
-		var cam := get_viewport().get_camera_2d()
-		var cam_x := cam.get_screen_center_position().x if cam != null else 640.0
-		var half_w := maxf(640.0, get_viewport_rect().size.x * 0.5) + 120.0
-		var vx0 := cam_x - half_w
-		var vx1 := cam_x + half_w
-		var total := owner_level._strip_count()
+		var strips := _visible_strips()
 		InkR.init_static()
 		InkR.set_canvas(self)
 		InkR.begin_frame(0.0)
-		for i in total:
+		for i in range(strips.x, strips.y + 1):
 			if owner_level._baked_strips.has(i):
 				continue
 			var sx0 := float(i) * LevelDecor.STRIP_W
 			var sx1 := sx0 + LevelDecor.STRIP_W
-			if sx1 < vx0 or sx0 > vx1:
-				continue
 			for spec in owner_level.data.get("solids", []):
 				var r := owner_level._rect_of(spec)
 				if r.end.x >= sx0 - 32.0 and r.position.x <= sx1 + 32.0:
@@ -211,7 +223,9 @@ func _build_visual_layers() -> void:
 	_dynamic.owner_level = self
 	add_child(_dynamic)
 
-	if DisplayServer.get_name() != "headless":
+	var has_renderer := DisplayServer.get_name() != "headless"
+	set_process(has_renderer)
+	if has_renderer:
 		_bake_strips_async()
 
 
@@ -263,41 +277,52 @@ func _all_strips_baked() -> bool:
 	return _baked_strips.size() >= _strip_count()
 
 
-func _bake_strips_async() -> void:
-	var total := _strip_count()
-	var sub := SubViewport.new()
-	sub.size = Vector2i(int(LevelDecor.STRIP_W), int(LevelDecor.STRIP_H))
-	sub.render_target_update_mode = SubViewport.UPDATE_ONCE
-	sub.transparent_bg = true
-	var node := InkBakeNode.new()
-	node.w = LevelDecor.STRIP_W
-	node.h = LevelDecor.STRIP_H
-	sub.add_child(node)
-	add_child(sub)
+func _bake_focus_x() -> float:
+	if is_instance_valid(_player):
+		return _player.global_position.x
+	var camera := get_viewport().get_camera_2d()
+	return camera.get_screen_center_position().x if camera != null else spawn_point.x
 
+
+func _process(_delta: float) -> void:
+	if _baking or not is_instance_valid(_strips_root) or _all_strips_baked():
+		return
+	var focus := _bake_focus_x()
+	var strips := Vector2i(
+		ceili((focus - BAKE_DISTANCE) / LevelDecor.STRIP_W - 0.5),
+		floori((focus + BAKE_DISTANCE) / LevelDecor.STRIP_W - 0.5))
+	if strips != _bake_range:
+		_bake_range = strips
+		_bake_strips_async()
+
+
+func _bake_strips_async() -> void:
+	_baking = true
+	var total := _strip_count()
 	var lid := String(data.get("id", "ch01_hall"))
 	while is_instance_valid(self) and is_inside_tree():
-		var focus_x := spawn_point.x
-		if is_instance_valid(_player):
-			focus_x = _player.global_position.x
-		elif get_viewport() != null and get_viewport().get_camera_2d() != null:
-			focus_x = get_viewport().get_camera_2d().get_screen_center_position().x
+		var focus_x := _bake_focus_x()
 		var best := -1
-		var best_dist := 2600.0
+		var best_dist := BAKE_DISTANCE
 		for i in total:
 			if _baked_strips.has(i):
 				continue
 			var cx := (float(i) + 0.5) * LevelDecor.STRIP_W
 			var d := absf(cx - focus_x)
-			if d < best_dist:
+			if d <= best_dist:
 				best_dist = d
 				best = i
 		if best < 0:
-			if _baked_strips.size() >= total:
-				break
-			await get_tree().process_frame
-			continue
+			break
 		var strip_i := best
+		# Keep the frozen render target as the sprite texture. Reading it back
+		# and re-uploading it synchronously stalls the first frames in a new area.
+		var sub := SubViewport.new()
+		sub.size = Vector2i(int(LevelDecor.STRIP_W), int(LevelDecor.STRIP_H))
+		sub.disable_3d = true
+		sub.transparent_bg = true
+		sub.render_target_update_mode = SubViewport.UPDATE_ONCE
+		var node := InkBakeNode.new()
 		node.fn = func(cv: CanvasItem):
 			InkR.init_static()
 			InkR.set_canvas(cv)
@@ -305,28 +330,22 @@ func _bake_strips_async() -> void:
 			InkR.t_translate(-float(strip_i) * LevelDecor.STRIP_W, 0.0)
 			LevelDecor.draw_strip_decor(strip_i, lid, data, bounds)
 			InkR.set_canvas(null)
-		node.queue_redraw()
-		sub.render_target_update_mode = SubViewport.UPDATE_ONCE
+		sub.add_child(node)
+		add_child(sub)
 		await RenderingServer.frame_post_draw
 		await RenderingServer.frame_post_draw
 		if not is_instance_valid(self) or not is_instance_valid(sub):
 			break
-		var tex := sub.get_texture()
-		if tex != null:
-			var img := tex.get_image()
-			if img != null and not img.is_empty():
-				img.convert(Image.FORMAT_RGBA8)
-				var sp := Sprite2D.new()
-				sp.name = "Strip_%d" % strip_i
-				sp.centered = false
-				sp.position = Vector2(float(strip_i) * LevelDecor.STRIP_W, 0.0)
-				sp.texture = ImageTexture.create_from_image(img)
-				_strips_root.add_child(sp)
-				_baked_strips[strip_i] = sp
-				if is_instance_valid(_fallback):
-					_fallback.queue_redraw()
-	if is_instance_valid(sub):
-		sub.queue_free()
+		node.queue_free()
+		var sp := Sprite2D.new()
+		sp.name = "Strip_%d" % strip_i
+		sp.centered = false
+		sp.position = Vector2(float(strip_i) * LevelDecor.STRIP_W, 0.0)
+		sp.texture = sub.get_texture()
+		_strips_root.add_child(sp)
+		_baked_strips[strip_i] = sp
+		_fallback.queue_redraw()
+	_baking = false
 
 
 ## Триггеры — точки сюжета. Срабатывают один раз, когда игрок доходит до x.
@@ -348,6 +367,16 @@ func _build_triggers() -> void:
 
 func is_frozen() -> bool:
 	return hitstop > 0.0
+
+
+static func move_ground_enemy(enemy: CharacterBody2D) -> void:
+	var room := enemy.get_parent() as Level
+	# The chapter's floor is a static TileMapLayer. Settled bodies still
+	# evaluate attacks and targeting, but have no motion to submit.
+	if room != null and room.tile_layer != null and enemy.is_on_floor() \
+		and enemy.velocity == Vector2.ZERO and enemy.get_platform_velocity() == Vector2.ZERO:
+		return
+	enemy.move_and_slide()
 
 
 func _physics_process(_delta: float) -> void:

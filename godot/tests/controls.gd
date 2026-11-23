@@ -43,11 +43,28 @@ func _ready() -> void:
 	settings = flow.settings
 	CTL.reset_bindings()
 	CTL.touch_layout.clear()
+	CTL.touch_layout_legacy = false
 	CTL.touch_style = "floating"
 	flow.open_settings()
 	await frames()
 	check(settings.visible and not flow.title_screen.visible, "settings open from title")
 	await shot("keyboard")
+	settings.pages.current_tab = 3
+	for child in settings.pages.get_child(3).find_children("*", "OptionButton", true, false):
+		var rate := child as OptionButton
+		if rate.item_count != 2 or rate.get_item_id(1) != 120:
+			continue
+		rate.select(1)
+		rate.item_selected.emit(1)
+		check(Engine.max_fps == 120 and Engine.physics_ticks_per_second == 120,
+			"120 Hz option changes the frame limit and preserves the physics tick")
+		flow.frame_rate = 60
+		flow.load_preferences()
+		check(flow.frame_rate == 120, "frame rate survives preferences reload")
+		settings._reset_page()
+		check(Engine.max_fps == 60, "reset selects the 60 Hz frame limit")
+		break
+	settings.pages.current_tab = 0
 	settings._capture("attack", false)
 	var mouse := InputEventMouseButton.new()
 	mouse.button_index = MOUSE_BUTTON_RIGHT
@@ -78,6 +95,19 @@ func _ready() -> void:
 	check(CTL.keyboard.attack == [-2] and CTL.pad_map.attack == [6] and CTL.pad_movement == "dpad" and is_equal_approx(CTL.pad_deadzone, 0.22), "bindings and controller settings survive reload")
 	await shot("controller")
 	settings.pages.current_tab = 2
+	var old_config := ConfigFile.new()
+	old_config.load("user://settings.cfg")
+	old_config.erase_section_key("controls", "layout_legacy")
+	old_config.set_value("controls", "layout", {"move": {"center": Vector2(0.14, 0.76), "scale": 0.75}})
+	old_config.save("user://settings.cfg")
+	CTL.load_controls()
+	check(CTL.touch_layout_legacy and is_equal_approx(flow.mobile_controls.element_radius("move"), 63.0)
+		and is_equal_approx(flow.mobile_controls.element_radius("jump"), 64.0),
+		"old layouts retain both customized and default button sizes")
+	settings._reset_page()
+	check(not CTL.touch_layout_legacy and CTL.touch_layout.is_empty()
+		and is_equal_approx(flow.mobile_controls.element_radius("jump"), 84.0),
+		"touch reset restores the new standard layout")
 	await frames()
 	await shot("touch")
 	settings.start_editor()

@@ -21,15 +21,19 @@ const LEVELS := {
 }
 const FIRST_LEVEL := "ch01_hall"
 
-enum State { TITLE, PLAY, PAUSE, DEAD, CLEARED, CUTSCENE, DIALOGUE, GUIDE }
+enum State { TITLE, PLAY, PAUSE, DEAD, CLEARED, CUTSCENE, DIALOGUE, GUIDE, VICTORY }
 
 const OVERLAY_PAUSE := 0
 const OVERLAY_DEAD := 1
 const OVERLAY_CLEARED := 2
+const FRAME_RATES := [60, 120]
+const VICTORY_HOLD := 0.85
+const VICTORY_FADE := 0.45
 
 var shake_enabled := true
 var master_volume := 0.8
 var vsync_enabled := true
+var frame_rate := 60
 var resolution_index := 0
 const RESOLUTIONS := [Vector2i(1280,720), Vector2i(1600,900), Vector2i(1920,1080), Vector2i(2560,1440), Vector2i(3840,2160)]
 var state := State.TITLE
@@ -46,6 +50,8 @@ var dialogue: Control
 var settings: Control
 var mobile_controls: Control
 var control_guide: Control
+var _victory_fade: ColorRect
+var _victory_tween: Tween
 
 var level: Level
 var player: Player
@@ -61,7 +67,8 @@ var _finale_seen := false
 var _save_dirty := false
 var _save_delay := 0.0
 var _last_save_sig := ""
-var _kill_save_tick := -1
+var _queued_save_sig := ""
+var _save_receipt: Array[bool] = []
 const SAVE_COALESCE := 0.35
 var _skip_loaded_checkpoint_heal := false
 var _loaded_spawn := Vector2.ZERO
@@ -82,16 +89,13 @@ var _current_zone := ""
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Engine.physics_ticks_per_second = 120
-	# На телефоне кадры выше 60 Гц почти не различимы, зато заметно греют
-	# корпус и садят батарею. Физика остаётся на 120 Гц — ввод не страдает.
-	if OS.has_feature("mobile"):
-		Engine.max_fps = 60
 	InkR.init_static()
 	load_preferences()
 	_apply_saved_display()
 	_build_stage()
 	if DisplayServer.get_name() != "headless":
 		_bake_paper_async()
+		_bake_particle_atlas()
 	# QA-флаг для сборки: сразу в игру, без титула.
 	# Запуск: InkBlade-Windows.exe --headless --quit-after 300 -- --play
 	if "--play" in OS.get_cmdline_user_args():
@@ -173,6 +177,17 @@ func _build_stage() -> void:
 	if mobile_controls.visible:
 		mobile_controls._layout()
 
+	var transitions := CanvasLayer.new()
+	transitions.layer = ui.layer + 1
+	add_child(transitions)
+	_victory_fade = ColorRect.new()
+	_victory_fade.color = Color("#f1e6d0")
+	_victory_fade.modulate.a = 0.0
+	_victory_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_victory_fade.hide()
+	transitions.add_child(_victory_fade)
+	_victory_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
 
 func _physics_process(delta: float) -> void:
 	# Единственная точка, где обновляется ввод. Все читают его после этого кадра.
@@ -180,10 +195,11 @@ func _physics_process(delta: float) -> void:
 	CTL.update(delta)
 	# Глобальные клавиши (F11, M, F12, отладочный HUD) работают и в настройках.
 	_handle_global()
+	_complete_autosave(false)
 	if _save_dirty:
 		_save_delay -= delta
 		if _save_delay <= 0.0:
-			_autosave(_finale_pending or state == State.CLEARED)
+			_autosave(_finale_pending or state == State.CLEARED, false, true)
 	if settings.visible:
 		return
 	if state == State.PLAY:
@@ -209,6 +225,11 @@ func _physics_process(delta: float) -> void:
 	elif state == State.GUIDE:
 		# The world is paused, but the spawn flash must not wash out its demonstration.
 		InkFx.update(delta)
+	elif state == State.VICTORY:
+		InkFx.update(delta)
+		var shake := InkFx.shake_offset() if shake_enabled else Vector3.ZERO
+		camera.offset = Vector2(shake.x, shake.y)
+		camera.rotation = shake.z
 
 	# Кадр открытия/закрытия консоли не должен заодно ставить игру на паузу.
 	if _console_guard > 0:
@@ -227,7 +248,7 @@ func _physics_process(delta: float) -> void:
 			elif CTL.pressed("restart"):
 				_pause()
 				overlay.request_restart()
-		State.PAUSE, State.DEAD, State.CLEARED, State.CUTSCENE, State.DIALOGUE, State.GUIDE:
+		State.PAUSE, State.DEAD, State.CLEARED, State.CUTSCENE, State.DIALOGUE, State.GUIDE, State.VICTORY:
 			pass
 
 
@@ -401,6 +422,7 @@ func save_to_slot(slot: String) -> bool:
 
 
 func _start_level(save: Dictionary, with_intro := false) -> void:
+	_complete_autosave(true)
 	_guide_pending = false
 	control_guide.visible = false
 	CTL.clear_touch()
@@ -410,7 +432,6 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	_save_dirty = false
 	_save_delay = 0.0
 	_last_save_sig = ""
-	_kill_save_tick = -1
 	hitstop = 0.0
 	_hitstop_paused = false
 	if host != null and host.process_mode == Node.PROCESS_MODE_DISABLED:
@@ -442,7 +463,7 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	level = LEVELS[level_id].instantiate()
 	level.world_state = save
 	host.add_child(level)
-	level.cleared.connect(_on_cleared)
+	level.cleared.connect(_on_cleared.bind(true))
 	level.checkpoint_reached.connect(_on_checkpoint)
 	level.enemy_died.connect(_on_enemy_died)
 	level.trigger_reached.connect(_on_trigger)
@@ -573,7 +594,29 @@ func _bake_paper_async() -> void:
 		vp.queue_free()
 
 
+func _bake_particle_atlas() -> void:
+	var vp := SubViewport.new()
+	vp.size = Vector2i(InkFx.ATLAS_VARIANTS, InkFx.ATLAS_ROWS) * InkFx.ATLAS_CELL
+	vp.transparent_bg = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	var bake := InkBakeNode.new()
+	bake.fn = InkFx.bake_particle_atlas
+	vp.add_child(bake)
+	add_child(vp)
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var image := vp.get_texture().get_image()
+	if image != null and not image.is_empty():
+		image.fix_alpha_edges()
+		InkFx.particle_atlas = ImageTexture.create_from_image(image)
+	vp.queue_free()
+
+
 func _clear_level() -> void:
+	if _victory_tween != null and _victory_tween.is_valid():
+		_victory_tween.kill()
+	_victory_fade.hide()
+	_victory_fade.modulate.a = 0.0
 	InkFx.reset()
 	camera.offset = Vector2.ZERO
 	camera.rotation = 0.0
@@ -689,19 +732,12 @@ func _on_checkpoint(id: String, _pos: Vector2) -> void:
 
 
 ## Мир помнит убитых: после смерти они не возвращаются.
-## Запись не чаще одного раза за физический тик: пачка смертей в одном
-## кадре не превращается в поток записей на главном потоке.
+## Один отложенный снимок после удара хранит и побеждённых врагов, и душу.
 func _on_enemy_died(id: String) -> void:
 	# Временные враги (деление, призывы) не попадают в сохранение и не
 	# считаются в статистике — иначе после «Продолжить» счётчик скачет.
 	if level == null or not level.is_temporary_id(id):
 		run_kills += 1
-	var tick := Engine.get_physics_frames()
-	if tick != _kill_save_tick:
-		_kill_save_tick = tick
-		_autosave(_finale_pending or state == State.CLEARED)
-	# hit() выдаёт смерть раньше, чем игрок получает душу за добивание:
-	# один объединённый снимок на тик исправляет её без второй записи на удар.
 	_request_autosave(0.0)
 
 
@@ -766,6 +802,7 @@ func play_cutscene(id: String) -> bool:
 	state = State.CUTSCENE
 	get_tree().paused = true
 	hud.visible = false
+	mobile_controls.refresh_draw_state()
 	return true
 
 
@@ -776,6 +813,7 @@ func play_dialogue(id: String, resume_line := 0) -> bool:
 	state = State.DIALOGUE
 	get_tree().paused = true
 	hud.visible = false
+	mobile_controls.refresh_draw_state()
 	return true
 
 
@@ -807,6 +845,7 @@ func _on_dialogue_finished(_id: String, grant: String) -> void:
 	state = State.PLAY
 	get_tree().paused = false
 	hud.visible = true
+	mobile_controls.refresh_draw_state()
 	_autosave(false)
 
 
@@ -820,10 +859,32 @@ func _on_player_died() -> void:
 	overlay.open(OVERLAY_DEAD, L10N.t("ui.overlay.subtitle", [_level_name()]))
 
 
-func _on_cleared() -> void:
+func _on_cleared(live := false) -> void:
+	if _finale_pending or state == State.CLEARED:
+		return
 	_finale_seen = false
 	_finale_pending = true
 	_autosave(true)
+	if not live or state != State.PLAY or not is_instance_valid(level.boss) or not level.boss.dead:
+		_open_finale()
+		return
+	state = State.VICTORY
+	get_tree().paused = true
+	hud.visible = false
+	CTL.clear_touch()
+	mobile_controls.refresh_draw_state()
+	_victory_fade.show()
+	_victory_tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).set_trans(Tween.TRANS_SINE)
+	_victory_tween.tween_interval(VICTORY_HOLD)
+	_victory_tween.tween_property(_victory_fade, "modulate:a", 1.0, VICTORY_FADE)
+	_victory_tween.tween_callback(func():
+		_open_finale()
+		cutscene._guard = ceili(VICTORY_FADE * Engine.physics_ticks_per_second) + 2)
+	_victory_tween.tween_property(_victory_fade, "modulate:a", 0.0, VICTORY_FADE)
+	_victory_tween.tween_callback(_victory_fade.hide)
+
+
+func _open_finale() -> void:
 	# Финал играет до окна зачистки: сначала история, потом «уровень пройден».
 	if not play_cutscene("finale"):
 		_finale_pending = false
@@ -846,8 +907,25 @@ func _level_name() -> String:
 	return String(level.data.get("name", level_id))
 
 
-func _autosave(cleared: bool, force := false) -> void:
+func _complete_autosave(wait: bool) -> bool:
+	if _save_receipt.is_empty():
+		return true
+	if not wait and SaveGame.autosave_busy():
+		return false
+	SaveGame.flush_autosave()
+	if _save_receipt[0]:
+		_last_save_sig = _queued_save_sig
+	else:
+		_request_autosave()
+	_save_receipt = []
+	return true
+
+
+func _autosave(cleared: bool, force := false, background := false) -> void:
 	if level == null or player == null:
+		return
+	if not _complete_autosave(not background):
+		_request_autosave(0.0)
 		return
 	var ink := CombatFx.layer(player)
 	var dead_now := player.dead or state == State.DEAD
@@ -884,10 +962,12 @@ func _autosave(cleared: bool, force := false) -> void:
 		"cleared": cleared,
 		"finale_seen": _finale_seen if cleared else false,
 	}
-	var written := SaveGame.write_slot(SaveGame.AUTOSAVE, payload)
-	if SaveGame.current_slot != SaveGame.AUTOSAVE and SaveGame.current_slot in SaveGame.MANUAL_SLOTS:
-		SaveGame.write_slot(SaveGame.current_slot, payload)
-	if written:
+	if background:
+		_save_receipt = SaveGame.try_autosave(payload)
+		_queued_save_sig = signature
+		if _save_receipt.is_empty():
+			_request_autosave(0.0)
+	elif SaveGame.write_autosave(payload):
 		_last_save_sig = signature
 
 
@@ -930,7 +1010,9 @@ func _quit() -> void:
 
 
 func _exit_tree() -> void:
+	_complete_autosave(true)
 	InkR.tex_paper = null
+	InkFx.particle_atlas = null
 
 
 func _on_console_toggled() -> void:
@@ -939,7 +1021,9 @@ func _on_console_toggled() -> void:
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+	if what == NOTIFICATION_APPLICATION_RESUMED and OS.has_feature("android"):
+		_request_android_refresh(frame_rate)
+	elif what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
 		CTL.clear_touch()
 		if is_instance_valid(level) and is_instance_valid(player):
 			_autosave(_finale_pending or state == State.CLEARED)
@@ -985,13 +1069,37 @@ func load_preferences() -> void:
 	CTL.vibration_enabled = bool(cfg.get_value("general", "vibration", true))
 	SND.set_muted(bool(cfg.get_value("general", "muted", false)))
 	vsync_enabled = bool(cfg.get_value("display", "vsync", true))
+	var saved_rate = cfg.get_value("display", "frame_rate", 60)
+	frame_rate = int(saved_rate) if saved_rate in FRAME_RATES else 60
 	resolution_index = clampi(int(cfg.get_value("display", "resolution", 0)), 0, RESOLUTIONS.size() - 1)
 	apply_preferences()
 
 func apply_preferences() -> void:
+	if Engine.max_fps != frame_rate and OS.has_feature("android"):
+		_request_android_refresh(frame_rate)
+	Engine.max_fps = frame_rate
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(master_volume, 0.0001)))
 	if not OS.has_feature("mobile") and DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync_enabled else DisplayServer.VSYNC_DISABLED)
+
+
+func _request_android_refresh(rate: int) -> void:
+	var runtime = Engine.get_singleton("AndroidRuntime")
+	if runtime == null or OS.get_version().get_slice(".", 0).to_int() < 11:
+		return
+	var activity = runtime.getActivity()
+	if activity == null:
+		return
+	var request := func():
+		var engine = activity.getGodot()
+		if engine == null:
+			return
+		var render_view = engine.getRenderView()
+		if render_view != null:
+			var surface = render_view.getView().getHolder().getSurface()
+			if surface != null and surface.isValid():
+				surface.setFrameRate(float(rate), 0) # FRAME_RATE_COMPATIBILITY_DEFAULT
+	activity.runOnUiThread(runtime.createRunnableFromGodotCallable(request))
 
 func save_preferences() -> void:
 	apply_preferences()
@@ -1002,5 +1110,6 @@ func save_preferences() -> void:
 	cfg.set_value("general", "vibration", CTL.vibration_enabled)
 	cfg.set_value("general", "muted", SND.muted)
 	cfg.set_value("display", "vsync", vsync_enabled)
+	cfg.set_value("display", "frame_rate", frame_rate)
 	cfg.set_value("display", "resolution", resolution_index)
 	cfg.save(SETTINGS_FILE)

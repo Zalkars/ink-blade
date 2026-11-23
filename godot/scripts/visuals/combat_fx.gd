@@ -9,18 +9,21 @@ const MAX_MARKS := 1024
 const MAX_PARTICLES := 240
 const MAX_FRAGMENTS := 16
 const MAX_VERTICES := 96
+const STAIN_STRIP_WIDTH := 512.0
 static var _base64_regex := RegEx.create_from_string("^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$")
 var marks: Array[Dictionary] = []
 var particles: Array[Dictionary] = []
 var _stains: Node2D
+var _stain_strips: Dictionary = {}
+var _wet_marks: Array[Dictionary] = []
 var _dirty := false
 ## Растёт при каждом изменении пятен: автосейв пропускает неизменную картинку.
 var revision := 0
-var _last_view := Transform2D.IDENTITY
 ## Effect budgets use simulation time, so a stalled frame cannot schedule a burst storm.
 var mobile_quality := OS.has_feature("mobile")
 var _clock := 0.0
 var _ray_cursor := 0
+var _droplet_ray := PhysicsRayQueryParameters2D.create(Vector2.ZERO, Vector2.ZERO, 9)
 var _dry_accum := 0.0
 var _burst_times: Dictionary = {}
 var _coverage: Dictionary = {}
@@ -34,11 +37,25 @@ var deposits_last_tick := 0
 func _ready() -> void:
 	_rng.randomize()
 
-class StainsLayer extends Node2D:
-	var owner_fx: Node2D
+class StainStrip extends Node2D:
+	var marks: Array[Dictionary] = []
+
 	func _draw() -> void:
-		if is_instance_valid(owner_fx):
-			owner_fx.draw_terrain(self)
+		var points := PackedVector2Array()
+		var colors := PackedColorArray()
+		var indices := PackedInt32Array()
+		for mark in marks:
+			var tint := Color(INK, 0.66 + float(mark.wet) * 0.13)
+			for i in mark.fragments.size():
+				var polygon: PackedVector2Array = mark.fragments[i]
+				var offset := points.size()
+				points.append_array(polygon)
+				for vertex in polygon:
+					colors.append(tint)
+				for index in mark.triangles[i]:
+					indices.append(offset + index)
+		if not indices.is_empty():
+			RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), indices, points, colors)
 
 static func layer(actor: Node) -> CombatFx:
 	var root := actor.get_parent()
@@ -50,10 +67,9 @@ static func layer(actor: Node) -> CombatFx:
 		fx.name = "CombatInk"
 		fx.z_index = 2
 		root.add_child(fx)
-		var stains := StainsLayer.new()
+		var stains := Node2D.new()
 		stains.name = "CombatStains"
 		stains.z_index = -1
-		stains.owner_fx = fx
 		root.add_child(stains)
 		fx._stains = stains
 	return fx
@@ -71,9 +87,11 @@ static func burst(actor: Node2D, point: Vector2, direction: Vector2, color := RE
 	var amount := maxi(3, int(ceil(count * (0.65 if fx.mobile_quality else 1.0))))
 	# Pale wall chips and healing sparks are light, not physical black ink.
 	var ink := color.r < 0.75 and color.g < 0.5
+	var origin := fx.to_local(point)
+	var heading := direction.normalized()
 	for i in mini(amount, maxi(0, limit - fx.particles.size())):
-		var v := direction.normalized().rotated(fx._rng.randf_range(-1.35, 1.35)) * fx._rng.randf_range(95, 330)
-		fx.particles.append({"p": fx.to_local(point), "trace": fx.to_local(point), "v": v,
+		var v := heading.rotated(fx._rng.randf_range(-1.35, 1.35)) * fx._rng.randf_range(95, 330)
+		fx.particles.append({"p": origin, "trace": origin, "v": v,
 			"life": fx._rng.randf_range(0.65, 1.15), "size": fx._rng.randf_range(1.5, 5.5), "color": color,
 			"deposit": ink and i % (4 if fx.mobile_quality else 3) == 0})
 	fx.queue_redraw()
@@ -109,13 +127,25 @@ func _deposit(point: Vector2, normal: Vector2, strength: float) -> void:
 	if _coverage.size() > MAX_MARKS * 2:
 		_coverage.clear()
 	_coverage[key] = strength
-	marks.append(_mark(fragments, 1.0))
+	var mark := _mark(fragments, 1.0)
+	marks.append(mark)
+	_wet_marks.append(mark)
+	_add_to_strip(mark)
 	deposits_last_tick += 1
 	if marks.size() > MAX_MARKS:
-		marks.pop_front()
+		var oldest: Dictionary = marks.pop_front()
+		_wet_marks.erase(oldest)
+		var index := _strip_index(oldest)
+		var strip: StainStrip = _stain_strips[index]
+		strip.marks.erase(oldest)
+		if strip.marks.is_empty():
+			_stain_strips.erase(index)
+			_stains.remove_child(strip)
+			strip.queue_free()
+		else:
+			strip.queue_redraw()
 	revision += 1
 	_dirty = true
-	_redraw_stains()
 
 static func floor_mark(actor: Node2D, point: Vector2, strength := 1.0) -> void:
 	var ray := PhysicsRayQueryParameters2D.create(point - Vector2(0, 8), point + Vector2(0, 90), 9)
@@ -131,15 +161,18 @@ func _physics_process(delta: float) -> void:
 	rays_last_tick = 0
 	deposits_last_tick = 0
 	var had_particles := not particles.is_empty()
-	var view := get_global_transform_with_canvas()
-	if view != _last_view:
-		_last_view = view
-		_redraw_stains()
-	var drying := false
-	for mark in marks:
-		if mark.wet > 0.0:
-			mark.wet = maxf(0.0, mark.wet - delta)
-			drying = true
+	if not _wet_marks.is_empty():
+		# Retain the terrain commands while the camera moves. Only strips
+		# with drying ink need fresh vertices and colours at 20 Hz.
+		_dry_accum += delta
+		if _dry_accum >= 0.05:
+			for i in range(_wet_marks.size() - 1, -1, -1):
+				var mark := _wet_marks[i]
+				mark.wet = maxf(0.0, mark.wet - _dry_accum)
+				_stain_strips[_strip_index(mark)].queue_redraw()
+				if mark.wet <= 0.0:
+					_wet_marks.remove_at(i)
+			_dry_accum = 0.0
 	for i in range(particles.size() - 1, -1, -1):
 		var p: Dictionary = particles[i]
 		p.life -= delta
@@ -153,14 +186,17 @@ func _physics_process(delta: float) -> void:
 	var budget := 6 if mobile_quality else 12
 	var checked := 0
 	var index := _ray_cursor % maxi(1, particles.size())
+	var space: PhysicsDirectSpaceState2D
+	var transform_to_world := global_transform
 	while checked < particles.size() and rays_last_tick < budget and not particles.is_empty():
 		var p: Dictionary = particles[index]
 		checked += 1
 		if p.deposit:
-			var a := to_global(p.get("trace", p.p))
-			var b := to_global(p.p)
-			var ray := PhysicsRayQueryParameters2D.create(a, b, 9)
-			var hit := get_world_2d().direct_space_state.intersect_ray(ray)
+			if space == null:
+				space = get_world_2d().direct_space_state
+			_droplet_ray.from = transform_to_world * p.get("trace", p.p)
+			_droplet_ray.to = transform_to_world * p.p
+			var hit := space.intersect_ray(_droplet_ray)
 			rays_last_tick += 1
 			p.trace = p.p
 			if not hit.is_empty():
@@ -174,13 +210,6 @@ func _physics_process(delta: float) -> void:
 		index = (index + 1) % particles.size()
 	_ray_cursor = index
 
-	if drying:
-		# Мокрый блеск гаснет за секунду: 20 Гц хватает, а полный кадр
-		# пятен в 6 раз дешевле, чем при каждом физическом тике.
-		_dry_accum += delta
-		if _dry_accum >= 0.05:
-			_dry_accum = 0.0
-			_redraw_stains()
 	if had_particles:
 		queue_redraw()
 	if _dirty:
@@ -188,14 +217,60 @@ func _physics_process(delta: float) -> void:
 		persistent_marks_changed.emit()
 
 func _redraw_stains() -> void:
-	if is_instance_valid(_stains):
-		_stains.queue_redraw()
+	for strip in _stain_strips.values():
+		_stains.remove_child(strip)
+		strip.queue_free()
+	_stain_strips.clear()
+	for mark in marks:
+		_add_to_strip(mark)
+
+func _strip_index(mark: Dictionary) -> int:
+	return floori(mark.bounds.get_center().x / STAIN_STRIP_WIDTH)
+
+func _add_to_strip(mark: Dictionary) -> void:
+	var index := _strip_index(mark)
+	if not _stain_strips.has(index):
+		var new_strip := StainStrip.new()
+		_stains.add_child(new_strip)
+		_stain_strips[index] = new_strip
+	var strip: StainStrip = _stain_strips[index]
+	strip.marks.append(mark)
+	strip.queue_redraw()
 
 func _draw() -> void:
+	var view := (get_global_transform_with_canvas().affine_inverse() * get_viewport_rect()).grow(48.0)
+	if InkFx.particle_atlas != null:
+		_draw_batched_particles(view)
+	else:
+		_draw_unbaked_particles(view)
+
+
+func _draw_batched_particles(view: Rect2) -> void:
+	var batch := InkFx.ParticleBatch.new()
+	for p in particles:
+		if not view.has_point(p.p):
+			continue
+		var color := Color(p.color, minf(1.0, p.life * 4.0))
+		if not mobile_quality:
+			batch.trail(p.p - p.v * 0.026, p.p, p.size, color)
+		batch.disc(p.p, p.size * 0.62, color)
+		if p.size > 4.0:
+			batch.disc(p.p - Vector2(0.8, 1.2), 0.85, Color(0.94, 0.89, 0.78, color.a * 0.55))
+	if mobile_quality:
+		for p in particles:
+			if view.has_point(p.p):
+				var width := 2.0 if p.size < 3.0 else 4.0
+				batch.trail(p.p - p.v * 0.026, p.p, width, Color(p.color, 0.7), false)
+	batch.draw(self, InkFx.particle_atlas)
+
+
+func _draw_unbaked_particles(view: Rect2) -> void:
 	# The mobile trail batch replaces up to 96 antialiased line commands with a
 	# handful of material/width groups. Droplet heads still retain their shape.
 	var trails: Dictionary = {}
 	for p in particles:
+		if not view.has_point(p.p):
+			continue
 		var col := Color(p.color, minf(1.0, p.life * 4.0))
 		if mobile_quality:
 			var width := 2.0 if p.size < 3.0 else 4.0
@@ -291,6 +366,9 @@ static func _mark(fragments: Array[PackedVector2Array], wet: float) -> Dictionar
 func restore_state(data) -> void:
 	marks.clear()
 	particles.clear()
+	queue_redraw()
+	_wet_marks.clear()
+	_dry_accum = 0.0
 	_coverage.clear()
 	_burst_times.clear()
 	_dirty = false
@@ -357,17 +435,3 @@ static func _decode_polygon(points, version: int) -> PackedVector2Array:
 		if not v.is_finite() or absf(v.x) > 100000.0 or absf(v.y) > 100000.0:
 			return PackedVector2Array()
 	return polygon
-
-func draw_terrain(canvas: Node2D) -> void:
-	var inverse := get_global_transform_with_canvas().affine_inverse()
-	var vp := get_viewport_rect()
-	var visible := Rect2(inverse * vp.position, Vector2.ZERO).expand(inverse * vp.end).grow(80.0)
-	canvas.draw_set_transform_matrix(canvas.global_transform.affine_inverse() * global_transform)
-	for mark in marks:
-		if not mark.bounds.intersects(visible):
-			continue
-		for index in mark.fragments.size():
-			# Cached, validated triangles avoid driver-side retriangulation of clipped slivers.
-			RenderingServer.canvas_item_add_triangle_array(canvas.get_canvas_item(), mark.triangles[index],
-				mark.fragments[index], PackedColorArray([Color(INK, 0.66 + float(mark.wet) * 0.13)]))
-	canvas.draw_set_transform_matrix(Transform2D.IDENTITY)

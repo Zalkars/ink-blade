@@ -3,7 +3,22 @@ extends RefCounted
 
 ## Полный порт Game/Fx.cs
 
-static var parts: Array = []   # Particle
+enum ParticleKind { INK, DROP, SPLAT, SPARK, DUST }
+
+class Particle:
+	var kind := ParticleKind.INK
+	var position := Vector2.ZERO
+	var velocity := Vector2.ZERO
+	var life := 0.0
+	var max_life := 0.0
+	var radius := 0.0
+	var color := Color.WHITE
+	var gravity := 0.0
+	var drag := 0.0
+	var floor_y := 0.0
+	var splat_on_expiry := false
+
+static var parts: Array[Particle] = []
 static var ghosts: Array = []
 static var slashes: Array = []
 static var rings: Array = []
@@ -14,8 +29,80 @@ static var flash := 0.0
 static var damage := 0.0
 static var t := 0.0
 static var flash_color: Color = InkR.CREAM
+static var particle_atlas: Texture2D
 
-# Particle поля: type, x, y, vx, vy, life, max, size, gravity, drag, floor, alpha, rot, vr, color, splat
+## Ink splashes share silhouettes baked at four pixels per game unit.
+## The fill and the outline are separate masks so tint and fade stay independent.
+const ATLAS_VARIANTS := 8
+const ATLAS_CELL := 96
+const ATLAS_SCALE := 4.0
+const ATLAS_RADII := [2.75, 3.75, 4.5, 5.5, 6.5, 9.0, 4.5, 5.5, 6.5]
+const SPLAT_ROW := 5
+const FIRST_OUTLINE_ROW := 6
+const DISC_ROW := 9
+const DISC_RADIUS := 9.0
+const ATLAS_ROWS := 10
+const CELL_UV := Vector2(1.0 / ATLAS_VARIANTS, 1.0 / ATLAS_ROWS)
+
+class ParticleBatch:
+	var points := PackedVector2Array()
+	var uvs := PackedVector2Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+
+	func stamp(destination: Rect2, uv: Rect2, tint: Color) -> void:
+		quad(destination.position, Vector2(destination.size.x, 0.0),
+			Vector2(0.0, destination.size.y), uv, tint)
+
+	func quad(origin: Vector2, right: Vector2, down: Vector2, uv: Rect2, tint: Color) -> void:
+		var base := points.size()
+		points.append(origin)
+		points.append(origin + right)
+		points.append(origin + right + down)
+		points.append(origin + down)
+		uvs.append(uv.position)
+		uvs.append(Vector2(uv.end.x, uv.position.y))
+		uvs.append(uv.end)
+		uvs.append(Vector2(uv.position.x, uv.end.y))
+		for i in 4:
+			colors.append(tint)
+		indices.append(base)
+		indices.append(base + 1)
+		indices.append(base + 2)
+		indices.append(base)
+		indices.append(base + 2)
+		indices.append(base + 3)
+
+	func disc(center: Vector2, radius: float, tint: Color) -> void:
+		var half := Vector2.ONE * (ATLAS_CELL / ATLAS_SCALE * 0.5 / DISC_RADIUS * radius)
+		stamp(Rect2(center - half, 2.0 * half), Rect2(Vector2(0, DISC_ROW) * CELL_UV, CELL_UV), tint)
+
+	func trail(from: Vector2, to: Vector2, width: float, tint: Color, antialiased := true) -> void:
+		var vector := to - from
+		if vector.length_squared() < 0.0001:
+			return
+		var direction := vector.normalized()
+		var across := direction.orthogonal()
+		var uv := Rect2(Vector2(0.5, DISC_ROW + 0.5) * CELL_UV, Vector2.ZERO)
+		if antialiased:
+			# The atlas has one soft texel-wide edge on the original one-pixel fringe.
+			uv = Rect2(Vector2(1.5 - 10.0 / 24.0, DISC_ROW + 0.5 - 3.0 / 24.0) * CELL_UV,
+				Vector2(20.0 / 24.0, 6.0 / 24.0) * CELL_UV)
+			from -= direction
+			vector += direction * 2.0
+			width += 2.0
+		quad(from - across * width * 0.5, vector, across * width, uv, tint)
+
+	func draw(canvas: CanvasItem, atlas: Texture2D) -> void:
+		if indices.is_empty():
+			return
+		RenderingServer.canvas_item_add_triangle_array(
+			canvas.get_canvas_item(), indices, points, colors, uvs,
+			PackedInt32Array(), PackedFloat32Array(), atlas.get_rid())
+		points.clear()
+		uvs.clear()
+		colors.clear()
+		indices.clear()
 
 static func reset() -> void:
 	parts.clear()
@@ -34,26 +121,28 @@ static func rnd(a := 0.0, b := 1.0) -> float:
 static func update(dt: float) -> void:
 	t += dt
 	for i in range(parts.size() - 1, -1, -1):
-		var p: Dictionary = parts[i]
+		var p := parts[i]
 		p.life -= dt
 		if p.life <= 0.0:
-			if p.splat:
+			if p.splat_on_expiry:
 				splat(p)
 			parts.remove_at(i)
 			continue
-		p.vy += p.gravity * dt
-		p.vx *= 1.0 - p.drag * dt
-		p.vy *= 1.0 - p.drag * dt * 0.4
-		p.x += p.vx * dt
-		p.y += p.vy * dt
-		p.rot += p.vr * dt
-		if p.floor != 0.0 and p.y > p.floor:
-			p.y = p.floor
-			p.vy *= -0.22
-			p.vx *= 0.55
+		if p.kind == ParticleKind.SPLAT:
+			continue
+		var velocity := p.velocity
+		var drag := p.drag * dt
+		velocity.y += p.gravity * dt
+		velocity *= Vector2(1.0 - drag, 1.0 - drag * 0.4)
+		var point := p.position + velocity * dt
+		if p.floor_y != 0.0 and point.y > p.floor_y:
+			point.y = p.floor_y
+			velocity *= Vector2(0.55, -0.22)
 			p.life = minf(p.life, 0.25)
-			if p.type == "drop":
-				p.type = "ink"
+			if p.kind == ParticleKind.DROP:
+				p.kind = ParticleKind.INK
+		p.position = point
+		p.velocity = velocity
 
 	for i in range(ghosts.size() - 1, -1, -1):
 		var g: Dictionary = ghosts[i]
@@ -83,17 +172,17 @@ static func update(dt: float) -> void:
 	flash = maxf(0.0, flash - dt * 3.4)
 	damage = maxf(0.0, damage - dt * 1.7)
 
-static func splat(p: Dictionary) -> void:
+static func splat(p: Particle) -> void:
 	if parts.size() > 420:
 		return
-	parts.append({
-		"type": "splat", "x": p.x, "y": p.y,
-		"life": rnd(0.5, 1.6), "max": 1.6,
-		"size": p.get("size", 3.0) * rnd(1.6, 3.2),
-		"color": p.color, "alpha": 0.35, "gravity": 0.0,
-		"vx": 0.0, "vy": 0.0, "rot": 0.0, "vr": 0.0, "drag": 0.0, "floor": 0.0,
-		"splat": false,
-	})
+	var mark := Particle.new()
+	mark.kind = ParticleKind.SPLAT
+	mark.position = p.position
+	mark.life = rnd(0.5, 1.6)
+	mark.max_life = 1.6
+	mark.radius = p.radius * rnd(1.6, 3.2)
+	mark.color = p.color
+	parts.append(mark)
 
 static func add_shake(a: float, rot := 0.0) -> void:
 	shake = minf(26.0, maxf(shake, a))
@@ -126,47 +215,50 @@ static func ink_burst(x: float, y: float, n := 10, power := 220.0, colors = null
 		else:
 			a = rnd(0.0, InkR.TAU)
 		var sp := rnd(0.25, 1.0) * power
-		parts.append({
-			"type": "drop" if drops else "ink",
-			"x": x + rnd(-4, 4), "y": y + rnd(-4, 4),
-			"vx": cos(a) * sp + vx,
-			"vy": sin(a) * sp - rnd(0.0, 60.0) + vy,
-			"life": rnd(0.35, 0.9), "max": 0.9,
-			"size": rnd(1.8, size),
-			"color": colors[randi() % colors.size()],
-			"gravity": gravity, "drag": 0.8, "floor": floor_,
-			"splat": splat_on, "alpha": 1.0,
-			"rot": 0.0, "vr": 0.0,
-		})
+		var drop := Particle.new()
+		drop.kind = ParticleKind.DROP if drops else ParticleKind.INK
+		drop.position = Vector2(x + rnd(-4, 4), y + rnd(-4, 4))
+		drop.velocity = Vector2(cos(a) * sp + vx, sin(a) * sp - rnd(0.0, 60.0) + vy)
+		drop.life = rnd(0.35, 0.9)
+		drop.max_life = 0.9
+		drop.radius = rnd(1.8, size)
+		drop.color = colors[randi() % colors.size()]
+		drop.gravity = gravity
+		drop.drag = 0.8
+		drop.floor_y = floor_
+		drop.splat_on_expiry = splat_on
+		parts.append(drop)
 
 static func sparks(x: float, y: float, angle: float, n := 7, color2 = null) -> void:
 	for i in range(n):
 		var a := angle + rnd(-1.1, 1.1)
 		var sp := rnd(220, 640)
 		var col: Color = color2 if color2 != null else [InkR.CREAM, InkR.GOLD, InkR.RED_BRIGHT][randi() % 3]
-		parts.append({
-			"type": "spark", "x": x, "y": y,
-			"vx": cos(a) * sp, "vy": sin(a) * sp,
-			"life": rnd(0.10, 0.26), "max": 0.26,
-			"size": rnd(1.0, 2.4),
-			"color": col,
-			"gravity": 380.0, "drag": 2.5, "floor": 0.0,
-			"splat": false, "alpha": 1.0,
-			"rot": 0.0, "vr": 0.0,
-		})
+		var spark := Particle.new()
+		spark.kind = ParticleKind.SPARK
+		spark.position = Vector2(x, y)
+		spark.velocity = Vector2(cos(a), sin(a)) * sp
+		spark.life = rnd(0.10, 0.26)
+		spark.max_life = 0.26
+		spark.radius = rnd(1.0, 2.4)
+		spark.color = col
+		spark.gravity = 380.0
+		spark.drag = 2.5
+		parts.append(spark)
 
 static func dust(x: float, y: float, n: int, dir_x: float) -> void:
 	for i in range(n):
-		parts.append({
-			"type": "dust", "x": x + rnd(-8, 8), "y": y + rnd(-3, 3),
-			"vx": dir_x * rnd(10, 50) + rnd(-35, 35),
-			"vy": rnd(-90, -20),
-			"life": rnd(0.4, 0.85), "max": 0.85,
-			"size": rnd(3, 8), "color": InkR.INK_SOFT,
-			"gravity": -30.0, "drag": 1.6, "floor": 0.0,
-			"splat": false, "alpha": 0.22,
-			"rot": 0.0, "vr": 0.0,
-		})
+		var mote := Particle.new()
+		mote.kind = ParticleKind.DUST
+		mote.position = Vector2(x + rnd(-8, 8), y + rnd(-3, 3))
+		mote.velocity = Vector2(dir_x * rnd(10, 50) + rnd(-35, 35), rnd(-90, -20))
+		mote.life = rnd(0.4, 0.85)
+		mote.max_life = 0.85
+		mote.radius = rnd(3, 8)
+		mote.color = InkR.INK_SOFT
+		mote.gravity = -30.0
+		mote.drag = 1.6
+		parts.append(mote)
 
 static func ring(x: float, y: float, r0: float, r1: float, color2 = null, life := 0.3, width := 2.0) -> void:
 	rings.append({
@@ -199,8 +291,10 @@ static func text_fx(x: float, y: float, s: String, size := 20.0, color2 = null, 
 	})
 
 # ---------- отрисовка ----------
-static func draw_behind() -> void:
+static func draw_behind(view := Rect2(), atlas: Texture2D = null) -> void:
 	for g in ghosts:
+		if view.has_area() and not view.has_point(Vector2(g.x, g.y)):
+			continue
 		var k: float = g.life / g.max
 		InkR.save()
 		var cx: float = g.x + g.w / 2.0
@@ -216,38 +310,87 @@ static func draw_behind() -> void:
 		InkR.blob(1, -38, 10, InkR.CREAM, null, 2.0, k * 0.28, 0.6, 10, 0.13, false)
 		InkR.restore()
 
+	var batch := ParticleBatch.new() if atlas != null else null
 	for p in parts:
-		if p.type != "dust":
+		if p.kind != ParticleKind.DUST or (view.has_area() and not view.has_point(p.position)):
 			continue
-		var k2: float = p.life / p.max
-		InkR.fill_circle_color(p.x, p.y, p.size * (1 + (1 - k2) * 0.8), p.color, k2 * p.alpha)
+		var k2 := p.life / p.max_life
+		var radius := p.radius * (1 + (1 - k2) * 0.8)
+		if batch != null:
+			batch.disc(p.position, radius, InkR.ca(p.color, k2 * 0.22))
+		else:
+			InkR.fill_circle_color(p.position.x, p.position.y, radius, p.color, k2 * 0.22)
+	if batch != null:
+		batch.draw(InkR._cv, atlas)
 
 	for r in rings:
+		if view.has_area() and not view.grow(maxf(r.r0, r.r1)).has_point(Vector2(r.x, r.y)):
+			continue
 		var k3: float = 1.0 - float(r.life) / float(r.max)
-		InkR.save()
 		InkR.arc(r.x, r.y, lerpf(r.r0, r.r1, 1.0 - pow(1.0 - k3, 3.0)), 0, InkR.TAU,
 			maxf(0.5, r.width * (1 - k3)), r.color, (1 - k3) * 0.55, 0.8, 24)
-		InkR.restore()
 
-static func draw_front() -> void:
+static func bake_particle_atlas(canvas: CanvasItem) -> void:
+	InkR.set_canvas(canvas)
+	InkR.begin_frame(0.0)
+	InkR.t_scale(ATLAS_SCALE, ATLAS_SCALE)
+	var cell := ATLAS_CELL / ATLAS_SCALE
+	for row in ATLAS_RADII.size():
+		for column in ATLAS_VARIANTS:
+			var center := (Vector2(column, row) + Vector2.ONE * 0.5) * cell
+			InkR.srand(3119 + column * 237)
+			var outline := row >= FIRST_OUTLINE_ROW
+			InkR.blob(center.x, center.y, ATLAS_RADII[row], null if outline else Color.WHITE,
+				Color.WHITE, 1.0, 1.0, 0.8 if row == SPLAT_ROW else 1.0, 10, 0.13, outline)
+	InkR.fill_circle_color(cell * 0.5, cell * (DISC_ROW + 0.5), DISC_RADIUS, Color.WHITE)
+	var trail_center := Vector2(cell * 1.5, cell * (DISC_ROW + 0.5))
+	canvas.draw_line(trail_center - Vector2(9.0, 0.0), trail_center + Vector2(9.0, 0.0), Color.WHITE, 4.0, true)
+	InkR.set_canvas(null)
+
+
+static func _batch_particle_stamp(batch: ParticleBatch, p: Particle, alpha: float) -> void:
+	var splatter := p.kind == ParticleKind.SPLAT
+	var radius := p.radius
+	var row := SPLAT_ROW if splatter else clampi(floori(radius) - 2, 0, 4)
+	var variation := posmod(int(p.position.x * (3.0 if splatter else 5.0) + p.position.y * (1.0 if splatter else 2.0)) + InkR._boil, ATLAS_VARIANTS)
+	var extent := Vector2.ONE * (ATLAS_CELL / ATLAS_SCALE) * radius / float(ATLAS_RADII[row])
+	var destination := Rect2(p.position - extent * 0.5, extent)
+	var source := Rect2(Vector2(variation, row) * CELL_UV, CELL_UV)
+	batch.stamp(destination, source, InkR.ca(p.color, alpha))
+	if not splatter and radius > 4.0:
+		source.position.y = (FIRST_OUTLINE_ROW + row - 2) * CELL_UV.y
+		batch.stamp(destination, source, InkR.ca(InkR.INK, alpha))
+
+
+static func draw_front(view := Rect2(), atlas: Texture2D = null) -> void:
+	var batch := ParticleBatch.new() if atlas != null else null
 	for s in parts:
-		if s.type == "dust":
+		if s.kind == ParticleKind.DUST or (view.has_area() and not view.has_point(s.position)):
 			continue
-		var k: float = clampf(s.life / s.max, 0.0, 1.0)
-		InkR.save()
-		if s.type == "spark":
+		var k := clampf(s.life / s.max_life, 0.0, 1.0)
+		if s.kind == ParticleKind.SPARK:
 			var len := 10.0 + (1 - k) * 26
-			InkR.line(s.x, s.y, s.x - s.vx * 0.02 * (len / 18), s.y - s.vy * 0.02 * (len / 18),
-				s.size, s.color, minf(1.0, k * 1.8), 0.0)
-		elif s.type == "splat":
-			InkR.srand(int(s.x * 3 + s.y))
-			InkR.blob(s.x, s.y, s.size, s.color, null, 2.0, minf(1.0, k * 1.8), 0.8, 10, 0.13, false)
+			var tip := s.position
+			var tail := tip - s.velocity * 0.02 * (len / 18.0)
+			var tint := InkR.ca(s.color, minf(1.0, k * 1.8))
+			if batch != null:
+				batch.trail(tail, tip, s.radius, tint)
+			else:
+				InkR._cv.draw_line(tail, tip, tint, s.radius, true)
+		elif batch != null:
+			_batch_particle_stamp(batch, s, minf(1.0, k * 1.8))
+		elif s.kind == ParticleKind.SPLAT:
+			InkR.srand(int(s.position.x * 3 + s.position.y))
+			InkR.blob(s.position.x, s.position.y, s.radius, s.color, null, 2.0, minf(1.0, k * 1.8), 0.8, 10, 0.13, false)
 		else:
-			InkR.srand(int(s.x * 5 + s.y * 2))
-			InkR.blob(s.x, s.y, s.size, s.color, InkR.INK, 1.0, minf(1.0, k * 1.8), 1.0, 10, 0.13, s.size > 4)
-		InkR.restore()
+			InkR.srand(int(s.position.x * 5 + s.position.y * 2))
+			InkR.blob(s.position.x, s.position.y, s.radius, s.color, InkR.INK, 1.0, minf(1.0, k * 1.8), 1.0, 10, 0.13, s.radius > 4)
+	if batch != null:
+		batch.draw(InkR._cv, atlas)
 
 	for sl in slashes:
+		if view.has_area() and not view.grow(sl.r + maxf(sl.w0, sl.w1)).has_point(Vector2(sl.x, sl.y)):
+			continue
 		var k4: float = 1.0 - float(sl.life) / float(sl.max)
 		var grow: float = 1.0 - pow(1.0 - k4, 3.0)
 		var a0: float = sl.a0
@@ -262,6 +405,8 @@ static func draw_front() -> void:
 			sl.w0 * 0.2, sl.w1 * 0.18, InkR.CREAM, alpha * 0.85, 0.6)
 
 	for t4 in texts:
+		if view.has_area() and not view.grow(t4.size * 2.0).has_point(Vector2(t4.x, t4.y)):
+			continue
 		var k5: float = clampf(t4.life / t4.max, 0.0, 1.0)
 		var pop: float = minf(1.0, (1.0 - k5) * 4.0)
 		var scale: float = 0.7 + (1.0 + 2.70158 * pow(pop - 1.0, 3.0) + 1.70158 * pow(pop - 1.0, 2.0)) * 0.35

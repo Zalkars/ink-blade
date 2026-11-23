@@ -23,10 +23,8 @@ func _ready() -> void:
 	await get_tree().physics_frame
 	var fx := CombatFx.new()
 	room.add_child(fx)
-	var stains := CombatFx.StainsLayer.new()
-	stains.owner_fx = fx
-	room.add_child(stains)
-	fx._stains = stains
+	fx._stains = Node2D.new()
+	room.add_child(fx._stains)
 	fx.set_physics_process(false)
 	fx._deposit(Vector2(100, 180), Vector2.UP, 1.0)
 	check(fx.marks.size() == 1, "impact leaves one terrain mark")

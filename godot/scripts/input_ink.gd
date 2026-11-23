@@ -90,6 +90,7 @@ var dash_hint := 0.0
 var _pending_dash_hint := 0.0
 # Normalized centers and individual scales, relative to the safe viewport.
 var touch_layout := {}
+var touch_layout_legacy := false
 
 var device := "keyboard"
 var disabled := false
@@ -750,6 +751,7 @@ func load_controls() -> void:
 				var center: Vector2 = entry.center
 				if is_finite(center.x) and is_finite(center.y):
 					touch_layout[action] = {"center": center.clamp(Vector2.ZERO, Vector2.ONE), "scale": clampf(float(entry.get("scale", 1.0)), 0.65, 1.5)}
+	touch_layout_legacy = not touch_layout.is_empty() and bool(cfg.get_value("controls", "layout_legacy", true))
 
 
 func save_controls() -> Error:
@@ -768,4 +770,5 @@ func save_controls() -> Error:
 	cfg.set_value("controls", "touch_haptics", touch_haptics)
 	cfg.set_value("controls", "hold_attack", hold_attack)
 	cfg.set_value("controls", "layout", touch_layout)
+	cfg.set_value("controls", "layout_legacy", touch_layout_legacy)
 	return cfg.save("user://settings.cfg")

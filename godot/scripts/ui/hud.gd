@@ -26,9 +26,15 @@ var _lost_from := 5
 var _t := 0.0
 var _banner := {"title": "", "sub": "", "t": 0.0, "max": 1.0}
 ## Кэш жидкости в фляге: полигоны пересобираются не каждый кадр.
-var _soul_cells: Array[PackedVector2Array] = []
+var _soul_points := PackedVector2Array()
+var _soul_triangles := PackedInt32Array()
 var _soul_cells_k := -1.0
 var _soul_cells_t := -100.0
+var _vitals := Vector4i(-1, -1, -1, -1)
+var _boss_status := Vector3i(-1, -1, -1)
+var _screen_fx := Vector2.ZERO
+var _combo_visible := false
+var _was_debug_on := false
 ## Высота метки стоимости лечения постоянна — считается один раз.
 static var _soul_cost_surface := -1.0
 
@@ -36,27 +42,55 @@ static var _soul_cost_surface := -1.0
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	InkR.init_static()
+	resized.connect(queue_redraw)
 
 
 # Kept for existing language-refresh callers; control legends live in the guide.
 func _rebuild_hint() -> void:
 	hint = ""
+	queue_redraw()
 
 
 func _process(delta: float) -> void:
 	if not visible:
 		return
+	var ink_frame := int(_t * 10.0)
+	var animate := _hp_anim > 0.0 or (toast_t > 0.0 and toast_t <= 0.6)
+	var banner_time: float = _banner.t
+	var banner_length: float = _banner.max
+	animate = animate or (banner_time > 0.0 and (banner_time > banner_length - 0.5 or banner_time <= 1.2))
 	_t += delta
 	_hp_anim = maxf(0.0, _hp_anim - delta)
 	if is_instance_valid(player) and player.hp != _hp_before:
 		_lost_from = _hp_before
 		_hp_before = player.hp
 		_hp_anim = 0.55
+		animate = true
 	if toast_t > 0.0:
 		toast_t = maxf(0.0, toast_t - delta)
 	if _banner.t > 0.0:
 		_banner.t = maxf(0.0, _banner.t - delta)
-	queue_redraw()
+	var vitals := Vector4i(-1, -1, -1, -1)
+	if is_instance_valid(player):
+		var dash := player.dash_ready()
+		vitals = Vector4i(player.hp, player.weapon_index, player.weapons.size(), 4 if dash >= 1.0 else ceili(dash * 3.0))
+		var fill := clampf(player.soul / 99.0, 0.0, 1.0)
+		var wave_due := fill > 0.0 and fill < 1.0 and _t - _soul_cells_t >= 1.0 / 30.0
+		animate = animate or player.hp == 1 or fill != _soul_cells_k or wave_due
+	var boss_status := Vector3i(-1, -1, -1)
+	if is_instance_valid(boss) and boss.engaged and not boss.dead:
+		boss_status = Vector3i(boss.hp, boss.phase, int(boss.seal_open))
+	var screen_fx := Vector2(InkFx.damage, InkFx.flash)
+	var combo_visible: bool = flow != null and flow.combo >= 2 and flow.combo_t > 0.0
+	if animate or int(_t * 10.0) != ink_frame or vitals != _vitals or boss_status != _boss_status \
+		or screen_fx != _screen_fx or combo_visible or combo_visible != _combo_visible \
+		or debug_on or debug_on != _was_debug_on:
+		queue_redraw()
+	_vitals = vitals
+	_boss_status = boss_status
+	_screen_fx = screen_fx
+	_combo_visible = combo_visible
+	_was_debug_on = debug_on
 
 
 ## Короткое сообщение поверх игры: «получено оружие», важная находка.
@@ -77,10 +111,12 @@ func bind(p: Player) -> void:
 	player = p
 	_hp_before = p.hp
 	_hp_anim = 0.0
+	queue_redraw()
 
 
 func bind_boss(b: Keeper) -> void:
 	boss = b
+	queue_redraw()
 
 
 func _draw() -> void:
@@ -97,7 +133,7 @@ func _draw() -> void:
 	InkR.restore()
 
 	var boss_visible := boss != null and is_instance_valid(boss) and boss.engaged and not boss.dead
-	if player != null:
+	if is_instance_valid(player):
 		# Quiet paper wash keeps the small ink marks legible over every backdrop.
 		InkR.rect(26, 20, 224, 151, InkR.rgba(246, 237, 218, 192), null, 0, 1.0, 2.2, false)
 		_draw_masks()
@@ -161,12 +197,20 @@ func _draw_soul_flask() -> void:
 	var liquid := Color(23.0 / 255.0, 19.0 / 255.0, 15.0 / 255.0, 210.0 / 255.0)
 	# Пересобираем не чаще 30 раз в секунду: волна в маленькой фляге
 	# не требует пересчёта 80 полигонов на каждом кадре отрисовки.
-	if k != _soul_cells_k or absf(_t - _soul_cells_t) >= 1.0 / 30.0:
-		_soul_cells = soul_liquid_cells(k, _t)
+	if k != _soul_cells_k or (k > 0.0 and k < 1.0 and _t - _soul_cells_t >= 1.0 / 30.0):
+		_soul_points.clear()
+		_soul_triangles.clear()
+		for cell in soul_liquid_cells(k, _t):
+			var offset := _soul_points.size()
+			_soul_points.append_array(cell)
+			_soul_triangles.append_array([offset, offset + 1, offset + 2])
+			if cell.size() == 4:
+				_soul_triangles.append_array([offset, offset + 2, offset + 3])
 		_soul_cells_k = k
 		_soul_cells_t = _t
-	for cell in _soul_cells:
-		draw_colored_polygon(cell, liquid)
+	if not _soul_triangles.is_empty():
+		RenderingServer.canvas_item_add_triangle_array(
+			get_canvas_item(), _soul_triangles, _soul_points, PackedColorArray([liquid]))
 
 	InkR.circle(x, y, r, null, InkR.RED if ready else InkR.rgba(23, 19, 15, 166), 2.6 if ready else 2.0, 1.0, 0.9, 14)
 	InkR.rect(x - 7.0, y - r - 7.0, 14.0, 9.0, InkR.CREAM, InkR.INK, 1.5, 1.0, 0.4)

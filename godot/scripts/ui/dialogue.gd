@@ -28,6 +28,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	InkR.init_static()
 	visible = false
+	resized.connect(queue_redraw)
 
 
 func play(id: String, resume_line := 0) -> bool:
@@ -81,6 +82,7 @@ func advance() -> void:
 func _physics_process(delta: float) -> void:
 	if not visible:
 		return
+	var previous_ink_frame := int(_t * 10.0)
 	_t += delta
 	if _guard > 0:
 		_guard -= 1
@@ -88,7 +90,8 @@ func _physics_process(delta: float) -> void:
 	if CTL.confirm() or CTL.pressed("back"):
 		advance()
 		return
-	queue_redraw()
+	if previous_ink_frame != int(_t * 10.0):
+		queue_redraw()
 
 
 func _draw() -> void:

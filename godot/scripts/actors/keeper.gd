@@ -127,7 +127,7 @@ func _physics_process(delta: float) -> void:
 
 	if target == null or not is_instance_valid(target) or target.dead:
 		_apply_gravity(delta)
-		move_and_slide()
+		Level.move_ground_enemy(self)
 		queue_redraw()
 		return
 
@@ -138,7 +138,7 @@ func _physics_process(delta: float) -> void:
 			attack_cd = 0.9
 			summon_cd = 20.0
 		_apply_gravity(delta)
-		move_and_slide()
+		Level.move_ground_enemy(self)
 		queue_redraw()
 		return
 
@@ -346,8 +346,16 @@ func _die() -> void:
 	dead = true
 	state = State.DEAD
 	seal_open = false
+	set_deferred("collision_layer", 0)
+	set_deferred("collision_mask", 0)
+	InkFx.ink_burst(global_position.x, global_position.y - 18.0, 30, 300.0, [INK, RED], 6.0,
+		true, null, 0.0, 0.0, 1000.0, global_position.y + 25.0)
+	InkFx.add_shake(10.0)
+	queue_redraw()
 	died.emit(self)
-	queue_free()
+	var fade := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	fade.tween_property(self, "modulate:a", 0.0, 0.65).set_delay(0.12)
+	fade.tween_callback(queue_free)
 
 
 func _draw() -> void:

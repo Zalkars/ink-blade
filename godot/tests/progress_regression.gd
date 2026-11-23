@@ -167,6 +167,17 @@ func _ready() -> void:
 	flow.player.position.y = 2000
 	flow._check_world_bounds()
 	check(flow.player.dead and flow.state == flow.State.DEAD, "fall ends run even with invulnerability")
+	var previous_slot := SaveGame.current_slot
+	SaveGame.current_slot = "slot_3"
+	var receipt := SaveGame.try_autosave({"hp": 3})
+	check(SaveGame.read_slot("slot_3").get("hp") == 3 and not receipt.is_empty() and receipt[0],
+		"reading joins the background autosave, including its selected manual slot")
+	SaveGame.try_autosave({"hp": 2})
+	SaveGame.write_slot(SaveGame.AUTOSAVE, {"hp": 5})
+	check(SaveGame.read_slot(SaveGame.AUTOSAVE).get("hp") == 5,
+		"an explicit save takes precedence over previously queued progress")
+	SaveGame.erase_slot("slot_3")
+	SaveGame.current_slot = previous_slot
 	# Recover the interrupted rename state, then preserve a healthy backup.
 	SaveGame.erase_slot("regression")
 	SaveGame.write_slot("regression", {"hp": 4})

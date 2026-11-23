@@ -27,9 +27,14 @@ const STICK_DEADZONE := 0.2
 const SWIPE_DIST := 64.0
 const SWIPE_MS := 260
 const BASE_RADIUS := {
+	"move": 101.0, "jump": 84.0, "attack": 70.0, "dash": 62.0,
+	"heal": 51.0, "swap": 51.0, "pause": 44.0,
+}
+const LEGACY_RADIUS := {
 	"move": 84.0, "jump": 64.0, "attack": 60.0, "dash": 54.0,
 	"heal": 46.0, "swap": 42.0, "pause": 38.0,
 }
+const BUTTON_ACTIONS := ["jump", "attack", "dash", "heal", "swap", "pause"]
 const LETTERS := {"jump": "A", "attack": "X", "dash": "B", "heal": "Y"}
 var editing := false
 var selected_element := "move"
@@ -45,6 +50,11 @@ var _last_state := -1
 var _last_device := ""
 var _mouse_down := false
 var feedback := {}
+var _drawing_controls := false
+var _last_dash := -1.0
+var _last_heal := Vector2(-1.0, -1.0)
+var _last_heal_available := false
+var _last_swap := false
 
 
 func _ready() -> void:
@@ -82,6 +92,8 @@ func _layout() -> void:
 
 
 func reset() -> void:
+	if stick_id >= 0:
+		queue_redraw()
 	fingers.clear()
 	stick_id = -1
 	_mouse_down = false
@@ -97,14 +109,40 @@ func _process(delta: float) -> void:
 		if CTL.device == "gamepad":
 			reset()
 		_last_device = CTL.device
-	# Скрытые кнопки не пересчитывают раскладку и обратную связь каждый кадр.
-	if not editing and (hidden() or (flow.state != flow.State.PLAY and flow.state != flow.State.GUIDE)):
+	refresh_draw_state()
+	if not _drawing_controls:
 		return
-	for action in buttons():
+	var changed := false
+	for action in BUTTON_ACTIONS:
 		var target := 1.0 if CTL.touch_down.get(action, false) else 0.0
-		feedback[action] = move_toward(float(feedback.get(action, 0.0)), target, delta * 12.0)
+		var previous := float(feedback.get(action, 0.0))
+		if previous != target:
+			feedback[action] = move_toward(previous, target, delta * 12.0)
+			changed = true
+	if is_instance_valid(flow.player):
+		var dash: float = flow.player.dash_ready()
+		var heal := Vector2(
+			clampf(flow.player.heal_t / Player.HEAL_TIME, 0.0, 1.0) if flow.player.healing else -1.0,
+			clampf(flow.player.soul / Player.HEAL_COST, 0.0, 1.0))
+		var heal_available := available("heal")
+		var swap := available("swap")
+		changed = changed or dash != _last_dash or heal != _last_heal \
+			or heal_available != _last_heal_available or swap != _last_swap
+		_last_dash = dash
+		_last_heal = heal
+		_last_heal_available = heal_available
+		_last_swap = swap
 	modulate.a = 1.0 if editing else CTL.touch_opacity
-	queue_redraw()
+	if changed:
+		queue_redraw()
+
+
+func refresh_draw_state() -> void:
+	var should_draw: bool = editing or flow.state == flow.State.PLAY or flow.state == flow.State.GUIDE
+	should_draw = should_draw and not flow.console.visible and not hidden()
+	if _drawing_controls != should_draw:
+		_drawing_controls = should_draw
+		queue_redraw()
 
 
 func _notification(what: int) -> void:
@@ -118,17 +156,27 @@ func hidden() -> bool:
 	return not editing and CTL.device == "gamepad"
 
 
-## Раскладка по умолчанию: дуга под правый большой палец.
+## Края безопасной области сохраняют расстояние до пальцев на широких экранах.
 func buttons() -> Dictionary:
 	var end := safe.end
 	var result := {
-		"jump": end - Vector2(100.0, 100.0),
-		"attack": end - Vector2(238.0, 120.0),
-		"dash": end - Vector2(118.0, 250.0),
-		"heal": end - Vector2(262.0, 262.0),
-		"swap": end - Vector2(376.0, 92.0),
-		"pause": Vector2(end.x - 60.0, safe.position.y + 58.0),
+		"jump": end - Vector2(144.0, 188.0),
+		"attack": end - Vector2(315.0, 182.0),
+		"dash": end - Vector2(224.0, 326.0),
+		"heal": end - Vector2(89.0, 372.0),
+		"swap": safe.position + Vector2(114.0, safe.size.y - 414.0),
+		"pause": Vector2(end.x - 58.0, safe.position.y + 56.0),
 	}
+	# Old custom layouts use their original fallback buttons and scale baseline.
+	if CTL.touch_layout_legacy:
+		result = {
+			"jump": end - Vector2(100.0, 100.0),
+			"attack": end - Vector2(238.0, 120.0),
+			"dash": end - Vector2(118.0, 250.0),
+			"heal": end - Vector2(262.0, 262.0),
+			"swap": end - Vector2(376.0, 92.0),
+			"pause": Vector2(end.x - 60.0, safe.position.y + 58.0),
+		}
 	for action in result:
 		result[action] = element_center(action, result[action])
 	return result
@@ -232,6 +280,7 @@ func _move_stick(pos: Vector2) -> void:
 		delta = pos - stick_center
 	delta = delta.limit_length(r)
 	stick_tip = stick_center + delta
+	queue_redraw()
 	var axis := CTL.sector(delta / r, STICK_DEADZONE)
 	CTL.stick_move(axis.x, axis.y)
 
@@ -274,6 +323,7 @@ func _release(id: int, pos: Vector2, canceled := false) -> void:
 		stick_id = -1
 		stick_tip = stick_center
 		CTL.stick_end()
+		queue_redraw()
 	if not fingers.has(id):
 		return
 	var held: Dictionary = fingers[id]
@@ -337,7 +387,7 @@ func _ink_disc(c: Vector2, radius: float, fill: Color, edge: Color) -> void:
 
 
 func _draw() -> void:
-	if (flow.state not in [flow.State.PLAY, flow.State.GUIDE] and not editing) or flow.console.visible or hidden():
+	if not _drawing_controls:
 		return
 	if editing:
 		draw_rect(Rect2(Vector2.ZERO, size), PAPER)
@@ -418,13 +468,17 @@ func element_scale(action: String) -> float:
 	return float(CTL.touch_layout.get(action, {}).get("scale", 1.0))
 
 func element_radius(action: String) -> float:
-	return float(BASE_RADIUS.get(action, 52.0)) * element_scale(action)
+	var radii := LEGACY_RADIUS if CTL.touch_layout_legacy else BASE_RADIUS
+	return float(radii.get(action, 52.0)) * element_scale(action)
 
 func clamp_center(pos: Vector2, radius: float) -> Vector2:
 	var top := safe.position.y + radius
+	var x := clampf(pos.x, safe.position.x + radius + 8, safe.end.x - radius - 8)
 	if editing:
-		top = maxf(top, 176.0 + radius)
-	return Vector2(clampf(pos.x, safe.position.x + radius + 8, safe.end.x - radius - 8), clampf(pos.y, top + 8, safe.end.y - radius - 8))
+		var bar: Rect2 = flow.settings.editor.get_global_rect()
+		if x + radius > bar.position.x and x - radius < bar.end.x:
+			top = maxf(top, bar.end.y + radius)
+	return Vector2(x, clampf(pos.y, top + 8, safe.end.y - radius - 8))
 
 func element_center(action: String, fallback: Vector2) -> Vector2:
 	var entry: Dictionary = CTL.touch_layout.get(action, {})
@@ -434,7 +488,8 @@ func element_center(action: String, fallback: Vector2) -> Vector2:
 	return Vector2(clampf(pos.x, safe.position.x + radius + 8, safe.end.x - radius - 8), clampf(pos.y, safe.position.y + radius + 8, safe.end.y - radius - 8))
 
 func home_center() -> Vector2:
-	return element_center("move", safe.position + Vector2(170.0, safe.size.y - 160.0))
+	var offset := Vector2(170.0, -160.0) if CTL.touch_layout_legacy else Vector2(227.0, -176.0)
+	return element_center("move", Vector2(safe.position.x, safe.end.y) + offset)
 
 func begin_edit() -> void:
 	editing = true
@@ -442,6 +497,7 @@ func begin_edit() -> void:
 	visible = true
 	set_process(true)
 	set_process_input(true)
+	refresh_draw_state()
 	_layout()
 
 func end_edit() -> void:
@@ -451,6 +507,7 @@ func end_edit() -> void:
 	visible = CTL.touch_enabled
 	set_process(visible)
 	set_process_input(visible)
+	refresh_draw_state()
 	queue_redraw()
 
 func resize_selected(value: float) -> void:
@@ -507,12 +564,14 @@ func _edit_input(event: InputEvent) -> void:
 				edit_pointer = id
 				edit_offset = centers[action] - pos
 				flow.settings.select_element(action)
+				queue_redraw()
 				get_viewport().set_input_as_handled()
 				break
 	elif motion and edit_pointer == id:
 		var entry: Dictionary = CTL.touch_layout.get(selected_element, {}).duplicate()
 		entry["center"] = (clamp_center(pos + edit_offset, element_radius(selected_element)) - safe.position) / safe.size
 		CTL.touch_layout[selected_element] = entry
+		queue_redraw()
 		get_viewport().set_input_as_handled()
 	elif released and edit_pointer == id:
 		edit_pointer = -1

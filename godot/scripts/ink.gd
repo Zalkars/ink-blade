@@ -326,7 +326,8 @@ static func fill_poly(pts: Array, color2: Color, a := 1.0, jitter := 0.9, outlin
 		pv = PackedVector2Array(pts)
 		tris = Geometry2D.triangulate_polygon(pv)
 	if not tris.is_empty():
-		_cv.draw_polygon(pv, PackedColorArray([ca(color2, _alpha * a)]))
+		RenderingServer.canvas_item_add_triangle_array(
+			_cv.get_canvas_item(), tris, pv, PackedColorArray([ca(color2, _alpha * a)]))
 	if outline:
 		poly(pts, outline_width, outline_color if outline_color != null else INK, a, jitter, true, passes)
 
@@ -504,12 +505,21 @@ static func fill_rect_color(x: float, y: float, w: float, h: float, col: Color, 
 static func fill_circle_color(x: float, y: float, r: float, col: Color, a := 1.0) -> void:
 	if _cv == null:
 		return
-	var pts: Array = []
-	var n := 24
-	for i in range(n):
-		var an := float(i) / float(n) * TAU
-		pts.append(Vector2(x + cos(an) * r, y + sin(an) * r))
-	_cv.draw_colored_polygon(PackedVector2Array(pts), ca(col, _alpha * a))
+	var circle := Transform2D(Vector2(r, 0.0), Vector2(0.0, r), Vector2(x, y))
+	_cv.draw_set_transform_matrix(_tx * circle)
+	RenderingServer.canvas_item_add_triangle_array(
+		_cv.get_canvas_item(), _disc_indices, _disc_points, PackedColorArray([ca(col, _alpha * a)]))
+	_apply()
+
+
+static var _disc_points := _unit_disc()
+static var _disc_indices := Geometry2D.triangulate_polygon(_disc_points)
+
+static func _unit_disc() -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for i in 24:
+		points.append(Vector2.from_angle(TAU * i / 24.0))
+	return points
 
 # радиальные и линейные градиенты — через готовые текстуры с тинтом
 static func radial_glow(cx: float, cy: float, r: float, col: Color, a: float, x: float, y: float, w: float, h: float) -> void:

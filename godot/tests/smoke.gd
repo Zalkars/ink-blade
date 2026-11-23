@@ -272,7 +272,7 @@ func _run() -> void:
 	keeper.open_seal(5.0)
 	keeper.hit(999, 1)
 	_check(keeper.dead, "босс умирает от добивающего удара")
-	await get_tree().physics_frame
+	await get_tree().create_timer(0.85).timeout
 	_check(not is_instance_valid(keeper), "тело босса убирается из сцены")
 
 	# Триггер в Архиве: доводит до Переписчика и запускает диалог
@@ -462,8 +462,16 @@ func _run() -> void:
 	flow.console.execute("kill")
 	await get_tree().physics_frame
 	_check(flow.level.enemy_count() == 0, "kill убирает всех врагов")
+	_check(flow.state == Flow.State.VICTORY and not flow.cutscene.visible and not flow.hud.visible,
+		"после победы арена остаётся видна без HUD и резкой смены кадра")
+	_check(bool(SaveGame.read_slot(SaveGame.AUTOSAVE).get("cleared", false)),
+		"победа сохраняется до появления заставки")
+	await get_tree().create_timer(Flow.VICTORY_HOLD + Flow.VICTORY_FADE + 0.10).timeout
 	_check(flow.state == Flow.State.CUTSCENE and flow.cutscene.visible,
 		"после зачистки играет финал")
+	_check(flow._victory_fade.visible and flow.cutscene._guard > 0,
+		"первый кадр финала проявляется плавно и не пролистывается во время перехода")
+	await get_tree().create_timer(Flow.VICTORY_FADE).timeout
 	_check(flow.cutscene.slide_count() >= 3, "слайдов финала: %d" % flow.cutscene.slide_count())
 	for i in 8:
 		if not flow.cutscene.visible:
