@@ -36,9 +36,10 @@ func _make_button() -> Button:
 	var button := Button.new()
 	button.add_theme_font_override("font", BOLD)
 	button.add_theme_font_size_override("font_size", 19)
-	for state in ["normal", "hover", "pressed", "focus"]:
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
 		var style := StyleBoxFlat.new()
-		style.bg_color = RED if state in ["hover", "pressed"] else PAPER
+		style.bg_color = RED if state in ["hover", "pressed", "hover_pressed"] else PAPER
+		style.draw_center = state != "focus"
 		style.border_color = RED if state == "focus" else INK
 		style.set_border_width_all(2)
 		style.set_corner_radius_all(3)
@@ -46,9 +47,10 @@ func _make_button() -> Button:
 	button.add_theme_color_override("font_color", INK)
 	button.add_theme_color_override("font_hover_color", PAPER)
 	button.add_theme_color_override("font_pressed_color", PAPER)
-	button.add_theme_color_override("font_focus_color", RED)
+	button.add_theme_color_override("font_focus_color", INK)
 	button.add_theme_color_override("font_disabled_color", Color(INK, 0.5))
 	button.add_theme_color_override("font_hover_pressed_color", PAPER)
+	button.set_meta("rest_style", button.get_theme_stylebox("normal"))
 	add_child(button)
 	return button
 
@@ -59,6 +61,7 @@ func open() -> void:
 	_guard = 0.3
 	visible = true
 	_layout()
+	_touch_feedback()
 	_button.grab_focus()
 	queue_redraw()
 
@@ -71,6 +74,7 @@ func advance() -> void:
 	_consume_navigation()
 	_touch_id = -1
 	step += 1
+	_touch_feedback()
 	_guard = 0.18
 	_layout()
 
@@ -80,6 +84,7 @@ func dismiss() -> void:
 	_consume_navigation()
 	_touch_id = -1
 	visible = false
+	_touch_feedback()
 	dismissed.emit()
 
 func _physics_process(delta: float) -> void:
@@ -109,6 +114,19 @@ func binding(action: String) -> String:
 
 func _is_touch() -> bool:
 	return CTL.touch_enabled and CTL.device != "gamepad"
+
+func _phone_layout() -> bool:
+	return CTL.touch_enabled or OS.has_feature("mobile")
+
+func _touch_feedback() -> void:
+	# These taps are owned by the guide, so the GUI Button itself never sees
+	# their down event. Reflect that genuine held pointer without toggling it.
+	for item in [["next", _button], ["skip", _skip]]:
+		var button: Button = item[1]
+		var held: bool = _touch_id >= 0 and _touch_target == item[0]
+		button.add_theme_stylebox_override("normal", button.get_theme_stylebox("pressed") if held else button.get_meta("rest_style"))
+		button.add_theme_color_override("font_color", PAPER if held else INK)
+		button.add_theme_color_override("font_focus_color", PAPER if held else INK)
 
 ## Viewport coordinates, refreshed to follow custom layout, safe area and resize.
 func target_center() -> Vector2:
@@ -143,9 +161,9 @@ func _draw() -> void:
 	var paragraph := TextParagraph.new()
 	paragraph.width = _card.size.x - 44
 	paragraph.break_flags = TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
-	var font_size := 22
+	var font_size := 25 if _phone_layout() else 22
 	paragraph.add_string(text, TEXT, font_size)
-	while paragraph.get_size().y > 86 and font_size > 17:
+	while paragraph.get_size().y > _card.size.y - (172 if _phone_layout() else 134) and font_size > 21:
 		font_size -= 1
 		paragraph.clear()
 		paragraph.add_string(text, TEXT, font_size)
@@ -175,19 +193,25 @@ func _consume_navigation() -> void:
 func _layout() -> void:
 	if _button == null:
 		return
-	var width := minf(740, size.x - 48)
+	var phone := _phone_layout()
+	var width := minf(920 if phone else 740, size.x - 48)
+	var height := minf(300 if phone else 220, size.y - 48)
 	var left := (size.x - width) * 0.5
-	var top := clampf(size.y * 0.16, 56, 118)
+	var top := clampf(size.y * 0.12 if phone else size.y * 0.16, 24, 118)
 	# Move only the card if a saved control layout puts the target beneath it.
 	if visible and _is_touch():
 		var point := get_global_transform_with_canvas().affine_inverse() * target_center()
-		if Rect2(left, top, width, 220).grow(target_radius()).has_point(point):
-			top = size.y - 244 if point.y < size.y * 0.5 else 24.0
-	_card = Rect2(left, top, width, 220)
-	_button.position = Vector2(_card.end.x - 226, _card.end.y - 63)
-	_button.size = Vector2(204, 46)
-	_skip.position = Vector2(_card.position.x + 22, _card.end.y - 63)
-	_skip.size = Vector2(180, 46)
+		if Rect2(left, top, width, height).grow(target_radius()).has_point(point):
+			top = size.y - height - 24 if point.y < size.y * 0.5 else 24.0
+	_card = Rect2(left, top, width, height)
+	var button_height := 78.0 if phone else 46.0
+	var button_width := (width - 60) * 0.5 if phone else 204.0
+	_button.position = Vector2(_card.end.x - 22 - button_width, _card.end.y - button_height - 18)
+	_button.size = Vector2(button_width, button_height)
+	_skip.position = Vector2(_card.position.x + 22, _card.end.y - button_height - 18)
+	_skip.size = Vector2(button_width if phone else 180.0, button_height)
+	for button in [_button, _skip]:
+		button.add_theme_font_size_override("font_size", 26 if phone else 19)
 	_button.text = L10N.t("guide.play" if step == ACTIONS.size() - 1 else "guide.next")
 	_skip.text = L10N.t("guide.skip")
 	queue_redraw()
@@ -212,10 +236,12 @@ func _input(event: InputEvent) -> void:
 				_touch_id = event.index
 				_touch_start = event.position
 				_touch_target = _hit_target(event.position)
+				_touch_feedback()
 		elif event.index == _touch_id:
 			var activate: bool = not event.canceled and not _touch_target.is_empty() and _hit_target(event.position) == _touch_target and event.position.distance_to(_touch_start) <= 24.0
 			var action := _touch_target
 			_touch_id = -1
+			_touch_feedback()
 			if activate:
 				if action == "skip":
 					dismiss()
@@ -225,4 +251,5 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		if event.index == _touch_id and (event.position.distance_to(_touch_start) > 24.0 or _hit_target(event.position) != _touch_target):
 			_touch_target = ""
+			_touch_feedback()
 		get_viewport().set_input_as_handled()

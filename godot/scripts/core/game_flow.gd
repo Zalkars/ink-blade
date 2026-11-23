@@ -56,8 +56,13 @@ var _console_guard := 0
 ## Финал играет один раз: после него открывается окно зачистки, а не возврат в игру.
 var _finale_pending := false
 var _finale_seen := false
-var _ink_dirty := false
-var _ink_save_delay := 0.0
+## Записи сейва сведены в одну отложенную: пачка убийств и чернильные
+## следы дают один файл, а не десятки записей на главном потоке.
+var _save_dirty := false
+var _save_delay := 0.0
+var _last_save_sig := ""
+var _kill_save_tick := -1
+const SAVE_COALESCE := 0.35
 var _skip_loaded_checkpoint_heal := false
 var _loaded_spawn := Vector2.ZERO
 var _guide_pending := false
@@ -77,6 +82,10 @@ var _current_zone := ""
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Engine.physics_ticks_per_second = 120
+	# На телефоне кадры выше 60 Гц почти не различимы, зато заметно греют
+	# корпус и садят батарею. Физика остаётся на 120 Гц — ввод не страдает.
+	if OS.has_feature("mobile"):
+		Engine.max_fps = 60
 	InkR.init_static()
 	load_preferences()
 	_apply_saved_display()
@@ -169,9 +178,11 @@ func _physics_process(delta: float) -> void:
 	# Единственная точка, где обновляется ввод. Все читают его после этого кадра.
 	CTL.mouse_gameplay_enabled = state == State.PLAY and not settings.visible and not console.visible
 	CTL.update(delta)
-	if _ink_dirty:
-		_ink_save_delay -= delta
-		if _ink_save_delay <= 0.0:
+	# Глобальные клавиши (F11, M, F12, отладочный HUD) работают и в настройках.
+	_handle_global()
+	if _save_dirty:
+		_save_delay -= delta
+		if _save_delay <= 0.0:
 			_autosave(_finale_pending or state == State.CLEARED)
 	if settings.visible:
 		return
@@ -198,7 +209,6 @@ func _physics_process(delta: float) -> void:
 	elif state == State.GUIDE:
 		# The world is paused, but the spawn flash must not wash out its demonstration.
 		InkFx.update(delta)
-	_handle_global()
 
 	# Кадр открытия/закрытия консоли не должен заодно ставить игру на паузу.
 	if _console_guard > 0:
@@ -356,6 +366,9 @@ func load_level(wanted: String) -> bool:
 
 ## Обычная загрузка сохраняет HP и душу. Смерть отмечается в сейве отдельно.
 func continue_run(slot: String = SaveGame.AUTOSAVE) -> void:
+	# Отложенный сейв дописывается до чтения: «Продолжить» не должно
+	# откатывать последние убийства на один тик.
+	_flush_save()
 	var save := SaveGame.read_slot(slot)
 	if not SaveGame.has_unfinished_run(save):
 		start_run()
@@ -383,7 +396,7 @@ func save_to_slot(slot: String) -> bool:
 		if auto_data.is_empty():
 			return false
 		return SaveGame.write_slot(slot, auto_data)
-	_autosave(_finale_pending or state == State.CLEARED)
+	_autosave(_finale_pending or state == State.CLEARED, true)
 	return SaveGame.has_slot(slot)
 
 
@@ -394,8 +407,10 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	get_tree().paused = false
 	_finale_pending = false
 	_finale_seen = bool(save.get("finale_seen", false))
-	_ink_dirty = false
-	_ink_save_delay = 0.0
+	_save_dirty = false
+	_save_delay = 0.0
+	_last_save_sig = ""
+	_kill_save_tick = -1
 	hitstop = 0.0
 	_hitstop_paused = false
 	if host != null and host.process_mode == Node.PROCESS_MODE_DISABLED:
@@ -473,7 +488,7 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	camera.reset_smoothing()
 	hud.bind(player)
 	hud.bind_boss(level.boss)
-	_show_zone_banner(checkpoint_id)
+	_show_zone_banner()
 	InkFx.flash_screen(0.55, InkR.CREAM)
 	var pending_finale := bool(save.get("cleared", false)) and not _finale_seen
 	print("LEVEL %s: врагов %d, чекпоинт %s" % [
@@ -489,20 +504,23 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	_autosave(_finale_pending)
 
 
+## Зоны живут в данных уровня, а не в коде: правка геометрии не разводит
+## баннеры с фактическими участками. Пустой список — у уровня нет зон.
 func _zone_for_x(x: float) -> String:
-	if level_id != "ch01_hall":
+	if not is_instance_valid(level):
 		return ""
-	if x < 2560.0:
-		return "threshold"
-	if x < 7040.0:
-		return "archive"
-	if x < 11264.0:
-		return "gallery"
-	return "sanctum"
+	var zones = level.data.get("zones", [])
+	if not zones is Array or zones.is_empty():
+		return ""
+	for z in zones:
+		if z is Dictionary and x < float(z.get("until", INF)):
+			return String(z.get("id", ""))
+	var last = zones.back()
+	return String(last.get("id", "")) if last is Dictionary else ""
 
 
 func _check_zone_transition() -> void:
-	if player == null or not is_instance_valid(player) or level_id != "ch01_hall":
+	if player == null or not is_instance_valid(player):
 		return
 	var z := _zone_for_x(player.global_position.x)
 	if z != _current_zone and not z.is_empty():
@@ -510,20 +528,13 @@ func _check_zone_transition() -> void:
 		_show_zone_banner_key(z)
 
 
-func _show_zone_banner(cp_id: String) -> void:
-	if level_id != "ch01_hall":
+func _show_zone_banner(_cp_id := "") -> void:
+	var z := _zone_for_x(player.global_position.x) if is_instance_valid(player) else ""
+	if z.is_empty():
 		_current_zone = ""
 		if hud != null and hud.has_method("show_banner"):
 			hud.show_banner(_level_name(), "")
 		return
-	var z := "threshold"
-	match cp_id:
-		"cp_02":
-			z = "archive"
-		"cp_03":
-			z = "gallery"
-		"cp_04":
-			z = "sanctum"
 	_current_zone = z
 	_show_zone_banner_key(z)
 
@@ -648,6 +659,9 @@ func _show_title() -> void:
 	dialogue.close()
 	control_guide.visible = false
 	title_screen.refresh()
+	# Титул открывается заново: окно защиты от нажатия с прошлого экрана
+	# не переносится, иначе первое касание меню пропадает.
+	title_screen.input_guard = 0.0
 	title_screen.visible = true
 	state = State.TITLE
 	camera.global_position = Vector2(640.0, 360.0)
@@ -670,24 +684,41 @@ func _on_checkpoint(id: String, _pos: Vector2) -> void:
 		player.hp_changed.emit(player.hp, player.MAX_HP)
 	if fresh:
 		if id != "cp_01":
-			_show_zone_banner(id)
+			_show_zone_banner()
 		_autosave(false)
 
 
 ## Мир помнит убитых: после смерти они не возвращаются.
-## Повторный снимок после боя учитывает душу, полученную за добивание.
+## Запись не чаще одного раза за физический тик: пачка смертей в одном
+## кадре не превращается в поток записей на главном потоке.
 func _on_enemy_died(id: String) -> void:
-	run_kills += 1
-	# hit() emits death before Player credits soul for the killing blow.
-	# Refresh that snapshot after combat finishes, including temporary enemies.
-	_save_combat_progress.call_deferred(level)
-	if level != null and level.is_temporary_id(id):
-		return
-	_autosave(false)
+	# Временные враги (деление, призывы) не попадают в сохранение и не
+	# считаются в статистике — иначе после «Продолжить» счётчик скачет.
+	if level == null or not level.is_temporary_id(id):
+		run_kills += 1
+	var tick := Engine.get_physics_frames()
+	if tick != _kill_save_tick:
+		_kill_save_tick = tick
+		_autosave(_finale_pending or state == State.CLEARED)
+	# hit() выдаёт смерть раньше, чем игрок получает душу за добивание:
+	# один объединённый снимок на тик исправляет её без второй записи на удар.
+	_request_autosave(0.0)
 
 
-func _save_combat_progress(source: Level) -> void:
-	if is_instance_valid(source) and source == level and is_instance_valid(player):
+## Отложенный автосейв: повторные запросы сдвигают срок к более раннему,
+## поэтому чернильные следы и убийства попадают в один файл.
+func _request_autosave(delay: float = SAVE_COALESCE) -> void:
+	if _save_dirty:
+		_save_delay = minf(_save_delay, delay)
+	else:
+		_save_dirty = true
+		_save_delay = delay
+
+
+## Немедленно дописывает отложенный сейв: любой читатель сохранения
+## видит состояние на текущий момент, а не на тик назад.
+func _flush_save() -> void:
+	if _save_dirty:
 		_autosave(_finale_pending or state == State.CLEARED)
 
 
@@ -753,9 +784,7 @@ func _on_dialogue_progress() -> void:
 
 
 func _on_ink_changed() -> void:
-	if not _ink_dirty:
-		_ink_dirty = true
-		_ink_save_delay = 0.75
+	_request_autosave(0.75)
 
 
 func _on_cutscene_finished() -> void:
@@ -817,8 +846,26 @@ func _level_name() -> String:
 	return String(level.data.get("name", level_id))
 
 
-func _autosave(cleared: bool) -> void:
+func _autosave(cleared: bool, force := false) -> void:
 	if level == null or player == null:
+		return
+	var ink := CombatFx.layer(player)
+	var dead_now := player.dead or state == State.DEAD
+	var dialogue_open := dialogue.visible
+	# Дешёвая подпись состояния: без сериализации видно, изменилось ли что-то.
+	# Неизменное состояние повторно не пишется — это главная экономия на телефоне.
+	var signature := str([
+		level_id, checkpoint_id, level.killed_ids.size(), level.fired_triggers.size(),
+		granted_rewards, player.weapon_ids(), player.current_weapon_id(),
+		player.MAX_HP if dead_now else player.hp,
+		0.0 if dead_now else snappedf(player.soul, 0.1),
+		dead_now, ink.revision, level.enemy_count(), cleared, _finale_seen,
+		String(dialogue.dialogue_id) if dialogue_open else "",
+		dialogue.index if dialogue_open else -1,
+	])
+	_save_dirty = false
+	_save_delay = 0.0
+	if not force and signature == _last_save_sig:
 		return
 	var payload := {
 		"level": level_id,
@@ -828,19 +875,20 @@ func _autosave(cleared: bool) -> void:
 		"grants": granted_rewards.duplicate(),
 		"weapons": player.weapon_ids(),
 		"weapon": player.current_weapon_id(),
-		"hp": player.MAX_HP if player.dead or state == State.DEAD else player.hp,
-		"soul": 0.0 if player.dead or state == State.DEAD else player.soul,
-		"dead": player.dead or state == State.DEAD,
-		"dialogue": {"id": dialogue.dialogue_id, "line": dialogue.index} if dialogue.visible else {},
-		"ink_marks": CombatFx.layer(player).export_state(),
+		"hp": player.MAX_HP if dead_now else player.hp,
+		"soul": 0.0 if dead_now else player.soul,
+		"dead": dead_now,
+		"dialogue": {"id": dialogue.dialogue_id, "line": dialogue.index} if dialogue_open else {},
+		"ink_marks": ink.export_state(),
 		"enemies_left": level.enemy_count(),
 		"cleared": cleared,
 		"finale_seen": _finale_seen if cleared else false,
 	}
-	_ink_dirty = false
-	SaveGame.write_slot(SaveGame.AUTOSAVE, payload)
+	var written := SaveGame.write_slot(SaveGame.AUTOSAVE, payload)
 	if SaveGame.current_slot != SaveGame.AUTOSAVE and SaveGame.current_slot in SaveGame.MANUAL_SLOTS:
 		SaveGame.write_slot(SaveGame.current_slot, payload)
+	if written:
+		_last_save_sig = signature
 
 
 func _on_overlay_choice(item: String) -> void:

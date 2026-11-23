@@ -183,16 +183,31 @@ func activate(i: int) -> void:
 
 
 func _panel_rect() -> Rect2:
+	if CTL.touch_enabled:
+		var row_h := _touch_row_height()
+		var h := 148.0 + labels.size() * (row_h + 10.0) - 10.0 + 48.0
+		var w := minf(840.0, size.x - 48.0)
+		return Rect2((size.x - w) * 0.5, (size.y - h) * 0.5, w, h)
 	var w := minf(560.0 if _slots_open else 480.0, size.x - 80.0)
 	var h := 196.0 + float(labels.size()) * 52.0 + 56.0
 	return Rect2((size.x - w) * 0.5, (size.y - h) * 0.5 - 6.0, w, h)
 
 
+func _touch_row_height() -> float:
+	return clampf((size.y - 32.0 - 196.0 - 10.0 * (labels.size() - 1)) / maxi(1, labels.size()), 64.0, 80.0)
+
+
 func item_rect(i: int) -> Rect2:
 	if mode == Mode.DEAD:
+		if CTL.touch_enabled:
+			var width := minf(740.0, size.x - 64.0)
+			var top := minf(size.y * 0.58, size.y - 224.0)
+			return Rect2((size.x - width) * 0.5, top + i * 96.0, width, 80.0)
 		var bw := minf(420.0, size.x - 100.0)
 		return Rect2((size.x - bw) * 0.5, 424.0 + float(i) * 60.0, bw, 48.0)
 	var pr := _panel_rect()
+	if CTL.touch_enabled:
+		return Rect2(pr.position.x + 28.0, pr.position.y + 148.0 + i * (_touch_row_height() + 10.0), pr.size.x - 56.0, _touch_row_height())
 	return Rect2(pr.position.x + 28.0, pr.position.y + 148.0 + float(i) * 52.0, pr.size.x - 56.0, 44.0)
 
 
@@ -220,9 +235,9 @@ func _draw() -> void:
 	_draw_ink_panel(pr, heading)
 
 	if not sub.is_empty():
-		UIText.paragraph(self, FONT_TEXT, sub, Rect2(pr.position.x + 24.0, pr.position.y + 62.0, pr.size.x - 48.0, 74.0), 14, Color(INK, 0.68))
+		UIText.paragraph(self, FONT_TEXT, sub, Rect2(pr.position.x + 24.0, pr.position.y + 62.0, pr.size.x - 48.0, 74.0), 20 if CTL.touch_enabled else 14, Color(INK, 0.78))
 	if not stats.is_empty():
-		InkR.text(stats, pr.position.x + pr.size.x * 0.5, pr.position.y + 104.0, 11.0,
+		InkR.text(stats, pr.position.x + pr.size.x * 0.5, pr.position.y + 117.0, 17.0 if CTL.touch_enabled else 11.0,
 			InkR.F_DISPLAY, InkR.A_CENTER, INK, 0.46, 0.8)
 
 	for i in labels.size():
@@ -244,10 +259,11 @@ func _draw() -> void:
 				Vector2(r.position.x + 19.0, cy),
 			], RED, 1.0, 0.5)
 		var col := RED if on else INK
-		var sz := 17 if _slots_open else 20
-		while sz > 12 and FONT_BOLD.get_string_size(labels[i], HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x > r.size.x - 56.0:
+		var sz := (25 if _slots_open else 28) if CTL.touch_enabled else (17 if _slots_open else 20)
+		while sz > (22 if CTL.touch_enabled else 12) and FONT_BOLD.get_string_size(labels[i], HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x > r.size.x - 56.0:
 			sz -= 1
-		draw_string(FONT_BOLD, Vector2(r.position.x + 36.0, cy + 7.0), labels[i],
+		var baseline := cy + (FONT_BOLD.get_ascent(sz) - FONT_BOLD.get_descent(sz)) * 0.5
+		draw_string(FONT_BOLD, Vector2(r.position.x + 36.0, baseline), labels[i],
 			HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 56.0, sz, Color(col, 1.0 if on else 0.78))
 		if actions[i] in ["settings", "slots"]:
 			draw_string(FONT_BOLD, Vector2(r.end.x - 28.0, cy + 7.0), "›",
@@ -331,8 +347,10 @@ func _draw_dead(vp: Vector2) -> void:
 		var edge := RED if on else InkR.rgba(246, 237, 218, int(130 * reveal))
 		InkR.srand(820 + i)
 		InkR.rect(r.position.x, r.position.y, r.size.x, r.size.y, fill, edge, 2.2 if on else 1.4, reveal, 0.8)
-		draw_string(FONT_BOLD, Vector2(r.position.x, r.position.y + 32.0), labels[i],
-			HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 20, Color(CREAM, reveal))
+		var font_size := 28 if CTL.touch_enabled else 20
+		var baseline := r.position.y + (r.size.y + FONT_BOLD.get_ascent(font_size) - FONT_BOLD.get_descent(font_size)) * 0.5
+		draw_string(FONT_BOLD, Vector2(r.position.x, baseline), labels[i],
+			HORIZONTAL_ALIGNMENT_CENTER, r.size.x, font_size, Color(CREAM, reveal))
 
 	InkR.text(L10N.t("DEATH_TAGLINE"), cx, size.y - 48.0, 14.0, InkR.F_HAND, InkR.A_CENTER, CREAM, 0.45 * reveal)
 

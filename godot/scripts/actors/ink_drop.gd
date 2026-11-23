@@ -58,7 +58,7 @@ func _physics_process(delta: float) -> void:
 			_finish()
 			return
 		global_position = next
-		if position.y >= floor_y + 24.0:
+		if global_position.y >= floor_y + 24.0:
 			CombatFx.floor_mark(self, global_position, 1.7)
 			_finish()
 			return

@@ -27,6 +27,9 @@ var chase_range := 520.0
 var touch_damage := 1
 ## 0 — делится при смерти, 1 — уже нет.
 var generation := 0
+## Призванная боссом клякса не делится, даже оставаясь первым поколением:
+## иначе один призыв превращался бы в трёх врагов.
+var splits := true
 
 var hp := 3
 var target: Player
@@ -61,6 +64,8 @@ func configure(def: EntityDef, overrides: Dictionary = {}) -> void:
 				speed = float(overrides[key])
 			"generation":
 				generation = int(overrides[key])
+			"splits":
+				splits = bool(overrides[key])
 	hp = max_hp
 	if generation > 0:
 		scale = Vector2(0.72, 0.72)
@@ -122,7 +127,7 @@ func hit(damage: int, from_dir: int, knock: float = KNOCKBACK) -> void:
 		dead = true
 		# Сначала просим уровень создать детей, потом сообщаем о смерти:
 		# иначе «зал очищен» сработает раньше, чем появятся малые кляксы.
-		if generation == 0:
+		if splits and generation == 0:
 			split.emit(global_position, &"enemy.blot_small")
 		died.emit(self)
 		queue_free()

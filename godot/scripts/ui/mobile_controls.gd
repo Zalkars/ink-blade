@@ -88,7 +88,7 @@ func reset() -> void:
 	CTL.clear_touch()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _last_state != flow.state:
 		reset()
 		_last_state = flow.state
@@ -97,9 +97,12 @@ func _process(_delta: float) -> void:
 		if CTL.device == "gamepad":
 			reset()
 		_last_device = CTL.device
+	# Скрытые кнопки не пересчитывают раскладку и обратную связь каждый кадр.
+	if not editing and (hidden() or (flow.state != flow.State.PLAY and flow.state != flow.State.GUIDE)):
+		return
 	for action in buttons():
 		var target := 1.0 if CTL.touch_down.get(action, false) else 0.0
-		feedback[action] = move_toward(float(feedback.get(action, 0.0)), target, _delta * 12.0)
+		feedback[action] = move_toward(float(feedback.get(action, 0.0)), target, delta * 12.0)
 	modulate.a = 1.0 if editing else CTL.touch_opacity
 	queue_redraw()
 

@@ -26,5 +26,5 @@ scene = ExtResource("4")
 tags = PackedStringArray("ground", "melee", "spawned")
 stats = SubResource("Stats_blot_small")
 ai_profile = SubResource("AI_blot_small")
-overridable = PackedStringArray("max_hp", "damage", "speed", "generation")
+overridable = PackedStringArray("max_hp", "damage", "speed", "generation", "splits")
 version = 1

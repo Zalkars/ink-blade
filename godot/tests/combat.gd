@@ -124,6 +124,14 @@ func _ready() -> void:
 		CombatFx.surface(player, Vector2(100 + i % 200, 320), Vector2.UP)
 	check(fx.marks.size() > 3 and fx.marks.size() <= CombatFx.MAX_MARKS and fx.particles.size() <= CombatFx.MAX_PARTICLES,
 		"effect storage is bounded")
+	# Призванная боссом клякса остаётся одной: иначе призыв давал трёх врагов.
+	var summoned_before := room.enemies.size()
+	room._on_boss_summon(Vector2(500, 300), &"enemy.blot", 1)
+	var summoned = room.enemies.back()
+	check(room.enemies.size() == summoned_before + 1 and not summoned.splits, "boss summon stays a single blot")
+	summoned.hit(99, 1)
+	await ticks(2)
+	check(room.enemies.size() == summoned_before, "boss summon does not split on death")
 	var weak_fx: WeakRef = weakref(fx)
 	room.queue_free()
 	await ticks(2)

@@ -31,6 +31,10 @@ func _ready() -> void:
 func _init_out() -> void:
 	if _player != null:
 		return
+	# Без звукового драйвера (headless-тесты и сервер) генератор не нужен:
+	# незакрытый поток иначе висит до самого выхода процесса.
+	if DisplayServer.get_name() == "headless":
+		return
 	_player = AudioStreamPlayer.new()
 	var stream := AudioStreamGenerator.new()
 	stream.mix_rate = SAMPLE_RATE
@@ -51,6 +55,15 @@ func unlock() -> void:
 		return
 	_started = true
 	_ambient_on = true
+
+
+## Поток генератора — единственный объект, который иначе остаётся живым
+## до самого выхода: останавливаем плеер и отпускаем воспроизведение.
+func _exit_tree() -> void:
+	if _player != null:
+		_player.stop()
+	_playback = null
+	_player = null
 
 
 func set_muted(m: bool) -> void:

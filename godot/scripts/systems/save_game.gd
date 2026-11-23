@@ -10,6 +10,9 @@ const AUTOSAVE := "auto"
 const MANUAL_SLOTS := ["slot_1", "slot_2", "slot_3"]
 
 static var current_slot := AUTOSAVE
+## Абсолютный путь -> [размер, время] последней собственной записи.
+## Позволяет не разбирать весь JSON ради проверки предыдущего файла.
+static var _own_writes := {}
 
 
 static func _abs(path: String) -> String:
@@ -49,7 +52,7 @@ static func write_slot(slot: String, data: Dictionary) -> bool:
 
 	if FileAccess.file_exists(_slot_path(slot)):
 		# Never overwrite a healthy backup with an unreadable primary.
-		if not _read_file(_slot_path(slot)).is_empty():
+		if _is_healthy(path):
 			if FileAccess.file_exists(path + ".bak") and DirAccess.remove_absolute(path + ".bak") != OK:
 				return false
 			if DirAccess.rename_absolute(path, path + ".bak") != OK:
@@ -63,7 +66,25 @@ static func write_slot(slot: String, data: Dictionary) -> bool:
 			DirAccess.copy_absolute(path + ".bak", path)
 		push_error("save: не удалось заменить слот " + slot)
 		return false
+	var probe := FileAccess.open(path, FileAccess.READ)
+	if probe != null:
+		_own_writes[path] = [probe.get_length(), FileAccess.get_modified_time(path)]
+		probe.close()
 	return true
+
+
+## Файл, который только что записали мы сами, разбирать заново не нужно:
+## размер и время подтверждают, что его не меняли извне.
+static func _is_healthy(path: String) -> bool:
+	var record = _own_writes.get(path, null)
+	if record is Array and record.size() == 2:
+		var file := FileAccess.open(path, FileAccess.READ)
+		if file != null:
+			var size := file.get_length()
+			file.close()
+			if int(record[0]) == size and int(record[1]) == FileAccess.get_modified_time(path):
+				return true
+	return not _read_file(path).is_empty()
 
 
 static func read_slot(slot: String) -> Dictionary:
@@ -156,6 +177,7 @@ static func slot_summary(slot: String) -> String:
 
 
 static func erase_slot(slot: String) -> void:
+	_own_writes.erase(_abs(_slot_path(slot)))
 	for suffix in [".json", ".json.bak", ".json.tmp"]:
 		var path := _abs(_slot_path(slot, suffix))
 		if FileAccess.file_exists(path):

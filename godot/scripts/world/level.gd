@@ -469,6 +469,7 @@ func _on_enemy_split(pos: Vector2, def_id: StringName) -> void:
 
 ## Босс призывает клякс. Они обычные враги уровня и не попадают в сохранение:
 ## после смерти игрока бой начинается заново с полным набором.
+## Призванная клякса не делится: один призыв остаётся одним врагом.
 func _on_boss_summon(pos: Vector2, def_id: StringName, count: int) -> void:
 	for i in count:
 		_summon_serial += 1
@@ -477,6 +478,7 @@ func _on_boss_summon(pos: Vector2, def_id: StringName, count: int) -> void:
 			"def_id": String(def_id),
 			"x": pos.x,
 			"y": pos.y,
+			"overrides": {"splits": false},
 		})
 
 

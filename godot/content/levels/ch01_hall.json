@@ -4,6 +4,13 @@
   "name": "ГЛАВА I · ЗАЛ ПЕРВОГО ВЗМАХА",
   "bounds": {"x": 0, "y": 0, "w": 14080, "h": 720},
   "spawn": {"x": 128, "y": 576},
+  "zones": [
+    {"id": "threshold", "until": 2560},
+    {"id": "archive", "until": 7040},
+    {"id": "gallery", "until": 11264},
+    {"id": "sanctum", "until": 14080}
+  ],
+  "arena": {"x": 11264, "w": 2816},
   "checkpoints": [
     {"id": "cp_01", "x": 128, "y": 576},
     {"id": "cp_02", "x": 3840, "y": 640},

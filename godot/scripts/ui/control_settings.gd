@@ -27,6 +27,41 @@ var snapshot := {}
 var binding_buttons := {}
 var _guard := 0.0
 var _frame_layer: Control
+var _phone_theme := false
+
+func _phone_layout() -> bool:
+	return CTL.touch_enabled or OS.has_feature("mobile")
+
+func _responsive_layout() -> void:
+	if panel == null:
+		return
+	_phone_theme = _phone_layout()
+	theme = _build_theme()
+	panel.offset_left = 20 if _phone_theme else 44
+	panel.offset_right = -panel.offset_left
+	panel.offset_top = 12 if _phone_theme else 20
+	panel.offset_bottom = -panel.offset_top
+	_resize_controls(panel)
+	if editor != null:
+		_resize_controls(editor)
+	if _frame_layer != null:
+		_frame_layer.queue_redraw()
+
+func _resize_controls(node: Node) -> void:
+	for child in node.get_children():
+		if child is BaseButton:
+			child.custom_minimum_size.y = _target_height()
+			if child.get_parent() is HBoxContainer and child.get_parent().get_child(0) is Label:
+				child.custom_minimum_size.x = _field_width()
+		elif child is HSlider:
+			child.custom_minimum_size = Vector2(_field_width() - 80, _target_height())
+		_resize_controls(child)
+
+func _target_height() -> float:
+	return 78.0 if _phone_layout() else 44.0
+
+func _field_width() -> float:
+	return clampf(size.x * 0.40, 320, 520) if _phone_layout() else 320.0
 
 
 class _InkSettingsBg extends Control:
@@ -93,7 +128,7 @@ func trc(key: String) -> String:
 func _build_theme() -> Theme:
 	var t := Theme.new()
 	t.default_font = FONT_TEXT
-	t.default_font_size = 19
+	t.default_font_size = 24 if _phone_layout() else 19
 	t.set_color("font_color", "Label", INK)
 
 	var page_box := StyleBoxFlat.new()
@@ -106,24 +141,25 @@ func _build_theme() -> Theme:
 	for state_name in ["tab_selected", "tab_unselected", "tab_hovered", "tab_focus"]:
 		var tab_box := StyleBoxFlat.new()
 		tab_box.bg_color = CREAM if state_name == "tab_selected" else (Color("#e5d5b7") if state_name == "tab_hovered" else Color("#d7c6a6"))
+		tab_box.draw_center = state_name != "tab_focus"
 		tab_box.border_color = RED if state_name in ["tab_selected", "tab_focus"] else Color(INK, 0.35)
 		tab_box.set_border_width_all(1)
 		if state_name == "tab_selected":
 			tab_box.border_width_top = 3
 		tab_box.content_margin_left = 18
 		tab_box.content_margin_right = 18
-		tab_box.content_margin_top = 10
-		tab_box.content_margin_bottom = 10
+		tab_box.content_margin_top = 22 if _phone_layout() else 10
+		tab_box.content_margin_bottom = 22 if _phone_layout() else 10
 		t.set_stylebox(state_name, "TabBar", tab_box)
 		t.set_stylebox(state_name, "TabContainer", tab_box)
 	for ctrl_type in ["TabBar", "TabContainer"]:
 		t.set_font("font", ctrl_type, FONT_BOLD)
-		t.set_font_size("font_size", ctrl_type, 17)
+		t.set_font_size("font_size", ctrl_type, 23 if _phone_layout() else 17)
 		t.set_color("font_selected_color", ctrl_type, RED)
 		t.set_color("font_unselected_color", ctrl_type, Color(INK, 0.72))
 		t.set_color("font_hovered_color", ctrl_type, RED)
 	t.set_font("tab_font", "TabContainer", FONT_BOLD)
-	t.set_font_size("tab_font_size", "TabContainer", 17)
+	t.set_font_size("tab_font_size", "TabContainer", 23 if _phone_layout() else 17)
 
 	var transparent_panel := StyleBoxFlat.new()
 	transparent_panel.bg_color = Color(0, 0, 0, 0)
@@ -152,7 +188,7 @@ func _build_theme() -> Theme:
 	btn_pressed.set_content_margin_all(9)
 
 	var btn_focus := StyleBoxFlat.new()
-	btn_focus.bg_color = Color(RED, 0.08)
+	btn_focus.draw_center = false
 	btn_focus.border_color = RED
 	btn_focus.set_border_width_all(2)
 	btn_focus.set_corner_radius_all(2)
@@ -161,12 +197,15 @@ func _build_theme() -> Theme:
 		t.set_stylebox("normal", kind, btn_normal)
 		t.set_stylebox("hover", kind, btn_hover)
 		t.set_stylebox("pressed", kind, btn_pressed)
+		t.set_stylebox("hover_pressed", kind, btn_pressed)
+		t.set_stylebox("disabled", kind, btn_normal)
 		t.set_stylebox("focus", kind, btn_focus)
 		t.set_font("font", kind, FONT_BOLD)
-		t.set_font_size("font_size", kind, 17)
+		t.set_font_size("font_size", kind, 25 if _phone_layout() else 17)
 		t.set_color("font_color", kind, INK)
 		t.set_color("font_hover_color", kind, RED)
-		t.set_color("font_focus_color", kind, RED)
+		t.set_color("font_focus_color", kind, INK)
+		t.set_color("font_disabled_color", kind, Color(INK, 0.52))
 		t.set_color("font_pressed_color", kind, CREAM)
 		t.set_color("font_hover_pressed_color", kind, CREAM)
 
@@ -194,6 +233,8 @@ func _build_theme() -> Theme:
 	t.set_color("font_color", "PopupMenu", INK)
 	t.set_color("font_hover_color", "PopupMenu", RED)
 	t.set_font("font", "PopupMenu", FONT_TEXT)
+	t.set_font_size("font_size", "PopupMenu", 25 if _phone_layout() else 19)
+	t.set_constant("v_separation", "PopupMenu", 28 if _phone_layout() else 8)
 
 	return t
 
@@ -203,6 +244,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	InkR.init_static()
 	theme = _build_theme()
+	_phone_theme = _phone_layout()
 
 	var background := _InkSettingsBg.new()
 	background.name = "Background"
@@ -258,13 +300,16 @@ func _ready() -> void:
 	button(footer, trc("back"), go_back)
 
 	_build_editor()
+	resized.connect(_responsive_layout)
+	_responsive_layout()
 	visible = false
 
 
 func button(parent: Node, text: String, callback: Callable) -> Button:
 	var result := Button.new()
 	result.text = text
-	result.custom_minimum_size = Vector2(160, 44)
+	result.custom_minimum_size = Vector2(160, _target_height())
+	result.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	result.pressed.connect(callback)
 	parent.add_child(result)
 	return result
@@ -297,7 +342,8 @@ func row(parent: Node, text: String) -> HBoxContainer:
 func option(parent: Node, text: String, values: Array, current: int, callback: Callable) -> void:
 	var line := row(parent, text)
 	var control := OptionButton.new()
-	control.custom_minimum_size = Vector2(320, 44)
+	control.custom_minimum_size = Vector2(_field_width(), _target_height())
+	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for value in values:
 		control.add_item(trc(value))
 	control.selected = current
@@ -308,7 +354,8 @@ func option(parent: Node, text: String, values: Array, current: int, callback: C
 func slider(parent: Node, text: String, low: float, high: float, value: float, callback: Callable) -> HSlider:
 	var line := row(parent, text)
 	var control := HSlider.new()
-	control.custom_minimum_size = Vector2(240, 44)
+	control.custom_minimum_size = Vector2(_field_width() - 80, _target_height())
+	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	control.min_value = low
 	control.max_value = high
 	control.step = 1
@@ -344,7 +391,7 @@ func _build_bindings(pad: bool) -> void:
 			continue
 		var line := row(column, L10N.t("ACT_" + action.to_upper()))
 		var control := button(line, CTL.label_pad(action) if pad else CTL.label_key(action), func(): _capture(action, pad))
-		control.custom_minimum_size.x = 320
+		control.custom_minimum_size.x = _field_width()
 		binding_buttons[("pad_" if pad else "key_") + action] = control
 
 
@@ -397,6 +444,7 @@ func _build_editor() -> void:
 
 
 func open() -> void:
+	_responsive_layout()
 	_relabel()
 	visible = true
 	_guard = 0.2
@@ -477,6 +525,8 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if not visible:
 		return
+	if _phone_theme != _phone_layout():
+		_responsive_layout()
 	_guard = maxf(0.0, _guard - delta)
 	if not capture.is_empty():
 		capture_time -= delta
@@ -575,7 +625,8 @@ func go_back() -> void:
 func toggle(parent: Node, key: String, value: bool, callback: Callable) -> void:
 	var line := row(parent, trc(key))
 	var control := CheckButton.new()
-	control.custom_minimum_size = Vector2(320, 44)
+	control.custom_minimum_size = Vector2(_field_width(), _target_height())
+	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	control.button_pressed = value
 	line.add_child(control)
 	control.toggled.connect(callback)
@@ -599,7 +650,8 @@ func _build_general() -> void:
 		flow.save_preferences())
 	var line := row(column, trc("language"))
 	var language := OptionButton.new()
-	language.custom_minimum_size = Vector2(320, 44)
+	language.custom_minimum_size = Vector2(_field_width(), _target_height())
+	language.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var codes := L10N.languages()
 	for code in codes:
 		language.add_item(code.to_upper())
@@ -614,7 +666,8 @@ func _build_general() -> void:
 		toggle(column, "fullscreen", DisplayServer.window_get_mode() in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN], func(_v: bool): flow._toggle_fullscreen())
 		var resolution_line := row(column, trc("resolution"))
 		var resolution := OptionButton.new()
-		resolution.custom_minimum_size = Vector2(320, 44)
+		resolution.custom_minimum_size = Vector2(_field_width(), _target_height())
+		resolution.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		for value in flow.RESOLUTIONS:
 			resolution.add_item("%d × %d" % [value.x, value.y])
 		resolution.selected = flow.resolution_index

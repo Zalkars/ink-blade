@@ -100,6 +100,10 @@ var pad_connected := false
 var pad_id := ""
 var pad_buttons: Array = []
 var pad_axes := [0.0, 0.0]
+## Перечисление джойстиков аллоцирует массив, а меняется оно редко:
+## проверяем раз в полсекунды, а не на каждом физическом тике.
+var _pad_joy := -1
+var _pad_scan := 0.0
 var move_x := 0.0
 var move_y := 0.0
 
@@ -452,48 +456,54 @@ func label_of(a: String) -> String:
 	return label_key(a)
 
 
-func _update_pad() -> void:
-	var pads := Input.get_connected_joypads()
-	var connected := not pads.is_empty()
-	if connected:
-		pad_connected = true
-		pad_id = L10N.t("PAD_NAME")
-		var reused := []
-		for i in range(16):
-			reused.append(false)
-		# Берём реальный ID первого подключённого устройства, а не 0:
-		# на Windows геймпад может прийти не нулевым, особенно если
-		# в системе есть виртуальный контроллер или старый геймпад.
-		var joy: int = int(pads[0])
-		var used := false
-		for i in range(16):
-			var code: int = PAD_BUTTON_JOY[i]
-			var v := false
-			if code >= 0:
-				v = Input.is_joy_button_pressed(joy, code)
-			elif code == -1:
-				v = Input.get_joy_axis(joy, JOY_AXIS_TRIGGER_LEFT) > 0.4
-			elif code == -2:
-				v = Input.get_joy_axis(joy, JOY_AXIS_TRIGGER_RIGHT) > 0.4
-			reused[i] = v
-			if v:
-				used = true
-		pad_buttons = reused
-		var ax_x := Input.get_joy_axis(joy, JOY_AXIS_LEFT_X)
-		var ax_y := Input.get_joy_axis(joy, JOY_AXIS_LEFT_Y)
-		pad_axes = [ax_x, ax_y]
-		if absf(ax_x) > 0.45 or absf(ax_y) > 0.45:
+func _update_pad(dt: float) -> void:
+	_pad_scan -= dt
+	if _pad_scan <= 0.0:
+		_pad_scan = 0.5
+		var pads := Input.get_connected_joypads()
+		if pads.is_empty():
+			_pad_joy = -1
+			if pad_connected:
+				pad_connected = false
+				pad_id = ""
+				pad_buttons = []
+				for i in range(16):
+					pad_buttons.append(false)
+				pad_axes = [0.0, 0.0]
+		else:
+			pad_connected = true
+			pad_id = L10N.t("PAD_NAME")
+			# Берём реальный ID первого подключённого устройства, а не 0:
+			# на Windows геймпад может прийти не нулевым, особенно если
+			# в системе есть виртуальный контроллер или старый геймпад.
+			_pad_joy = int(pads[0])
+	if _pad_joy < 0:
+		return
+	var joy := _pad_joy
+	var reused := []
+	for i in range(16):
+		reused.append(false)
+	var used := false
+	for i in range(16):
+		var code: int = PAD_BUTTON_JOY[i]
+		var v := false
+		if code >= 0:
+			v = Input.is_joy_button_pressed(joy, code)
+		elif code == -1:
+			v = Input.get_joy_axis(joy, JOY_AXIS_TRIGGER_LEFT) > 0.4
+		elif code == -2:
+			v = Input.get_joy_axis(joy, JOY_AXIS_TRIGGER_RIGHT) > 0.4
+		reused[i] = v
+		if v:
 			used = true
-		if used:
-			device = "gamepad"
-	else:
-		if pad_connected:
-			pad_connected = false
-			pad_id = ""
-		pad_buttons = []
-		for i in range(16):
-			pad_buttons.append(false)
-		pad_axes = [0.0, 0.0]
+	pad_buttons = reused
+	var ax_x := Input.get_joy_axis(joy, JOY_AXIS_LEFT_X)
+	var ax_y := Input.get_joy_axis(joy, JOY_AXIS_LEFT_Y)
+	pad_axes = [ax_x, ax_y]
+	if absf(ax_x) > 0.45 or absf(ax_y) > 0.45:
+		used = true
+	if used:
+		device = "gamepad"
 
 
 ## Нажата ли клавиша: проверяем и логический, и физический код, чтобы
@@ -518,7 +528,7 @@ func _key_axis(neg: String, pos: String) -> float:
 
 
 func update(dt: float) -> void:
-	_update_pad()
+	_update_pad(dt)
 	dash_hint = _pending_dash_hint
 	_pending_dash_hint = 0.0
 

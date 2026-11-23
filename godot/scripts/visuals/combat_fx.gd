@@ -14,11 +14,14 @@ var marks: Array[Dictionary] = []
 var particles: Array[Dictionary] = []
 var _stains: Node2D
 var _dirty := false
+## Растёт при каждом изменении пятен: автосейв пропускает неизменную картинку.
+var revision := 0
 var _last_view := Transform2D.IDENTITY
 ## Effect budgets use simulation time, so a stalled frame cannot schedule a burst storm.
 var mobile_quality := OS.has_feature("mobile")
 var _clock := 0.0
 var _ray_cursor := 0
+var _dry_accum := 0.0
 var _burst_times: Dictionary = {}
 var _coverage: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
@@ -110,6 +113,7 @@ func _deposit(point: Vector2, normal: Vector2, strength: float) -> void:
 	deposits_last_tick += 1
 	if marks.size() > MAX_MARKS:
 		marks.pop_front()
+	revision += 1
 	_dirty = true
 	_redraw_stains()
 
@@ -171,7 +175,12 @@ func _physics_process(delta: float) -> void:
 	_ray_cursor = index
 
 	if drying:
-		_redraw_stains()
+		# Мокрый блеск гаснет за секунду: 20 Гц хватает, а полный кадр
+		# пятен в 6 раз дешевле, чем при каждом физическом тике.
+		_dry_accum += delta
+		if _dry_accum >= 0.05:
+			_dry_accum = 0.0
+			_redraw_stains()
 	if had_particles:
 		queue_redraw()
 	if _dirty:
@@ -298,6 +307,7 @@ func restore_state(data) -> void:
 				fragments.append_array(_restore_terrain_fragment(polygon))
 		if not fragments.is_empty():
 			marks.append(_mark(fragments, 0.0))
+	revision += 1
 	_redraw_stains()
 
 ## Reclip old saved decor marks and marks affected by level layout changes.

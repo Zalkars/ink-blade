@@ -25,6 +25,12 @@ var _hp_anim := 0.0
 var _lost_from := 5
 var _t := 0.0
 var _banner := {"title": "", "sub": "", "t": 0.0, "max": 1.0}
+## Кэш жидкости в фляге: полигоны пересобираются не каждый кадр.
+var _soul_cells: Array[PackedVector2Array] = []
+var _soul_cells_k := -1.0
+var _soul_cells_t := -100.0
+## Высота метки стоимости лечения постоянна — считается один раз.
+static var _soul_cost_surface := -1.0
 
 
 func _ready() -> void:
@@ -38,6 +44,8 @@ func _rebuild_hint() -> void:
 
 
 func _process(delta: float) -> void:
+	if not visible:
+		return
 	_t += delta
 	_hp_anim = maxf(0.0, _hp_anim - delta)
 	if is_instance_valid(player) and player.hp != _hp_before:
@@ -151,7 +159,13 @@ func _draw_soul_flask() -> void:
 	# Independent vertical cells cannot self-intersect or fail triangulation.
 	# Clip both surface endpoints to the analytic circle, including at 1/99.
 	var liquid := Color(23.0 / 255.0, 19.0 / 255.0, 15.0 / 255.0, 210.0 / 255.0)
-	for cell in soul_liquid_cells(k, _t):
+	# Пересобираем не чаще 30 раз в секунду: волна в маленькой фляге
+	# не требует пересчёта 80 полигонов на каждом кадре отрисовки.
+	if k != _soul_cells_k or absf(_t - _soul_cells_t) >= 1.0 / 30.0:
+		_soul_cells = soul_liquid_cells(k, _t)
+		_soul_cells_k = k
+		_soul_cells_t = _t
+	for cell in _soul_cells:
 		draw_colored_polygon(cell, liquid)
 
 	InkR.circle(x, y, r, null, InkR.RED if ready else InkR.rgba(23, 19, 15, 166), 2.6 if ready else 2.0, 1.0, 0.9, 14)
@@ -166,9 +180,16 @@ func _draw_soul_flask() -> void:
 		InkR.circle(x, y, r + 5.0, null, InkR.RED, 1.2, 1.0, 1.0, 16)
 		InkR.restore()
 
-	var cost_y := y + soul_surface(Player.HEAL_COST / 99.0)
+	var cost_y := y + soul_cost_surface()
 	InkR.line(x + r + 3.0, cost_y, x + r + 11.0, cost_y, 1.5, InkR.rgba(156, 33, 41, 160), 1.0, 0.6)
 	InkR.text(L10N.t("HUD_SOUL"), x + r + 14.0, y + 4.0, 11.0, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55 if ready else 0.42, 1.5)
+
+
+## Высота метки стоимости лечения: значение постоянное, считается один раз.
+static func soul_cost_surface() -> float:
+	if _soul_cost_surface < 0.0:
+		_soul_cost_surface = soul_surface(Player.HEAL_COST / 99.0)
+	return _soul_cost_surface
 
 
 ## Height corresponding to an area fraction of the round flask.

@@ -45,10 +45,11 @@ func _ready() -> void:
 	check(CTL.touch_enabled, "touch mode enabled")
 	await shot("title")
 	# Dragging a menu row away must not start a new run.
-	touch(0, Vector2(160, 458), true)
-	touch(0, Vector2(360, 458), false)
+	var play_point: Vector2 = flow.title_screen.item_rect(0).get_center() + flow.title_screen.position
+	touch(0, play_point, true)
+	touch(0, play_point + Vector2(200, 0), false)
 	check(flow.state == flow.State.TITLE, "menu drag canceled")
-	tap(Vector2(160, 458))
+	tap(play_point)
 	check(flow.state == flow.State.CUTSCENE, "tap Play opens intro")
 	await frames()
 	var index: int = flow.cutscene.index

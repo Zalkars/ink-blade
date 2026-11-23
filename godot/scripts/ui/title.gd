@@ -116,12 +116,19 @@ func handle_back() -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	# Окно защиты от повторного нажатия измеряется временем и должно истекать,
+	# даже пока титул скрыт: иначе первое нажатие после возврата в меню теряется.
+	if input_guard > 0.0:
+		input_guard = maxf(0.0, input_guard - delta)
 	# Скрытый титул не должен читать ввод: visible = false не выключает
 	# _physics_process сам по себе.
 	if not visible:
 		return
-	if input_guard > 0:
-		input_guard -= delta
+	# Консоль разработчика перекрывает титул: набранные в ней буквы и Enter
+	# не должны ходить по меню и запускать новую игру.
+	if flow != null and flow.console.visible:
+		return
+	if input_guard > 0.0:
 		return
 	_wob += delta
 	if CTL.pressed("down"):
@@ -370,6 +377,50 @@ func _draw() -> void:
 	InkR.restore()
 
 	# Тексты и меню — в границах безопасной области (0..size).
+	if CTL.touch_enabled:
+		_draw_touch_header()
+	else:
+		_draw_desktop_header()
+
+	for i in items.size():
+		var r := item_rect(i)
+		var on := i == selected
+		if on:
+			draw_rect(r, Color(PAPER, 0.92))
+			draw_rect(r, Color(RED, 0.75), false, 2.0)
+			draw_rect(Rect2(r.position, Vector2(5, r.size.y)), RED)
+		else:
+			draw_rect(r, Color(PAPER, 0.72 if CTL.touch_enabled else 0.45))
+		var label := items[i]
+		if on and actions[i] == "quit" and _confirm_quit:
+			label = L10N.t("ui.title.quit_confirm")
+		var font_sz := (28 if _slots_open or _confirm_play else 32) if CTL.touch_enabled else (21 if _slots_open or _confirm_play else 27)
+		while font_sz > (22 if CTL.touch_enabled else 14) and FONT_BOLD.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz).x > r.size.x - 40.0:
+			font_sz -= 1
+		var baseline := r.position.y + (r.size.y + FONT_BOLD.get_ascent(font_sz) - FONT_BOLD.get_descent(font_sz)) * 0.5
+		draw_string(FONT_BOLD, Vector2(r.position.x + 24.0, baseline), label,
+			HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 48.0, font_sz, RED if on else INK)
+
+	draw_string(FONT_TEXT, Vector2(size.x - 140.0, size.y - 24.0),
+		L10N.t("ui.title.version"), HORIZONTAL_ALIGNMENT_RIGHT, 108.0, 14, Color(InkR.CREAM, 0.78))
+
+
+func _draw_touch_header() -> void:
+	var compact := size.y < 660.0
+	var first_y := 66.0 if compact else 88.0
+	var second_y := 142.0 if compact else 178.0
+	draw_string(FONT_TITLE, Vector2(48, first_y), L10N.t("TITLE_LINE1"), HORIZONTAL_ALIGNMENT_LEFT, -1, 38 if compact else 44, INK)
+	draw_string(FONT_TITLE, Vector2(48, second_y), L10N.t("TITLE_LINE2"), HORIZONTAL_ALIGNMENT_LEFT, -1, 64 if compact else 78, INK)
+	InkR.line(48, second_y + 17, 590, second_y + 17, 4.0, RED, 1.0, 1.0)
+	var subtitle := L10N.t("ui.slots.subtitle_load") if _slots_open else L10N.t("ui.title.subtitle")
+	if _confirm_play:
+		subtitle = L10N.t("ui.new_game.title")
+	draw_string(FONT_TEXT, Vector2(50, second_y + 44), subtitle, HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 18, GRAY)
+	if _confirm_play:
+		UIText.paragraph(self, FONT_TEXT, L10N.t("ui.new_game.warning"), Rect2(50, second_y + 64, minf(720, size.x - 96), 106), 22, INK, HORIZONTAL_ALIGNMENT_LEFT)
+
+
+func _draw_desktop_header() -> void:
 	draw_string(FONT_TITLE, Vector2(92.0, 204.0), L10N.t("TITLE_LINE1"), HORIZONTAL_ALIGNMENT_LEFT, -1, 62, Color(INK, 0.22))
 	draw_string(FONT_TITLE, Vector2(88.0, 200.0), L10N.t("TITLE_LINE1"), HORIZONTAL_ALIGNMENT_LEFT, -1, 62, INK)
 	draw_string(FONT_TITLE, Vector2(88.0, 324.0), L10N.t("TITLE_LINE2"), HORIZONTAL_ALIGNMENT_LEFT, -1, 112, Color(INK, 0.2))
@@ -386,40 +437,16 @@ func _draw() -> void:
 	if _confirm_play:
 		UIText.paragraph(self, FONT_TEXT, L10N.t("ui.new_game.warning"), Rect2(92, 393, minf(560.0, size.x - 180.0), 94), 18, INK, HORIZONTAL_ALIGNMENT_LEFT)
 
-	for i in items.size():
-		var r := item_rect(i)
-		var y := r.position.y + 30.0
-		var on := i == selected
-		if on:
-			var box := PackedVector2Array([
-				Vector2(r.position.x, r.position.y),
-				Vector2(r.end.x, r.position.y - 2.0),
-				Vector2(r.end.x + 2.0, r.end.y),
-				Vector2(r.position.x + 2.0, r.end.y + 2.0),
-			])
-			draw_colored_polygon(box, Color(INK, 0.08))
-			draw_rect(Rect2(r.position.x, r.position.y, 5.0, r.size.y), RED)
-			draw_rect(Rect2(r.position.x + 5.0, r.position.y, r.size.x - 5.0, r.size.y), Color(PAPER, 0.72), true)
-			draw_rect(Rect2(r.position.x + 5.0, r.position.y, r.size.x - 5.0, r.size.y), Color(RED, 0.55), false, 1.4)
-		else:
-			draw_rect(Rect2(r.position.x, r.position.y, r.size.x, r.size.y), Color(PAPER, 0.45), true)
-		var label := items[i]
-		if on and actions[i] == "quit" and _confirm_quit:
-			label = L10N.t("ui.title.quit_confirm")
-		elif on and actions[i] == "play" and _confirm_play:
-			label = L10N.t("ui.title.play_confirm")
-		var font_sz := 21 if _slots_open or _confirm_play else 27
-		while font_sz > 14 and FONT_BOLD.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz).x > r.size.x - 40.0:
-			font_sz -= 1
-		draw_string(FONT_BOLD, Vector2(r.position.x + 20.0, y), label,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz, RED if on else Color(INK, 0.78))
-
-
-	draw_string(FONT_TEXT, Vector2(size.x - 140.0, size.y - 24.0),
-		L10N.t("ui.title.version"), HORIZONTAL_ALIGNMENT_RIGHT, 108.0, 14, Color(InkR.CREAM, 0.78))
-
-
 func item_rect(i: int) -> Rect2:
+	if CTL.touch_enabled:
+		var count := maxi(1, items.size())
+		var compact := size.y < 660.0
+		var top := (320.0 if compact else 364.0) if _confirm_play else (194.0 if compact else 246.0)
+		var gap := 10.0 if compact else 12.0
+		var row_h := clampf((size.y - top - 24.0 - gap * (count - 1)) / count, 64.0, 80.0)
+		var total := row_h * count + gap * (count - 1)
+		var y := top + maxf(0.0, (size.y - 24.0 - top - total) * 0.5)
+		return Rect2(48.0, y + i * (row_h + gap), minf(720.0, size.x - 96.0), row_h)
 	var w := minf(560.0 if _slots_open or _confirm_play else 400.0, size.x - 168.0)
 	return Rect2(84.0, (502.0 if _confirm_play else 434.0) + i * 48.0, w, 44.0)
 
@@ -489,6 +516,8 @@ func activate(i: int) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	if flow != null and flow.console.visible:
+		return
 	if event is InputEventMouseMotion:
 		for i in actions.size():
 			if item_rect(i).has_point(event.position):

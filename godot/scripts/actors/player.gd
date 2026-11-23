@@ -570,6 +570,16 @@ func respawn() -> void:
 	attack_buf = 0.0
 	dash_buf = 0.0
 	_dash_hint = 0.0
+	jump_buf = 0.0
+	coyote = 0.0
+	# Возрождение согласовано с загрузкой сейва: душа обнуляется,
+	# незавершённый замах и накопленное комбо не переезжают в новый забег.
+	soul = 0.0
+	combo_time = 0.0
+	attack_step = 0
+	attack_dir = "fwd"
+	_struck = false
+	_hit_targets.clear()
 	hp_changed.emit(hp, MAX_HP)
 	spawn_effect()
 
@@ -618,10 +628,14 @@ func _process(delta: float) -> void:
 	while _visual.scarf_acc >= 1.0 / 60.0:
 		_visual.scarf_step()
 		_visual.scarf_acc -= 1.0 / 60.0
-	var ray := PhysicsRayQueryParameters2D.create(
-		global_position + Vector2(0, 22), global_position + Vector2(0, 720), GROUND_MASK)
-	var ground := get_world_2d().direct_space_state.intersect_ray(ray)
-	_visual.ground_y = ground.position.y if not ground.is_empty() else 10000.0
+	# На земле тень и так под ногами: луч вниз считается только в полёте.
+	if is_on_floor():
+		_visual.ground_y = global_position.y + 23.0
+	else:
+		var ray := PhysicsRayQueryParameters2D.create(
+			global_position + Vector2(0, 22), global_position + Vector2(0, 720), GROUND_MASK)
+		var ground := get_world_2d().direct_space_state.intersect_ray(ray)
+		_visual.ground_y = ground.position.y if not ground.is_empty() else 10000.0
 	queue_redraw()
 
 

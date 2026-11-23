@@ -96,12 +96,17 @@ func configure(def: EntityDef, overrides: Dictionary = {}) -> void:
 func _ready() -> void:
 	collision_layer = 4
 	collision_mask = 1
-	# Арену берём из границ уровня, а не из константы: босс не уходит
-	# в соседние зоны и не вываливается за край.
+	# Арену берём из данных уровня: босс не уходит в соседние зоны.
+	# Без явной арены остаются общие границы уровня.
 	var lvl := get_parent()
 	if lvl is Level:
-		min_x = lvl.bounds.position.x + 300.0
-		max_x = lvl.bounds.end.x - 240.0
+		var arena: Dictionary = lvl.data.get("arena", {})
+		if arena.has("x") and arena.has("w"):
+			min_x = float(arena.get("x", 0.0)) + 300.0
+			max_x = float(arena.get("x", 0.0)) + float(arena.get("w", 0.0)) - 240.0
+		else:
+			min_x = lvl.bounds.position.x + 300.0
+			max_x = lvl.bounds.end.x - 240.0
 
 
 func _physics_process(delta: float) -> void:
@@ -273,7 +278,7 @@ func _slam() -> void:
 	var drop := DROP_SCENE.instantiate()
 	drop.global_position = Vector2(slam_x, -20.0)
 	drop.damage = damage
-	drop.floor_y = global_position.y
+	drop.floor_y = _floor_below(slam_x)
 	# Печать открывается, когда тяжёлый удар действительно дошёл до пола,
 	# а не в момент замаха: у игрока есть время подойти.
 	drop.landed.connect(_on_drop_landed)
@@ -298,8 +303,19 @@ func _rain() -> void:
 	var x := clampf(target.global_position.x + randf_range(-140.0, 140.0), min_x, max_x)
 	drop.global_position = Vector2(x, -20.0)
 	drop.damage = damage
-	drop.floor_y = global_position.y
+	drop.floor_y = _floor_below(x)
 	get_parent().add_child(drop)
+
+
+## Высота пола под точкой. Капля должна достичь пола, а не центра босса:
+## иначе телеграф обрывается в воздухе, а печать открывается раньше времени.
+func _floor_below(x: float) -> float:
+	var ray := PhysicsRayQueryParameters2D.create(
+		Vector2(x, global_position.y), Vector2(x, global_position.y + 760.0), 1)
+	var hit := get_world_2d().direct_space_state.intersect_ray(ray)
+	if not hit.is_empty():
+		return float(hit.position.y)
+	return global_position.y + 60.0
 
 
 ## Печать принимает урон только открытой. Тяжёлый удар (кисть) ломает её быстрее.
