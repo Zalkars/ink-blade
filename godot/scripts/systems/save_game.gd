@@ -4,12 +4,13 @@ extends RefCounted
 ## Сохранения: слотовая схема с самого начала, JSON в user://saves.
 ## Поддерживаются автосейв и три ручных слота; запись атомарная: tmp -> rename, предыдущая версия уходит в .bak.
 
-const VERSION := 4
+const VERSION := 5
 const DIR := "user://saves"
 const AUTOSAVE := "auto"
 const MANUAL_SLOTS := ["slot_1", "slot_2", "slot_3"]
 
 static var current_slot := AUTOSAVE
+static var storage := DIR
 ## Абсолютный путь -> [размер, время] последней собственной записи.
 ## Позволяет не разбирать весь JSON ради проверки предыдущего файла.
 static var _own_writes := {}
@@ -21,14 +22,20 @@ static func _abs(path: String) -> String:
 
 
 static func _slot_path(slot: String, suffix: String = ".json") -> String:
-	return "%s/%s%s" % [DIR, slot, suffix]
+	return "%s/%s%s" % [storage, slot, suffix]
 
 
 static func _ensure_dir() -> bool:
-	var dir := _abs(DIR)
+	var dir := _abs(storage)
 	if DirAccess.dir_exists_absolute(dir):
 		return true
 	return DirAccess.make_dir_recursive_absolute(dir) == OK
+
+
+static func use_storage(path: String) -> void:
+	flush_autosave()
+	storage = path
+	current_slot = AUTOSAVE
 
 
 static func write_slot(slot: String, data: Dictionary) -> bool:
@@ -74,7 +81,7 @@ static func _write_autosave(slot: String, data: Dictionary) -> bool:
 
 static func _write_slot(slot: String, data: Dictionary) -> bool:
 	if not _ensure_dir():
-		push_error("save: не создаётся папка " + DIR)
+		push_error("save: не создаётся папка " + storage)
 		return false
 	var payload := {"version": VERSION, "saved_at": int(Time.get_unix_time_from_system())}
 	payload.merge(data, true)
@@ -160,6 +167,8 @@ static func _read_file(path: String) -> Dictionary:
 static func migrate(data: Dictionary) -> Dictionary:
 	var out := data.duplicate(true)
 	var version := int(out.get("version", 1))
+	if version > VERSION:
+		return out
 	if version < 2:
 		if not out.has("checkpoint"):
 			out["checkpoint"] = ""
@@ -185,6 +194,8 @@ static func migrate(data: Dictionary) -> Dictionary:
 		out["dialogue"] = {}
 	if typeof(out.get("ink_marks")) != TYPE_ARRAY:
 		out["ink_marks"] = []
+	if typeof(out.get("props")) != TYPE_ARRAY:
+		out["props"] = []
 	out["dead"] = bool(out.get("dead", false))
 	if version <= VERSION:
 		out["version"] = VERSION
@@ -193,7 +204,7 @@ static func migrate(data: Dictionary) -> Dictionary:
 
 ## Слот считается незавершённым, если уровень ещё не зачищен либо финальная катсцена не досмотрена.
 static func has_unfinished_run(data: Dictionary) -> bool:
-	if data.is_empty():
+	if data.is_empty() or int(data.get("version", 1)) > VERSION:
 		return false
 	if not bool(data.get("cleared", false)):
 		return true

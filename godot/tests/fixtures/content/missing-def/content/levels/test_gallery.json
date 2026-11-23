@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "id": "test_gallery",
+  "bounds": { "x": 0, "y": 0, "w": 1280, "h": 720 },
+  "spawn": { "x": 128, "y": 576 },
+  "props": [{ "id": "shard_1", "def_id": "prop.missing", "x": 352, "y": 576 }]
+}

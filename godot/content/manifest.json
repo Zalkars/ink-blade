@@ -1,54 +1,91 @@
 {
-  "schema": 1,
   "entities": {
     "boss.keeper": {
+      "category": 1,
+      "hash": "a6009cf6704b1478d0f2bca9745ecb07f4488c73d260fd4ebd4ba346aaf56df8",
       "path": "res://content/entities/boss_keeper.tres",
       "type": "EntityDef",
-      "category": 1,
-      "version": 1,
-      "hash": "a6009cf6704b1478d0f2bca9745ecb07f4488c73d260fd4ebd4ba346aaf56df8"
+      "version": 1
     },
     "enemy.blot": {
+      "category": 0,
+      "hash": "ec2fd9eaef1eca680784a2becb6a95f579646198577878439bd83cea5bb43e81",
       "path": "res://content/entities/enemy_blot.tres",
       "type": "EntityDef",
-      "category": 0,
-      "version": 1,
-      "hash": "e876bd065ca23a45d2a2d23b4ab687def5c6fe7fb9b3de606b75dd9141bf21d8"
+      "version": 1
     },
     "enemy.blot_small": {
+      "category": 0,
+      "hash": "93c6bd6a65a87b1ff12fdc9456636859949f59839e432fdc1947e7a53ee190fe",
       "path": "res://content/entities/enemy_blot_small.tres",
       "type": "EntityDef",
-      "category": 0,
-      "version": 1,
-      "hash": "600a79b037cdc5c6f1ecdf6b417e4df6d3b467e00c8b90bfbc168ea2e1b25188"
+      "version": 1
     },
     "enemy.grunt": {
+      "category": 0,
+      "hash": "012fa6a0b66e0a01bc2820d4f3cf53a7861ed3932c14526397214aa57ff80f55",
       "path": "res://content/entities/enemy_grunt.tres",
       "type": "EntityDef",
-      "category": 0,
-      "version": 1,
-      "hash": "012fa6a0b66e0a01bc2820d4f3cf53a7861ed3932c14526397214aa57ff80f55"
+      "version": 1
     },
     "enemy.sentry": {
+      "category": 0,
+      "hash": "94a1054bc782647abedf5138ddb87edebb0f605262f32842b051702257967ee4",
       "path": "res://content/entities/enemy_sentry.tres",
       "type": "EntityDef",
-      "category": 0,
-      "version": 1,
-      "hash": "94a1054bc782647abedf5138ddb87edebb0f605262f32842b051702257967ee4"
+      "version": 1
     }
   },
+  "level_index_hash": "ab20f834b49e07ffc6a37536e53fd6c88e97168bb93247ad7cbe37bb2f9cae4f",
+  "levels": {
+    "arena_01": {
+      "data": "res://content/levels/arena_01.json",
+      "data_hash": "aff9cb3ee998d9a5efd29c748b73ee919d2cd334a4d74f58833408102cf221ac",
+      "order": 1,
+      "qa_only": false,
+      "scene": "res://scenes/level/arena_01.tscn",
+      "scene_hash": "99f1a61b7f11edd82cafac8b4e512e789afa52d4292fc26efc7484ebd0b1f24a"
+    },
+    "ch01_hall": {
+      "data": "res://content/levels/ch01_hall.json",
+      "data_hash": "393ea5a503124097c3760cfcc9f4245fa8f00583deadfdde6ebe5b18df879016",
+      "order": 0,
+      "qa_only": false,
+      "scene": "res://scenes/level/ch01_hall.tscn",
+      "scene_hash": "05edb720a4795cbd2637919504101746ad3211b0e9e7df1e1e4a67012d1b15cb"
+    },
+    "test_gallery": {
+      "data": "res://content/levels/test_gallery.json",
+      "data_hash": "eed05b7b29d45b91ce7c00e2c909be18f186bfc2c9149cc5dbaba2751bae5e9f",
+      "order": 2,
+      "qa_only": true,
+      "scene": "res://scenes/level/test_gallery.tscn",
+      "scene_hash": "6060257f365ad81e8f9ff4b499da879d6c566d5698382ec2ac15d649338439f0"
+    }
+  },
+  "props": {
+    "prop.soul_shard": {
+      "display_name_key": "prop.soul_shard.name",
+      "hash": "214f1086b4af2767181efe2a357413935d5b247268d7e230031d87f19e0309b4",
+      "kind": "pickup",
+      "path": "res://content/props/soul_shard.tres",
+      "type": "PropDef",
+      "version": 1
+    }
+  },
+  "schema": 1,
   "weapons": {
     "weapon.blade": {
-      "path": "res://content/weapons/blade.tres",
-      "type": "WeaponDef",
+      "hash": "6be082c85879d4493a71dcb9eca304fa70a2982ad3f76bbb97079cb2850655f0",
       "order": 0,
-      "hash": "14b0fabba3b19427fb7ad1bfbac755ec083a26892f5c331bfb951885de2d1dfe"
+      "path": "res://content/weapons/blade.tres",
+      "type": "WeaponDef"
     },
     "weapon.brush": {
-      "path": "res://content/weapons/brush.tres",
-      "type": "WeaponDef",
+      "hash": "3b0732177d3b28cad844d605308ee52a5cdb3004359d21da142c37f60b3ad4c5",
       "order": 1,
-      "hash": "3b0732177d3b28cad844d605308ee52a5cdb3004359d21da142c37f60b3ad4c5"
+      "path": "res://content/weapons/brush.tres",
+      "type": "WeaponDef"
     }
   }
 }

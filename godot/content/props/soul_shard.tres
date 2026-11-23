@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="PropDef" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/content/prop_def.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/actors/soul_pickup.tscn" id="2"]
+
+[resource]
+script = ExtResource("1")
+id = &"prop.soul_shard"
+scene = ExtResource("2")
+display_name_key = "prop.soul_shard.name"
+soul_amount = 10

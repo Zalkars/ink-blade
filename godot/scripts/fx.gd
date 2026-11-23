@@ -3,6 +3,8 @@ extends RefCounted
 
 ## Полный порт Game/Fx.cs
 
+static var particles_enabled := true
+
 enum ParticleKind { INK, DROP, SPLAT, SPARK, DUST }
 
 class Particle:
@@ -204,6 +206,8 @@ static func shake_offset() -> Vector3:
 
 static func ink_burst(x: float, y: float, n := 10, power := 220.0, colors = null, size := 5.0, drops := false,
 		_angle = null, vx := 0.0, vy := 0.0, gravity := 1300.0, floor_ := 618.0, splat_on := true) -> void:
+	if not particles_enabled:
+		return
 	if colors == null:
 		colors = [InkR.INK, InkR.INK, InkR.RED, InkR.INK_SOFT]
 	for i in range(n):
@@ -230,6 +234,8 @@ static func ink_burst(x: float, y: float, n := 10, power := 220.0, colors = null
 		parts.append(drop)
 
 static func sparks(x: float, y: float, angle: float, n := 7, color2 = null) -> void:
+	if not particles_enabled:
+		return
 	for i in range(n):
 		var a := angle + rnd(-1.1, 1.1)
 		var sp := rnd(220, 640)
@@ -247,6 +253,8 @@ static func sparks(x: float, y: float, angle: float, n := 7, color2 = null) -> v
 		parts.append(spark)
 
 static func dust(x: float, y: float, n: int, dir_x: float) -> void:
+	if not particles_enabled:
+		return
 	for i in range(n):
 		var mote := Particle.new()
 		mote.kind = ParticleKind.DUST

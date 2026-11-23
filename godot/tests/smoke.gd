@@ -397,6 +397,7 @@ func _run() -> void:
 	var killed_saved: Array = cp_save.get("killed", [])
 	_check(killed_saved.has("e1"), "автосейв хранит убитых врагов")
 	flow.title_screen.refresh()
+	flow.title_screen.activate(flow.title_screen.actions.find("play"))
 	_check(flow.title_screen.items.has("ПРОДОЛЖИТЬ"), "с автосейвом появляется пункт «Продолжить»")
 
 	# Смерть и продолжение: игрок возвращается на чекпоинт, убитый враг не оживает

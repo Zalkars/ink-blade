@@ -4,7 +4,7 @@ config_version=5
 
 [application]
 config/name="Ink Blade"
-config/version="0.4.5"
+config/version="0.5.0"
 run/main_scene="res://scenes/flow/game_flow.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://assets/icon.svg"
@@ -17,6 +17,8 @@ SND="*res://scripts/audio_ink.gd"
 CTL="*res://scripts/input_ink.gd"
 DB="*res://scripts/content/entity_database.gd"
 WDB="*res://scripts/content/weapon_database.gd"
+LVL="*res://scripts/content/level_database.gd"
+PDB="*res://scripts/content/prop_database.gd"
 
 [display]
 window/size/viewport_width=1280

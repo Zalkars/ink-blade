@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "id": "test_gallery",
+  "display_name_key": "level.test_gallery.missing_name",
+  "bounds": { "x": 0, "y": 0, "w": 1280, "h": 720 },
+  "spawn": { "x": 128, "y": 576 }
+}

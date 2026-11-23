@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "first": "ch01_hall",
+  "levels": [
+    { "id": "ch01_hall", "scene": "res://scenes/level/ch01_hall.tscn", "data": "res://content/levels/ch01_hall.json", "order": 0 },
+    { "id": "arena_01", "scene": "res://scenes/level/arena_01.tscn", "data": "res://content/levels/arena_01.json", "order": 1 },
+    { "id": "test_gallery", "scene": "res://scenes/level/bad_gallery.tscn", "data": "res://content/levels/test_gallery.json", "order": 2, "qa_only": true }
+  ]
+}

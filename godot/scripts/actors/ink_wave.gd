@@ -58,7 +58,7 @@ func _physics_process(delta: float) -> void:
 func _on_body_entered(body: Node2D) -> void:
 	if _done:
 		return
-	if body is Player:
+	if body is Player and body.dash_t <= 0.0:
 		_done = true
 		CombatFx.burst(self, global_position, -velocity, INK, 16)
 		body.take_damage(damage, 1.0 if velocity.x >= 0.0 else -1.0)

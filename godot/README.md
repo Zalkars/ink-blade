@@ -10,7 +10,7 @@
 # Ink Blade — Godot-порт (Windows + Android)
 
 Полный 1:1 порт игры Ink Blade (C#/WinForms/SkiaSharp, `InkBladeWin/ink-blade-main`)
-на Godot 4. Откройте эту папку в Godot 4.5+ (GL Compatibility) и запустите `main.tscn`.
+на Godot 4. Откройте эту папку в Godot 4.5.1 (GL Compatibility) и запустите основную сцену проекта (`scenes/flow/game_flow.tscn`).
 
 ## Архитектура
 

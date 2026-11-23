@@ -48,6 +48,7 @@ func _ready() -> void:
 	SaveGame.current_slot = "slot_1"
 	title.input_guard = 0
 	title.activate(title.actions.find("play"))
+	title.activate(title.actions.find("normal"))
 	check(title._confirm_play and title.selected == 0 and title.actions[0] == "cancel_new", "new game defaults to explicit cancel")
 	check(SaveGame.read_slot(SaveGame.AUTOSAVE) == original, "opening confirmation preserves autosave")
 	title.activate(1)
@@ -55,14 +56,14 @@ func _ready() -> void:
 	await frames(40)
 	title.activate(0)
 	check(not title._confirm_play and SaveGame.read_slot(SaveGame.AUTOSAVE) == original and SaveGame.current_slot == "slot_1", "cancel preserves progress and selected slot")
-	title.activate(title.actions.find("play"))
+	title.activate(title.actions.find("normal"))
 	check(title.handle_back() and not title._confirm_play, "Back cancels confirmation")
 	for dimensions in [Vector2i(1280, 720), Vector2i(1560, 720), Vector2i(1600, 720)]:
 		get_window().size = dimensions
 		await frames(8)
 		await shot("title-%d" % dimensions.x)
 		title.input_guard = 0
-		title.activate(title.actions.find("play"))
+		title.activate(title.actions.find("normal"))
 		await frames(16)
 		check(Rect2(Vector2.ZERO, title.size).encloses(title.item_rect(1)), "confirmation stays in safe canvas %d" % dimensions.x)
 		await shot("confirm-%d" % dimensions.x)

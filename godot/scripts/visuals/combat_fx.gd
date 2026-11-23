@@ -75,6 +75,8 @@ static func layer(actor: Node) -> CombatFx:
 	return fx
 
 static func burst(actor: Node2D, point: Vector2, direction: Vector2, color := RED, count := 12) -> void:
+	if not InkFx.particles_enabled:
+		return
 	var fx := layer(actor)
 	var cell := Vector2i((point / 32.0).floor())
 	var key := Vector3i(cell.x, cell.y, color.to_rgba32())

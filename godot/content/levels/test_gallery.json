@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "test_gallery",
+  "display_name_key": "level.test_gallery.name",
+  "bounds": { "x": 0, "y": 0, "w": 1280, "h": 720 },
+  "spawn": { "x": 128, "y": 576 },
+  "solids": [{ "x": 0, "y": 576, "w": 1280, "h": 160 }],
+  "one_ways": [
+    { "x": 448, "y": 480, "w": 96, "h": 32 },
+    { "x": 672, "y": 416, "w": 128, "h": 32 }
+  ],
+  "checkpoints": [{ "id": "cp_gallery", "x": 192, "y": 576 }],
+  "placements": [{ "id": "gallery_grunt", "def_id": "enemy.grunt", "x": 1056, "y": 576 }],
+  "props": [{ "id": "shard_1", "def_id": "prop.soul_shard", "x": 352, "y": 576 }]
+}

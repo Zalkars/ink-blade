@@ -1,9 +1,9 @@
 # Чернильный клинок · Ink Blade
 
-**v0.4.5 · Godot 4.5.1 · Windows и Android**
+**v0.5.0 · Godot 4.5.1 · Windows и Android**
 
 Windows поставляется отдельным EXE, Android — подписанным APK.
-[Описание релиза 0.4.5](docs/RELEASE_NOTES_v0.4.5.md) ·
+[Описание 0.5.0](docs/RELEASE_NOTES_v0.5.0.md) ·
 [Результаты проверок](docs/revision-0.4.2.md).
 
 Экшн-платформер в рисованной чернильной стилистике: бумага, тушь,
@@ -11,10 +11,17 @@ Windows поставляется отдельным EXE, Android — подпи�
 вертикальный срез с четырьмя зонами первого уровня, чекпоинтами,
 диалогом, двумя видами оружия и боссом Хранителем.
 
-[**Скачать v0.4.5 для Windows и Android**](https://github.com/Zalkars/ink-blade/releases/tag/v0.4.5) ·
+[**Скачать v0.5.0 для Windows и Android**](https://github.com/Zalkars/ink-blade/releases/tag/v0.5.0) ·
 [История изменений](CHANGELOG.md) · [Технический бриф](docs/tech-brief.md)
 
 ![Чернильный клинок](docs/screenshots/v0.4.3-title.png)
+
+## Что нового в 0.5.0
+
+- Отдельный экран сохранений, повтор обучения и чёткие контуры героя на титуле.
+- Консоль с подсказками и панель разработчика с отдельным хранилищем прогресса.
+- Индекс уровней, пикапы, проверка контента перед экспортом и тестовая галерея.
+- Рывок и удары оружием больше не уничтожают вражеские снаряды.
 
 ## Что нового в 0.4.5
 
@@ -82,7 +89,7 @@ Windows поставляется отдельным EXE, Android — подпи�
 
 ### Windows
 
-1. Скачайте `InkBlade-0.4.5-windows-x64.exe` со [страницы релиза](https://github.com/Zalkars/ink-blade/releases/tag/v0.4.5).
+1. Скачайте `InkBlade-0.5.0-windows-x64.exe` со [страницы релиза](https://github.com/Zalkars/ink-blade/releases/tag/v0.5.0).
 2. Запустите скачанный EXE. Распаковка не требуется.
 
 Godot и .NET устанавливать не нужно: ресурсы встроены в EXE.
@@ -91,12 +98,12 @@ EXE не имеет подписи издателя Windows.
 
 ### Android
 
-1. Скачайте `InkBlade-0.4.5-android.apk` с той же страницы релиза.
+1. Скачайте `InkBlade-0.5.0-android.apk` с той же страницы релиза.
 2. Разрешите установку из выбранного браузера или файлового менеджера и установите APK.
 3. Запустите «Чернильный клинок». Игра работает в горизонтальной ориентации.
 
 Требуется Android 7.0 или новее. APK содержит ARMv7, ARM64 и x86_64. Идентификатор приложения —
-`org.inkblade.game`, версия — `0.4.5`, код версии — `40005`.
+`org.inkblade.game`, версия — `0.5.0`, код версии — `50000`.
 Для обновления поверх старого APK подпись старой установки должна совпадать;
 при несовпадении Android отклонит обновление. Удаление приложения удаляет локальные сохранения.
 Интернет игре не требуется. В релизе также опубликован `SHA256SUMS.txt`.
@@ -150,7 +157,7 @@ EXE не имеет подписи издателя Windows.
 ## Сохранения и языки
 
 Игра сохраняет чекпоинт, состояние уровня, открытое оружие и прогресс.
-«Продолжить» появляется при наличии незавершённого автосохранения.
+Выберите активный слот в «Сохранениях». «Продолжить» появляется в разделе «Играть» при наличии незавершённой игры в выбранном слоте.
 Сохранения локальные; облачной синхронизации нет.
 
 Строки русского и английского интерфейса лежат в `godot/locale/`.
@@ -166,8 +173,10 @@ export templates. C#-версия в `native/` сохранена как исх�
 
 ```powershell
 Godot --headless --path godot --editor --quit
-Godot --headless --path godot --export-release "Windows Desktop" ../builds/InkBlade-0.4.5-windows-x64.exe
-Godot --headless --path godot --export-release "Android" ../builds/InkBlade-0.4.5-android.apk
+Godot --headless --path godot --script res://tools/build_manifest.gd
+Godot --headless --path godot --script res://tools/validate_content.gd
+Godot --headless --path godot --export-release "Windows Desktop" ../builds/InkBlade-0.5.0-windows-x64.exe
+Godot --headless --path godot --export-release "Android" ../builds/InkBlade-0.5.0-android.apk
 ```
 
 Для Android нужны JDK 17 и Android SDK, настроенные в Editor Settings.
@@ -187,12 +196,15 @@ Godot --headless --path godot tests/controls.tscn
 Godot --headless --path godot tests/mobile.tscn -- --touch
 Godot --headless --path godot tests/progress_regression.tscn
 Godot --headless --fixed-fps 120 --path godot tests/traverse.tscn
+Godot --headless --path godot tests/content_pipeline.tscn
 ```
 
 Smoke-тест использует отдельные тестовые сохранения: запускайте проверки
 с отдельным пользовательским каталогом Godot. Тест настроек временно меняет
 `settings.cfg` и затем восстанавливает его. Без `--headless` он сохраняет
 снимки экранов настроек в `builds/controls-review/`.
+
+На ПК F1 открывает справку, F2 показывает хитбоксы, F3 открывает консоль, F4 — панель разработчика, F5 — производительность, F6 — состояние игрока и карты. Панель также доступна в меню паузы. В консоли `help` показывает синтаксис, стрелки выбирают подсказки, Tab подставляет команду или аргумент, а Enter исполняет строку.
 
 ## Структура
 

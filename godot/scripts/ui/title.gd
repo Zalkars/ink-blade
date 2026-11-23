@@ -4,9 +4,10 @@ extends Control
 ## подтверждение перезаписи и выбор ручных слотов.
 
 signal start_pressed
-signal continue_pressed
+signal continue_pressed(slot: String)
 signal settings_pressed
 signal quit_pressed
+signal guide_pressed
 
 const FONT_TITLE := preload("res://assets/fonts/Underdog-Regular.ttf")
 const FONT_BOLD := preload("res://assets/fonts/PTSerif-Bold.ttf")
@@ -28,9 +29,10 @@ var _wob := 0.0
 var _confirm_quit := false
 var _confirm_play := false
 var _slots_open := false
+var _play_open := false
 var _slot_keys: Array[String] = []
+var _slot_details: Array[String] = []
 var _overwrite_slot := ""
-var _overwrite_manual := false
 
 var _baked_bg: ImageTexture = null
 var _baked_size := Vector2.ZERO
@@ -45,53 +47,52 @@ func _ready() -> void:
 	refresh()
 
 
-## Пункт «ПРОДОЛЖИТЬ» появляется только когда есть незачищенный (или с недосмотренным финалом) автосейв.
-## «ИГРАТЬ» всегда первый: с титула новая игра не должна случайно
-## превращаться в продолжение с середины.
+func reset_menu() -> void:
+	_slots_open = false
+	_play_open = false
+	selected = 0
+	refresh()
+
+
 func refresh() -> void:
 	items.clear()
 	actions.clear()
 	_slot_keys.clear()
+	_slot_details.clear()
 	_confirm_quit = false
 	_confirm_play = false
 	if _slots_open:
 		_slot_keys.append(SaveGame.AUTOSAVE)
-		actions.append("slot_auto")
-		items.append("%s — %s" % [L10N.t("ui.slots.auto"), SaveGame.slot_summary(SaveGame.AUTOSAVE)])
-		for i in SaveGame.MANUAL_SLOTS.size():
-			var key: String = SaveGame.MANUAL_SLOTS[i]
-			_slot_keys.append(key)
-			actions.append("slot_%d" % (i + 1))
-			items.append("%s — %s" % [L10N.t("ui.slots.slot", [i + 1]), SaveGame.slot_summary(key)])
+		_slot_keys.append_array(SaveGame.MANUAL_SLOTS)
+		for i in _slot_keys.size():
+			var key := _slot_keys[i]
+			actions.append(key)
+			items.append(L10N.t("ui.slots.auto") if i == 0 else L10N.t("ui.slots.slot", [i]))
+			var save := SaveGame.read_slot(key)
+			var saved_at := int(save.get("saved_at", 0))
+			var date := Time.get_date_string_from_unix_time(saved_at) if saved_at > 0 else ""
+			_slot_details.append(SaveGame.slot_summary(key) + (" · " + date if not date.is_empty() else ""))
 		actions.append("slots_back")
 		items.append(L10N.t("ui.slots.back"))
-		selected = clampi(selected, 0, actions.size() - 1)
-		queue_redraw()
-		return
-
-	actions.append("play")
-	items.append(L10N.t("ui.title.play"))
-	var save := SaveGame.read_slot(SaveGame.AUTOSAVE)
-	if SaveGame.has_unfinished_run(save):
-		actions.append("continue")
-		items.append(L10N.t("ui.title.continue"))
-	actions.append("slots")
-	items.append(L10N.t("ui.title.slots"))
-	actions.append("settings")
-	items.append(L10N.t("MENU_SETTINGS"))
-	actions.append("quit")
-	items.append(L10N.t("ui.title.quit"))
+	elif _play_open:
+		if SaveGame.has_unfinished_run(SaveGame.read_slot(_active_slot())):
+			actions.append("continue")
+			items.append(L10N.t("ui.title.continue"))
+		actions.append_array(["normal", "guide", "back"])
+		items.append_array([L10N.t("ui.title.normal"), L10N.t("ui.title.guide"), L10N.t("ui.slots.back")])
+	else:
+		actions.assign(["play", "slots", "settings", "quit"])
+		items.assign([L10N.t("ui.title.play"), L10N.t("ui.title.slots"), L10N.t("MENU_SETTINGS"), L10N.t("ui.title.quit")])
 	selected = clampi(selected, 0, actions.size() - 1)
 	queue_redraw()
 
 
-func _has_overwrite_target() -> bool:
-	return SaveGame.has_slot(SaveGame.AUTOSAVE)
+func _active_slot() -> String:
+	return flow.title_slot if flow != null else SaveGame.AUTOSAVE
 
 
-func _ask_overwrite(slot: String, manual := false) -> void:
+func _ask_overwrite(slot: String) -> void:
 	_overwrite_slot = slot
-	_overwrite_manual = manual
 	_confirm_play = true
 	_slots_open = false
 	actions.assign(["cancel_new", "confirm_new"])
@@ -102,15 +103,13 @@ func _ask_overwrite(slot: String, manual := false) -> void:
 
 
 func handle_back() -> bool:
-	if _slots_open:
-		_slots_open = false
-		selected = 0
+	if _confirm_play or _confirm_quit:
 		refresh()
 		return true
-	if _confirm_play or _confirm_quit:
-		_confirm_play = false
-		_confirm_quit = false
-		refresh()
+	if _slots_open or _play_open:
+		var back_to_slots := _slots_open
+		reset_menu()
+		selected = 1 if back_to_slots else 0
 		return true
 	return false
 
@@ -126,7 +125,7 @@ func _physics_process(delta: float) -> void:
 		return
 	# Консоль разработчика перекрывает титул: набранные в ней буквы и Enter
 	# не должны ходить по меню и запускать новую игру.
-	if flow != null and flow.console.visible:
+	if flow != null and (flow.console.visible or (is_instance_valid(flow.debug_panel) and flow.debug_panel.visible)):
 		return
 	if input_guard > 0.0:
 		return
@@ -137,6 +136,8 @@ func _physics_process(delta: float) -> void:
 	if CTL.pressed("up"):
 		selected = (selected + actions.size() - 1) % actions.size()
 		_confirm_quit = false
+	if _slots_open and (CTL.pressed("left") or CTL.pressed("right")):
+		selected = posmod(selected + (1 if CTL.pressed("right") else -1), actions.size())
 	if CTL.back():
 		if handle_back():
 			return
@@ -344,8 +345,10 @@ func _draw_figure(x: float, ground_y: float, t: float) -> void:
 		_portrait.scarf[i].y = -33.0 + sin(t * 2.1 - float(i) * 0.55) * float(i) * 0.65
 	InkR.save()
 	InkR.t_translate(x, ground_y)
-	InkR.t_scale(2.6, 2.6)
+	InkR.t_scale(3.15, 3.15)
+	InkR.stroke_roughness = 0.0
 	_portrait.draw()
+	InkR.stroke_roughness = 1.0
 	InkR.restore()
 
 
@@ -392,6 +395,14 @@ func _draw() -> void:
 		else:
 			draw_rect(r, Color(PAPER, 0.72 if CTL.touch_enabled else 0.45))
 		var label := items[i]
+		if _slots_open and i < _slot_keys.size():
+			if _slot_keys[i] == _active_slot():
+				label += " · " + L10N.t("ui.slots.active")
+			draw_string(FONT_BOLD, r.position + Vector2(15, 24), label,
+				HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 30.0, 17, RED if on else INK)
+			draw_string(FONT_TEXT, r.position + Vector2(15, 49), _slot_details[i],
+				HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 30.0, 15, INK)
+			continue
 		if on and actions[i] == "quit" and _confirm_quit:
 			label = L10N.t("ui.title.quit_confirm")
 		var font_sz := (28 if _slots_open or _confirm_play else 32) if CTL.touch_enabled else (21 if _slots_open or _confirm_play else 27)
@@ -412,7 +423,7 @@ func _draw_touch_header() -> void:
 	draw_string(FONT_TITLE, Vector2(48, first_y), L10N.t("TITLE_LINE1"), HORIZONTAL_ALIGNMENT_LEFT, -1, 38 if compact else 44, INK)
 	draw_string(FONT_TITLE, Vector2(48, second_y), L10N.t("TITLE_LINE2"), HORIZONTAL_ALIGNMENT_LEFT, -1, 64 if compact else 78, INK)
 	InkR.line(48, second_y + 17, 590, second_y + 17, 4.0, RED, 1.0, 1.0)
-	var subtitle := L10N.t("ui.slots.subtitle_load") if _slots_open else L10N.t("ui.title.subtitle")
+	var subtitle := _subtitle()
 	if _confirm_play:
 		subtitle = L10N.t("ui.new_game.title")
 	draw_string(FONT_TEXT, Vector2(50, second_y + 44), subtitle, HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 18, GRAY)
@@ -430,14 +441,26 @@ func _draw_desktop_header() -> void:
 	InkR.line(88.0, 340.0, 560.0, 340.0, 5.0, RED, 1.0, 2.0)
 	InkR.line(92.0, 346.0, 510.0, 346.0, 1.5, Color(INK, 0.3), 1.0, 1.2)
 
-	var sub_text := L10N.t("ui.slots.subtitle_load") if _slots_open else L10N.t("ui.title.subtitle")
+	var sub_text := _subtitle()
 	if _confirm_play:
 		sub_text = L10N.t("ui.new_game.title")
 	draw_string(FONT_TEXT, Vector2(92.0, 372.0), sub_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, GRAY)
 	if _confirm_play:
 		UIText.paragraph(self, FONT_TEXT, L10N.t("ui.new_game.warning"), Rect2(92, 393, minf(560.0, size.x - 180.0), 94), 18, INK, HORIZONTAL_ALIGNMENT_LEFT)
 
+func _subtitle() -> String:
+	if _slots_open:
+		return L10N.t("ui.slots.subtitle_load")
+	if _play_open:
+		var slot := _active_slot()
+		return L10N.t("ui.slots.auto") if slot == SaveGame.AUTOSAVE else L10N.t("ui.slots.slot", [slot.get_slice("_", 1).to_int()])
+	return L10N.t("ui.title.subtitle")
+
+
 func item_rect(i: int) -> Rect2:
+	if _slots_open and not CTL.touch_enabled:
+		var width := (minf(660.0, size.x - 168.0) - 12.0) * 0.5
+		return Rect2(84.0 + (i % 2) * (width + 12.0), 408.0 + floorf(i / 2.0) * 68.0, width, 62.0)
 	if CTL.touch_enabled:
 		var count := maxi(1, items.size())
 		var compact := size.y < 660.0
@@ -465,46 +488,39 @@ func activate(i: int) -> void:
 	if action == "confirm_new":
 		_confirm_play = false
 		SaveGame.current_slot = _overwrite_slot
-		if _overwrite_manual and flow != null:
-			flow.start_new_story()
-		else:
-			start_pressed.emit()
+		start_pressed.emit()
 		return
 	if _slots_open:
 		if action == "slots_back":
-			_slots_open = false
-			selected = 0
-			refresh()
+			handle_back()
 			return
 		if selected < _slot_keys.size() and flow != null:
-			var slot: String = _slot_keys[selected]
-			_slots_open = false
-			var slot_data := SaveGame.read_slot(slot)
-			if SaveGame.has_unfinished_run(slot_data):
-				SaveGame.current_slot = slot
-				flow.continue_run(slot)
-			elif SaveGame.has_slot(slot):
-				_ask_overwrite(slot, true)
-			else:
-				SaveGame.current_slot = slot
-				flow.start_new_story()
+			flow.title_slot = _slot_keys[selected]
+			flow.save_preferences()
+			handle_back()
 			return
 	match action:
 		"continue":
-			SaveGame.current_slot = SaveGame.AUTOSAVE
-			continue_pressed.emit()
+			continue_pressed.emit(_active_slot())
 		"slots":
 			_slots_open = true
-			selected = 0
+			selected = SaveGame.MANUAL_SLOTS.find(_active_slot()) + 1
 			refresh()
 		"settings":
 			settings_pressed.emit()
 		"play":
-			if _has_overwrite_target():
-				_ask_overwrite(SaveGame.AUTOSAVE)
+			_play_open = true
+			selected = 0
+			refresh()
+		"guide":
+			guide_pressed.emit()
+		"back":
+			handle_back()
+		"normal":
+			if SaveGame.has_slot(_active_slot()):
+				_ask_overwrite(_active_slot())
 			else:
-				_confirm_play = false
-				SaveGame.current_slot = SaveGame.AUTOSAVE
+				SaveGame.current_slot = _active_slot()
 				start_pressed.emit()
 		_:
 			# Выход — только со второго нажатия: случайный пробел или
@@ -516,7 +532,7 @@ func activate(i: int) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
-	if flow != null and flow.console.visible:
+	if flow != null and (flow.console.visible or (is_instance_valid(flow.debug_panel) and flow.debug_panel.visible)):
 		return
 	if event is InputEventMouseMotion:
 		for i in actions.size():

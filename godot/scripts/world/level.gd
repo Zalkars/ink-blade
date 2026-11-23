@@ -9,6 +9,7 @@ signal cleared
 signal checkpoint_reached(id: String, pos: Vector2)
 signal enemy_died(id: String)
 signal trigger_reached(id: String, spec: Dictionary)
+signal prop_collected(display_name_key: String)
 
 const DEFAULT_DATA := "res://content/levels/arena_01.json"
 ## Временные ID не попадают в сохранение: дети деления, призывы босса, debug-спавн.
@@ -26,6 +27,7 @@ var enemies: Array = []
 var checkpoints: Array = []
 var checkpoint_nodes: Dictionary = {}
 var killed_ids: Array[String] = []
+var collected_props: Array[String] = []
 var _split_serial := 0
 var _summon_serial := 0
 var triggers: Array = []
@@ -33,6 +35,10 @@ var fired_triggers: Array[String] = []
 var boss: Keeper
 var tile_layer: TileMapLayer
 var one_way_cells := 0
+var _one_way_tiles: Dictionary[Vector2i, Vector2i] = {}
+var enemies_enabled := true
+var _platforms_enabled := true
+var _background_enabled := true
 var hitstop := 0.0
 var data: Dictionary = {}
 ## Состояние мира из автосейва: какой чекпоинт пройден и кого уже нет.
@@ -84,7 +90,7 @@ class _FallbackLayer extends Node2D:
 
 	func _process(_delta: float) -> void:
 		if is_instance_valid(owner_level):
-			visible = not owner_level._all_strips_baked()
+			visible = owner_level._background_enabled and owner_level._platforms_enabled and not owner_level._all_strips_baked()
 			var strips := _visible_strips()
 			if visible and strips != _last_strips:
 				_last_strips = strips
@@ -152,22 +158,17 @@ class _DynamicDecorLayer extends Node2D:
 
 
 func _ready() -> void:
-	_load_data()
+	if data.is_empty():
+		_load_data()
 	_build()
 	_build_visual_layers()
 	queue_redraw()
 
 
 func _load_data() -> void:
-	var text := FileAccess.get_file_as_string(data_path)
-	if text.is_empty():
-		push_error("level: не читается " + data_path)
-		return
-	var parsed = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_error("level: плохой JSON в " + data_path)
-		return
-	data = parsed
+	data = LevelData.read_json(data_path)
+	if data.is_empty():
+		push_error("level: не читается JSON " + data_path)
 
 
 func _build() -> void:
@@ -186,6 +187,7 @@ func _build() -> void:
 	_build_checkpoints()
 	_build_tiles()
 	_build_triggers()
+	_build_props()
 
 	var index := 0
 	for spec in data.get("placements", []):
@@ -196,6 +198,34 @@ func _build() -> void:
 	for spec in data.get("enemies", []):
 		_add_enemy(spec, index)
 		index += 1
+
+
+func _build_props() -> void:
+	for id in world_state.get("props", []):
+		collected_props.append(str(id))
+	for spec in data.get("props", []):
+		var id := str(spec.get("id", ""))
+		if id.is_empty() or collected_props.has(id):
+			continue
+		var definition := PDB.get_def(StringName(spec.get("def_id", "")))
+		if definition == null:
+			continue
+		var instance := definition.scene.instantiate()
+		if not instance is SoulPickup:
+			instance.free()
+			continue
+		var pickup := instance as SoulPickup
+		pickup.definition = definition
+		pickup.placement_id = id
+		pickup.position = Vector2(float(spec.x), float(spec.y))
+		pickup.collected.connect(_on_prop_collected)
+		add_child(pickup)
+
+
+func _on_prop_collected(id: String, display_name_key: String) -> void:
+	if not collected_props.has(id):
+		collected_props.append(id)
+		prop_collected.emit(display_name_key)
 
 
 func _build_visual_layers() -> void:
@@ -439,11 +469,50 @@ func _paint_rect(rect: Rect2, one_way: bool) -> void:
 	var y1 := int(round(rect.end.y / tile))
 	for ty in range(y0, y1):
 		for tx in range(x0, x1):
+			var cell := Vector2i(tx, ty)
 			var atlas := Vector2i(InkTileset.ONE_WAY, 0) if one_way else Vector2i(
 				InkTileset.SOLID_TOP if ty == y0 else InkTileset.SOLID, 0)
-			tile_layer.set_cell(Vector2i(tx, ty), 0, atlas)
 			if one_way:
+				if not _one_way_tiles.has(cell):
+					_one_way_tiles[cell] = tile_layer.get_cell_atlas_coords(cell)
 				one_way_cells += 1
+			tile_layer.set_cell(cell, 0, atlas)
+
+
+func set_debug_environment(show_enemies: bool, show_platforms: bool, show_background: bool) -> void:
+	if enemies_enabled != show_enemies:
+		enemies_enabled = show_enemies
+		for child in get_children():
+			if child in enemies or child is InkBolt or child is InkDrop or child is InkWave:
+				child.visible = show_enemies
+				child.process_mode = Node.PROCESS_MODE_INHERIT if show_enemies else Node.PROCESS_MODE_DISABLED
+	if _platforms_enabled != show_platforms:
+		_platforms_enabled = show_platforms
+		for cell in _one_way_tiles:
+			var atlas := Vector2i(InkTileset.ONE_WAY, 0) if show_platforms else _one_way_tiles[cell]
+			if atlas == Vector2i(-1, -1):
+				tile_layer.erase_cell(cell)
+			else:
+				tile_layer.set_cell(cell, 0, atlas)
+	_background_enabled = show_background
+	_backdrop.visible = show_background
+	_dynamic.visible = show_background
+	_strips_root.visible = show_background and show_platforms
+	_fallback.visible = _strips_root.visible and not _all_strips_baked()
+	queue_redraw()
+
+
+func _draw() -> void:
+	if _background_enabled and _platforms_enabled:
+		return
+	for solid in data.get("solids", []):
+		var rect := _rect_of(solid)
+		draw_rect(rect, Color("#655548"))
+		draw_line(rect.position, Vector2(rect.end.x, rect.position.y), Color("#17130f"), 3.0)
+	if _platforms_enabled:
+		for platform in data.get("one_ways", []):
+			var rect := _rect_of(platform)
+			draw_rect(Rect2(rect.position, Vector2(rect.size.x, 6.0)), Color("#9c1f24"))
 
 
 func _add_enemy(spec: Dictionary, index: int = 0) -> void:
@@ -513,6 +582,8 @@ func _on_boss_summon(pos: Vector2, def_id: StringName, count: int) -> void:
 
 ## Точка входа для debug-консоли: создать врага по ID карточки.
 func spawn_enemy(kind: String, pos: Vector2) -> bool:
+	if not enemies_enabled:
+		return false
 	var def_id := kind
 	if not def_id.contains("."):
 		def_id = "enemy." + def_id

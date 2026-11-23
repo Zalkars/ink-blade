@@ -53,7 +53,10 @@ func _ready() -> void:
 	touch(0, play_point + Vector2(200, 0), false)
 	check(flow.state == flow.State.TITLE, "menu drag canceled")
 	tap(play_point)
-	check(flow.state == flow.State.CUTSCENE, "tap Play opens intro")
+	check(flow.state == flow.State.TITLE and flow.title_screen.actions.has("normal"), "tap Play opens the play submenu")
+	var normal := int(flow.title_screen.actions.find("normal"))
+	tap(flow.title_screen.item_rect(normal).get_center() + flow.title_screen.position)
+	check(flow.state == flow.State.CUTSCENE, "tap Normal Mode opens intro")
 	await frames()
 	var index: int = flow.cutscene.index
 	tap(Vector2(600, 500))

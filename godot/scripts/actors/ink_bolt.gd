@@ -38,7 +38,12 @@ func _physics_process(delta: float) -> void:
 		return
 	var next := global_position + velocity * delta
 	var ray := PhysicsRayQueryParameters2D.create(global_position, next + velocity.normalized() * RADIUS, 3)
-	var hit := get_world_2d().direct_space_state.intersect_ray(ray)
+	var space := get_world_2d().direct_space_state
+	var hit := space.intersect_ray(ray)
+	if not hit.is_empty() and hit.collider is Player and hit.collider.dash_t > 0.0:
+		# Keep sweeping against terrain even when the player is in front of a wall.
+		ray.exclude = [hit.collider.get_rid()]
+		hit = space.intersect_ray(ray)
 	if not hit.is_empty():
 		global_position = hit.position
 		if hit.collider is Player:
@@ -61,6 +66,8 @@ func _on_body_entered(body: Node2D) -> void:
 	if _done:
 		return
 	if body is Player:
+		if body.dash_t > 0.0:
+			return
 		_done = true
 		CombatFx.burst(self, global_position, -velocity, RED, 10)
 		body.take_damage(damage, 1.0 if velocity.x >= 0.0 else -1.0)

@@ -140,6 +140,7 @@ func _process(delta: float) -> void:
 func refresh_draw_state() -> void:
 	var should_draw: bool = editing or flow.state == flow.State.PLAY or flow.state == flow.State.GUIDE
 	should_draw = should_draw and not flow.console.visible and not hidden()
+	should_draw = should_draw and (not is_instance_valid(flow.debug_panel) or not flow.debug_panel.visible)
 	if _drawing_controls != should_draw:
 		_drawing_controls = should_draw
 		queue_redraw()
@@ -209,7 +210,7 @@ func _input(event: InputEvent) -> void:
 	# The guide highlights the actual controls but owns every tutorial tap.
 	if flow.state == flow.State.GUIDE:
 		return
-	if flow.console.visible:
+	if flow.console.visible or (is_instance_valid(flow.debug_panel) and flow.debug_panel.visible):
 		return
 	if editing:
 		_edit_input(event)

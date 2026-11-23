@@ -3,7 +3,7 @@ extends Node2D
 ## Корень каркаса: держит состояние игры, грузит уровень в LevelHost,
 ## ведёт камеру, паузу, смерть и автосейв.
 ## Один таймлайн: CTL.update() и вся игровая логика — в _physics_process.
-## Новый уровень = новая сцена в LEVELS + JSON в content/levels, код не правится.
+## Уровни регистрируются в content/levels/index.json.
 
 const TITLE_SCENE := preload("res://scenes/ui/title.tscn")
 const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
@@ -14,12 +14,6 @@ const DIALOGUE_SCENE := preload("res://scenes/ui/dialogue.tscn")
 const CONTROL_GUIDE_SCENE := preload("res://scenes/ui/control_guide.tscn")
 const PLAYER_SCENE := preload("res://scenes/actors/player.tscn")
 const SETTINGS_FILE := "user://settings.cfg"
-
-const LEVELS := {
-	"ch01_hall": preload("res://scenes/level/ch01_hall.tscn"),
-	"arena_01": preload("res://scenes/level/arena_01.tscn"),
-}
-const FIRST_LEVEL := "ch01_hall"
 
 enum State { TITLE, PLAY, PAUSE, DEAD, CLEARED, CUTSCENE, DIALOGUE, GUIDE, VICTORY }
 
@@ -55,7 +49,16 @@ var _victory_tween: Tween
 
 var level: Level
 var player: Player
-var level_id := FIRST_LEVEL
+var level_id := ""
+var title_slot := SaveGame.AUTOSAVE
+var qa_session := false
+var _title_guide := false
+var debug_panel: Control
+var debug_flight_speed := 420.0
+var debug_rules := {"flight": false, "god": false, "damage": false,
+	"enemies": true, "particles": true, "platforms": true, "background": true}
+var _debug_storage := ""
+var _debug_slot := ""
 var checkpoint_id := ""
 var granted_rewards: Array[String] = []
 var _console_guard := 0
@@ -90,6 +93,13 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Engine.physics_ticks_per_second = 120
 	InkR.init_static()
+	var args := OS.get_cmdline_user_args()
+	var level_arg := args.find("--level")
+	var requested := args[level_arg + 1] if level_arg >= 0 and level_arg + 1 < args.size() else ""
+	qa_session = level_arg >= 0 and LVL.has(requested)
+	if qa_session:
+		SaveGame.use_storage("user://qa/saves")
+	level_id = LVL.first_id()
 	load_preferences()
 	_apply_saved_display()
 	_build_stage()
@@ -98,7 +108,13 @@ func _ready() -> void:
 		_bake_particle_atlas()
 	# QA-флаг для сборки: сразу в игру, без титула.
 	# Запуск: InkBlade-Windows.exe --headless --quit-after 300 -- --play
-	if "--play" in OS.get_cmdline_user_args():
+	if qa_session:
+		if not load_level(requested):
+			_show_title()
+	elif level_arg >= 0:
+		push_warning("level: неизвестный или пустой --level: " + requested)
+		_show_title()
+	elif "--play" in args:
 		start_run()
 	else:
 		_show_title()
@@ -157,6 +173,7 @@ func _build_stage() -> void:
 	title_screen.continue_pressed.connect(continue_run)
 	title_screen.quit_pressed.connect(_quit)
 	title_screen.settings_pressed.connect(open_settings)
+	title_screen.guide_pressed.connect(show_title_guide)
 
 	console = CONSOLE_SCENE.instantiate()
 	console.flow = self
@@ -174,6 +191,9 @@ func _build_stage() -> void:
 	control_guide.flow = self
 	ui.add_child(control_guide)
 	control_guide.dismissed.connect(_on_control_guide_dismissed)
+	debug_panel = preload("res://scripts/ui/debug_panel.gd").new()
+	debug_panel.flow = self
+	ui.add_child(debug_panel)
 	if mobile_controls.visible:
 		mobile_controls._layout()
 
@@ -191,7 +211,7 @@ func _build_stage() -> void:
 
 func _physics_process(delta: float) -> void:
 	# Единственная точка, где обновляется ввод. Все читают его после этого кадра.
-	CTL.mouse_gameplay_enabled = state == State.PLAY and not settings.visible and not console.visible
+	CTL.mouse_gameplay_enabled = state == State.PLAY and not settings.visible and not console.visible and not debug_panel.visible
 	CTL.update(delta)
 	# Глобальные клавиши (F11, M, F12, отладочный HUD) работают и в настройках.
 	_handle_global()
@@ -200,7 +220,7 @@ func _physics_process(delta: float) -> void:
 		_save_delay -= delta
 		if _save_delay <= 0.0:
 			_autosave(_finale_pending or state == State.CLEARED, false, true)
-	if settings.visible:
+	if settings.visible or debug_panel.visible or console.visible:
 		return
 	if state == State.PLAY:
 		run_time += delta
@@ -281,7 +301,9 @@ func stats_line() -> String:
 func _handle_global() -> void:
 	if console.visible:
 		return
-	if CTL.pressed("help") or CTL.pressed("hitboxes"):
+	if CTL.pressed("help"):
+		hud.debug_page = 0 if hud.debug_page == 1 else 1
+	if CTL.pressed("hitboxes"):
 		hud.debug_on = not hud.debug_on
 		if is_instance_valid(level):
 			level.queue_redraw()
@@ -294,6 +316,71 @@ func _handle_global() -> void:
 		_toggle_fullscreen()
 	if CTL.pressed("screenshot"):
 		_save_screenshot()
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not is_instance_valid(debug_panel) or not event is InputEventKey or not event.pressed or event.echo:
+		return
+	var key: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+	match key:
+		KEY_F4:
+			if debug_panel.visible:
+				debug_panel.close()
+			elif not settings.visible and not control_guide.visible:
+				debug_panel.open()
+		KEY_F5, KEY_F6:
+			var page := 2 if key == KEY_F5 else 3
+			hud.debug_page = 0 if hud.debug_page == page else page
+		_:
+			return
+	get_viewport().set_input_as_handled()
+
+
+func begin_debug_session() -> void:
+	if qa_session or not _debug_storage.is_empty():
+		return
+	_flush_save()
+	_complete_autosave(true)
+	_debug_storage = SaveGame.storage
+	_debug_slot = SaveGame.current_slot
+	SaveGame.use_storage("user://debug/saves")
+	_last_save_sig = ""
+
+
+func set_debug_rule(rule: String, enabled: bool) -> void:
+	debug_rules[rule] = enabled
+	_apply_debug_rules()
+
+
+func reset_debug_rules() -> void:
+	for rule in debug_rules:
+		debug_rules[rule] = rule not in ["flight", "god", "damage"]
+	debug_flight_speed = 420.0
+	_apply_debug_rules()
+
+
+func _apply_debug_rules() -> void:
+	InkFx.particles_enabled = debug_rules.particles
+	if not InkFx.particles_enabled:
+		InkFx.parts.clear()
+		if is_instance_valid(player):
+			CombatFx.layer(player).particles.clear()
+	if is_instance_valid(level):
+		level.set_debug_environment(debug_rules.enemies, debug_rules.platforms, debug_rules.background)
+
+
+func debug_respawn() -> bool:
+	if not is_instance_valid(player) or not is_instance_valid(level):
+		return false
+	player.respawn()
+	player.global_position = level.resume_position()
+	hitstop = 0.0
+	level.hitstop = 0.0
+	_resume()
+	hud.show()
+	_follow_player()
+	camera.reset_smoothing()
+	return true
 
 
 ## F11: полноэкранный режим без рамки и обратно. На Android не нужен.
@@ -353,11 +440,17 @@ func _follow_player() -> void:
 func _check_world_bounds() -> bool:
 	if not is_instance_valid(player) or not is_instance_valid(level):
 		return false
+	if debug_rules.flight:
+		return false
 	var safe_x := clampf(player.global_position.x, level.bounds.position.x + 14.0, level.bounds.end.x - 14.0)
 	if safe_x != player.global_position.x:
 		player.global_position.x = safe_x
 		player.velocity.x = 0.0
 	if player.global_position.y > level.bounds.end.y + 160.0:
+		if debug_rules.god or not debug_rules.platforms:
+			player.global_position = level.resume_position()
+			player.velocity = Vector2.ZERO
+			return true
 		player.iframes = 0.0
 		player.take_damage(player.MAX_HP, 0.0)
 		return true
@@ -379,10 +472,7 @@ func start_run(with_intro := false) -> void:
 
 ## Загружает указанный уровень по идентификатору (используется консолью разработчика).
 func load_level(wanted: String) -> bool:
-	if not LEVELS.has(wanted):
-		return false
-	_start_level({"level": wanted}, false)
-	return true
+	return _start_level({"level": wanted}, false)
 
 
 ## Обычная загрузка сохраняет HP и душу. Смерть отмечается в сейве отдельно.
@@ -391,6 +481,10 @@ func continue_run(slot: String = SaveGame.AUTOSAVE) -> void:
 	# откатывать последние убийства на один тик.
 	_flush_save()
 	var save := SaveGame.read_slot(slot)
+	if not save.is_empty() and (int(save.get("version", 1)) > SaveGame.VERSION \
+			or not _can_load_level(str(save.get("level", LVL.first_id())))):
+		push_warning("save: слот %s недоступен в текущем режиме" % slot)
+		return
 	if not SaveGame.has_unfinished_run(save):
 		start_run()
 		return
@@ -399,15 +493,15 @@ func continue_run(slot: String = SaveGame.AUTOSAVE) -> void:
 		migrated["hp"] = Player.MAX_HP
 		migrated["soul"] = 0.0
 		migrated["dead"] = false
-	if slot != SaveGame.AUTOSAVE:
-		SaveGame.current_slot = slot
-		SaveGame.write_slot(SaveGame.AUTOSAVE, migrated)
-	_start_level(migrated)
+	var previous_slot := SaveGame.current_slot
+	SaveGame.current_slot = slot
+	if not _start_level(migrated):
+		SaveGame.current_slot = previous_slot
 
 
 func respawn_run() -> void:
 	# Used only by the death overlay. A plain Continue must never heal the player.
-	continue_run()
+	continue_run(SaveGame.current_slot)
 
 
 func save_to_slot(slot: String) -> bool:
@@ -421,7 +515,25 @@ func save_to_slot(slot: String) -> bool:
 	return SaveGame.has_slot(slot)
 
 
-func _start_level(save: Dictionary, with_intro := false) -> void:
+func _can_load_level(id: String) -> bool:
+	var definition := LVL.get_level(id)
+	return definition != null and (qa_session or not definition.qa_only)
+
+
+func _start_level(save: Dictionary, with_intro := false) -> bool:
+	var wanted := str(save.get("level", LVL.first_id()))
+	if not _can_load_level(wanted):
+		push_warning("level: уровень недоступен: " + wanted)
+		return false
+	var definition := LVL.get_level(wanted)
+	var scene := ResourceLoader.load(definition.scene_path, "PackedScene") as PackedScene
+	if scene == null:
+		return false
+	var instance := scene.instantiate()
+	if not instance is Level:
+		instance.free()
+		push_error("level: корень сцены должен быть Level: " + definition.scene_path)
+		return false
 	_complete_autosave(true)
 	_guide_pending = false
 	control_guide.visible = false
@@ -448,8 +560,7 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	hud.debug_on = false
 	state = State.PLAY
 
-	var wanted := String(save.get("level", FIRST_LEVEL))
-	level_id = wanted if LEVELS.has(wanted) else FIRST_LEVEL
+	level_id = wanted
 	checkpoint_id = String(save.get("checkpoint", ""))
 
 	granted_rewards.clear()
@@ -460,13 +571,15 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 			if not gid.is_empty() and not granted_rewards.has(gid):
 				granted_rewards.append(gid)
 
-	level = LEVELS[level_id].instantiate()
+	level = instance as Level
+	level.data = definition.world.duplicate(true)
 	level.world_state = save
 	host.add_child(level)
 	level.cleared.connect(_on_cleared.bind(true))
 	level.checkpoint_reached.connect(_on_checkpoint)
 	level.enemy_died.connect(_on_enemy_died)
 	level.trigger_reached.connect(_on_trigger)
+	level.prop_collected.connect(_on_prop_collected)
 
 	var lim := level.camera_limits()
 	camera.limit_left = lim["left"]
@@ -504,6 +617,7 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 	level.add_child(legacy_fx)
 	player.died.connect(func(): legacy_fx.animate_on_death = true)
 	level.bind_player(player)
+	_apply_debug_rules()
 
 	camera.global_position = player.global_position + Vector2(0.0, -40.0)
 	camera.reset_smoothing()
@@ -516,13 +630,14 @@ func _start_level(save: Dictionary, with_intro := false) -> void:
 		level_id, level.enemy_count(), checkpoint_id if not checkpoint_id.is_empty() else "вход"])
 	if with_intro:
 		play_cutscene("intro")
-	elif level.enemy_count() == 0 or pending_finale:
+	elif not definition.qa_only and (level.enemy_count() == 0 or pending_finale):
 		_on_cleared()
 	else:
 		var saved_dialogue = save.get("dialogue", {})
 		if saved_dialogue is Dictionary and not String(saved_dialogue.get("id", "")).is_empty():
 			play_dialogue(String(saved_dialogue.id), int(saved_dialogue.get("line", 0)))
 	_autosave(_finale_pending)
+	return true
 
 
 ## Зоны живут в данных уровня, а не в коде: правка геометрии не разводит
@@ -683,9 +798,23 @@ func _on_control_guide_dismissed() -> void:
 	for action in ["jump", "attack", "back", "pause"]:
 		CTL.consume(action)
 	CTL.clear_touch()
+	if _title_guide:
+		_title_guide = false
+		state = State.TITLE
+		get_tree().paused = false
+		title_screen.input_guard = 0.2
+		title_screen.show()
+		return
 	state = State.PLAY
 	get_tree().paused = false
 	hud.visible = true
+
+
+func show_title_guide() -> void:
+	_title_guide = true
+	title_screen.hide()
+	_open_control_guide()
+	hud.hide()
 
 
 func _show_title() -> void:
@@ -696,12 +825,17 @@ func _show_title() -> void:
 	get_tree().paused = false
 	_finale_pending = false
 	_clear_level()
+	if not _debug_storage.is_empty():
+		SaveGame.use_storage(_debug_storage)
+		SaveGame.current_slot = _debug_slot
+		_debug_storage = ""
+	reset_debug_rules()
 	hud.visible = false
 	overlay.close()
 	cutscene.close()
 	dialogue.close()
 	control_guide.visible = false
-	title_screen.refresh()
+	title_screen.reset_menu()
 	# Титул открывается заново: окно защиты от нажатия с прошлого экрана
 	# не переносится, иначе первое касание меню пропадает.
 	title_screen.input_guard = 0.0
@@ -738,6 +872,11 @@ func _on_enemy_died(id: String) -> void:
 	# считаются в статистике — иначе после «Продолжить» счётчик скачет.
 	if level == null or not level.is_temporary_id(id):
 		run_kills += 1
+	_request_autosave(0.0)
+
+
+func _on_prop_collected(display_name_key: String) -> void:
+	hud.show_toast(L10N.t("ui.hud.toast.pickup", [L10N.t(display_name_key)]))
 	_request_autosave(0.0)
 
 
@@ -860,6 +999,9 @@ func _on_player_died() -> void:
 
 
 func _on_cleared(live := false) -> void:
+	var definition := LVL.get_level(level_id)
+	if definition != null and definition.qa_only:
+		return
 	if _finale_pending or state == State.CLEARED:
 		return
 	_finale_seen = false
@@ -904,6 +1046,9 @@ func _show_cleared() -> void:
 func _level_name() -> String:
 	if level == null:
 		return level_id
+	var key := str(level.data.get("display_name_key", ""))
+	if not key.is_empty():
+		return L10N.t(key)
 	return String(level.data.get("name", level_id))
 
 
@@ -933,7 +1078,7 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 	# Дешёвая подпись состояния: без сериализации видно, изменилось ли что-то.
 	# Неизменное состояние повторно не пишется — это главная экономия на телефоне.
 	var signature := str([
-		level_id, checkpoint_id, level.killed_ids.size(), level.fired_triggers.size(),
+		level_id, checkpoint_id, level.killed_ids.size(), level.fired_triggers.size(), level.collected_props.size(),
 		granted_rewards, player.weapon_ids(), player.current_weapon_id(),
 		player.MAX_HP if dead_now else player.hp,
 		0.0 if dead_now else snappedf(player.soul, 0.1),
@@ -950,6 +1095,7 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 		"checkpoint": checkpoint_id,
 		"killed": level.killed_ids.duplicate(),
 		"triggers": level.fired_triggers.duplicate(),
+		"props": level.collected_props.duplicate(),
 		"grants": granted_rewards.duplicate(),
 		"weapons": player.weapon_ids(),
 		"weapon": player.current_weapon_id(),
@@ -983,6 +1129,8 @@ func _on_overlay_choice(item: String) -> void:
 			match item:
 				"settings":
 					open_settings()
+				"debug":
+					debug_panel.open()
 				"resume":
 					_resume()
 				"restart":
@@ -1030,7 +1178,9 @@ func _notification(what: int) -> void:
 		if state == State.PLAY and is_instance_valid(overlay):
 			_pause()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
-		if settings.visible:
+		if is_instance_valid(debug_panel) and debug_panel.visible:
+			debug_panel.close()
+		elif settings.visible:
 			settings.go_back()
 		elif state == State.TITLE and title_screen.has_method("handle_back") and title_screen.handle_back():
 			return
@@ -1064,6 +1214,8 @@ func close_settings() -> void:
 func load_preferences() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_FILE)
+	var saved_slot := str(cfg.get_value("saves", "selected_slot", SaveGame.AUTOSAVE))
+	title_slot = saved_slot if not qa_session and saved_slot in SaveGame.MANUAL_SLOTS else SaveGame.AUTOSAVE
 	shake_enabled = bool(cfg.get_value("general", "shake", true))
 	master_volume = clampf(float(cfg.get_value("general", "volume", 0.8)), 0, 1)
 	CTL.vibration_enabled = bool(cfg.get_value("general", "vibration", true))
@@ -1105,6 +1257,8 @@ func save_preferences() -> void:
 	apply_preferences()
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_FILE)
+	if not qa_session:
+		cfg.set_value("saves", "selected_slot", title_slot)
 	cfg.set_value("general", "shake", shake_enabled)
 	cfg.set_value("general", "volume", master_volume)
 	cfg.set_value("general", "vibration", CTL.vibration_enabled)

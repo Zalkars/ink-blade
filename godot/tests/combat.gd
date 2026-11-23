@@ -100,6 +100,31 @@ func _ready() -> void:
 	fx.set_physics_process(false)
 	check(fx.marks.size() == 1, "fast bolt hits wall and leaves a surface mark")
 	await ticks(2)
+	var through_dash := InkBolt.new()
+	through_dash.position = Vector2(240, 297)
+	through_dash.velocity = Vector2(1000, 0)
+	room.add_child(through_dash)
+	through_dash.set_physics_process(false)
+	player.iframes = 0.0
+	player.dash_t = 0.1
+	var hp_before := player.hp
+	await ticks(2)
+	through_dash._on_body_entered(player)
+	through_dash._physics_process(0.12)
+	check(not through_dash.is_queued_for_deletion() and through_dash.position.x > player.position.x
+		and player.hp == hp_before, "a dashing player neither consumes nor stops the bolt")
+	player.dash_t = 0.0
+	player.hurt_t = 0.0
+	player.attack_cd = 0.0
+	player._try_attack()
+	through_dash.position = player.position + Vector2(42, 0)
+	await ticks(2)
+	player._physics_process(0.06)
+	check(is_instance_valid(through_dash) and not through_dash.is_queued_for_deletion(), "blade attack passes through the bolt")
+	player.iframes = 0.0
+	through_dash._on_body_entered(player)
+	check(through_dash.is_queued_for_deletion() and player.hp == hp_before - 1, "normal player hit still consumes the bolt")
+	player.attack_t = 0.0
 	var drop := InkDrop.new()
 	drop.position = Vector2(450, 280)
 	drop.falling = true
@@ -116,6 +141,17 @@ func _ready() -> void:
 	wave.velocity = Vector2(360, 0)
 	room.add_child(wave)
 	wave.set_physics_process(false)
+	player.dash_t = Player.DASH_TIME
+	wave._on_body_entered(player)
+	check(not wave.is_queued_for_deletion(), "boss wave survives dash contact")
+	var rain := InkDrop.new()
+	rain.falling = true
+	room.add_child(rain)
+	rain.set_physics_process(false)
+	rain._on_body_entered(player)
+	check(not rain._hit_player and not rain.is_queued_for_deletion(), "dashing through boss rain does not consume its hit")
+	rain.queue_free()
+	player.dash_t = 0.0
 	wave._physics_process(0.1)
 	check(fx.marks.size() == 3, "wave stains the wall on contact")
 	fx._physics_process(2.0)

@@ -54,6 +54,7 @@ func open(m: int, subtitle: String = "") -> void:
 				["resume", "ui.pause.resume"],
 				["slots", "ui.pause.slots"],
 				["settings", "MENU_SETTINGS"],
+				["debug", "debug.title"],
 				["restart", "ui.pause.restart"],
 				["menu", "ui.pause.menu"],
 			])
@@ -131,6 +132,8 @@ func close() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not visible:
+		return
+	if flow != null and (flow.console.visible or (is_instance_valid(flow.debug_panel) and flow.debug_panel.visible)):
 		return
 	if mode == Mode.DEAD:
 		_death_t += delta
@@ -265,7 +268,7 @@ func _draw() -> void:
 		var baseline := cy + (FONT_BOLD.get_ascent(sz) - FONT_BOLD.get_descent(sz)) * 0.5
 		draw_string(FONT_BOLD, Vector2(r.position.x + 36.0, baseline), labels[i],
 			HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 56.0, sz, Color(col, 1.0 if on else 0.78))
-		if actions[i] in ["settings", "slots"]:
+		if actions[i] in ["settings", "slots", "debug"]:
 			draw_string(FONT_BOLD, Vector2(r.end.x - 28.0, cy + 7.0), "›",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(INK, 0.7 if on else 0.35))
 

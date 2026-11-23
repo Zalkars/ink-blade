@@ -68,7 +68,7 @@ func _physics_process(delta: float) -> void:
 func _on_body_entered(body: Node2D) -> void:
 	if _done:
 		return
-	if body is Player and not _hit_player:
+	if body is Player and body.dash_t <= 0.0 and not _hit_player:
 		_hit_player = true
 		set_deferred("monitoring", false)
 		body.take_damage(damage, 1.0)

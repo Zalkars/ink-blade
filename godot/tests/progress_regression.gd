@@ -232,7 +232,8 @@ func _ready() -> void:
 	flow.cutscene.advance()
 	var mid_finale := SaveGame.read_slot(SaveGame.AUTOSAVE)
 	check(bool(mid_finale.get("cleared", false)) and not bool(mid_finale.get("finale_seen", false)), "cleared mid-finale marks finale_seen false")
-	flow.title_screen.refresh()
+	flow.title_screen.reset_menu()
+	flow.title_screen.activate(0)
 	check(flow.title_screen.actions.has("continue"), "title keeps Continue until finale finishes")
 	flow.continue_run()
 	check(flow.cutscene.visible and flow.state == flow.State.CUTSCENE, "continue with unseen finale replays finale")
@@ -248,21 +249,22 @@ func _ready() -> void:
 	fresh()
 	flow.player.soul = 44.0
 	flow._autosave(false)
-	flow.title_screen.refresh()
+	flow.title_screen.reset_menu()
 	flow.title_screen.visible = true
 	flow.title_screen.selected = 0
 	flow.title_screen.input_guard = 0.0
 	flow.title_screen.activate(0)
-	check(flow.title_screen._confirm_play and flow.title_screen.visible, "Play over unfinished save asks confirmation")
+	flow.title_screen.activate(flow.title_screen.actions.find("normal"))
+	check(flow.title_screen._confirm_play and flow.title_screen.visible, "Normal Mode over unfinished save asks confirmation")
 	check(flow.title_screen.handle_back() and not flow.title_screen._confirm_play, "Back cancels overwrite confirmation")
 	flow.title_screen.input_guard = 0.0
-	flow.title_screen.activate(0)
-	check(flow.title_screen._confirm_play, "first Play press arms confirmation again")
+	flow.title_screen.activate(flow.title_screen.actions.find("normal"))
+	check(flow.title_screen._confirm_play, "Normal Mode arms confirmation again")
 	check(flow.title_screen.actions[flow.title_screen.selected] == "cancel_new", "overwrite confirmation defaults to Cancel")
 	flow.title_screen.input_guard = 0.0
 	flow.title_screen.activate(0)
 	check(not flow.title_screen._confirm_play and SaveGame.read_slot("auto").soul == 44, "repeated confirm on safe default preserves save")
-	flow.title_screen.activate(0)
+	flow.title_screen.activate(flow.title_screen.actions.find("normal"))
 	flow.title_screen.input_guard = 0.0
 	flow.title_screen.activate(flow.title_screen.actions.find("confirm_new"))
 	check(not flow.title_screen.visible and flow.state == flow.State.CUTSCENE, "explicit overwrite choice starts new intro")

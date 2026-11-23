@@ -16,6 +16,10 @@ var flow: Node
 var player: Player
 var boss: Keeper
 var debug_on := false
+var debug_page := 0:
+	set(value):
+		debug_page = value
+		queue_redraw()
 var hint := ""
 var toast := ""
 var toast_t := 0.0
@@ -84,7 +88,7 @@ func _process(delta: float) -> void:
 	var combo_visible: bool = flow != null and flow.combo >= 2 and flow.combo_t > 0.0
 	if animate or int(_t * 10.0) != ink_frame or vitals != _vitals or boss_status != _boss_status \
 		or screen_fx != _screen_fx or combo_visible or combo_visible != _combo_visible \
-		or debug_on or debug_on != _was_debug_on:
+		or debug_on or debug_page > 0 or debug_on != _was_debug_on:
 		queue_redraw()
 	_vitals = vitals
 	_boss_status = boss_status
@@ -153,7 +157,7 @@ func _draw() -> void:
 	if toast_t > 0.0 and not toast.is_empty():
 		_draw_toast(132.0 if boss_visible else 96.0)
 
-	if debug_on:
+	if debug_on or debug_page > 0:
 		_draw_debug()
 
 
@@ -384,13 +388,27 @@ func _draw_toast(y: float) -> void:
 
 func _draw_debug() -> void:
 	var lines := PackedStringArray()
-	lines.append("FPS %d" % Engine.get_frames_per_second())
-	lines.append("draw calls %d" % int(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)))
-	lines.append("tick %d Hz" % int(Engine.physics_ticks_per_second))
-	lines.append("enemies %d" % (get_tree().get_nodes_in_group("enemies").size()))
-	lines.append("pos %.0f, %.0f" % [player.global_position.x, player.global_position.y] if player != null else "pos —")
-	lines.append("HITBOXES ON (F2)")
-	var y := 104.0
+	match debug_page:
+		1:
+			lines = ["F2 · " + L10N.t("debug.hitboxes"), "F3 · " + L10N.t("debug.console"),
+				"F4 · " + L10N.t("debug.title"), "F5 · " + L10N.t("debug.performance"), "F6 · " + L10N.t("debug.world")]
+		2:
+			lines = ["FPS %d · %d Hz" % [Engine.get_frames_per_second(), Engine.physics_ticks_per_second],
+				"Draw calls %d" % Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+				"Physics %.2f ms" % (Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0),
+				"Video %.1f MB" % (Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0),
+				"Particles %d" % InkFx.parts.size()]
+		3:
+			if is_instance_valid(player) and flow != null and is_instance_valid(flow.level):
+				lines = ["%s / %s" % [flow.level_id, flow.checkpoint_id],
+					"XY %.1f, %.1f" % [player.global_position.x, player.global_position.y],
+					"V %.0f, %.0f · HP %d" % [player.velocity.x, player.velocity.y, player.hp],
+					"%s · %d / %d" % [L10N.t("debug.enemies"), flow.level.enemy_count(), flow.level.killed_ids.size()]]
+	if debug_on:
+		lines.append("F2 · " + L10N.t("debug.hitboxes"))
+	var origin := Vector2(size.x - 243.0, 90.0)
+	draw_rect(Rect2(origin, Vector2(223, 14 + lines.size() * 20)), Color(INK, 0.91))
+	var y := origin.y + 22.0
 	for line in lines:
-		draw_string(FONT_TEXT, Vector2(size.x - 200.0, y), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, FAINT)
-		y += 16.0
+		draw_string(FONT_TEXT, Vector2(origin.x + 12.0, y), line, HORIZONTAL_ALIGNMENT_LEFT, 199, 15, Color("#f1e6d0"))
+		y += 20.0

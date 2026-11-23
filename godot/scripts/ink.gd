@@ -53,6 +53,7 @@ static var _alpha_stack: Array = []
 static var _tx_stack: Array = []
 static var _tx := Transform2D()
 static var _boil := 0
+static var stroke_roughness := 1.0
 static var _seed: int = 123456789
 static var _fonts: Dictionary = {}
 static var _inited := false
@@ -294,8 +295,9 @@ static func poly(pts: Array, width := 2.0, color2 = null, a := 1.0, jitter := 1.
 	if _cv == null or pts.size() < 2:
 		return
 	var col: Color = color2 if color2 != null else INK
-	for p in range(maxi(1, passes)):
-		var d := _wobble(pts, jitter * (1.0 if p == 0 else 0.65), closed)
+	var count := maxi(1, passes) if stroke_roughness > 0.0 else 1
+	for p in range(count):
+		var d := _wobble(pts, jitter * stroke_roughness * (1.0 if p == 0 else 0.65), closed) if stroke_roughness > 0.0 else pts
 		if d.size() < 2:
 			break
 		var pcol := ca(col, a)
@@ -309,7 +311,16 @@ static func poly(pts: Array, width := 2.0, color2 = null, a := 1.0, jitter := 1.
 		var pl := PackedVector2Array(d)
 		if closed:
 			pl.append(d[0])
-		_cv.draw_polyline(pl, pcol, pw, true)
+		if stroke_roughness <= 0.0:
+			# The title portrait is enlarged. Transform the points first so the
+			# antialias fringe stays one canvas pixel instead of growing with it.
+			for i in pl.size():
+				pl[i] = _tx * pl[i]
+			_cv.draw_set_transform_matrix(Transform2D.IDENTITY)
+			_cv.draw_polyline(pl, pcol, pw * _tx.x.length(), true)
+			_apply()
+		else:
+			_cv.draw_polyline(pl, pcol, pw, true)
 
 static func line(x1: float, y1: float, x2: float, y2: float, width := 2.0, color2 = null, a := 1.0, jitter := 1.15, dash = null) -> void:
 	poly([Vector2(x1, y1), Vector2(x2, y2)], width, color2, a, jitter, false, 1, dash)
@@ -317,7 +328,7 @@ static func line(x1: float, y1: float, x2: float, y2: float, width := 2.0, color
 static func fill_poly(pts: Array, color2: Color, a := 1.0, jitter := 0.9, outline := false, outline_color = null, outline_width := 2.0, passes := 1) -> void:
 	if _cv == null or pts.size() < 3:
 		return
-	var d: Array = pts if jitter <= 0.0 else _wobble(pts, jitter, true)
+	var d: Array = pts if jitter * stroke_roughness <= 0.0 else _wobble(pts, jitter * stroke_roughness, true)
 	if d.size() < 3:
 		return
 	var pv := PackedVector2Array(d)

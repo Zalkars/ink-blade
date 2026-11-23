@@ -107,6 +107,7 @@ var _visual = preload("res://scripts/visuals/player_visual.gd").new(null, -14.0,
 var _visual_pos := Vector2.INF
 var _wob := 0.0
 var _spawn := Vector2.ZERO
+var _debug_flying := false
 
 
 func _ready() -> void:
@@ -266,6 +267,17 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		queue_redraw()
 		return
+
+	var flow := _flow()
+	if flow != null and flow.debug_rules.flight:
+		_debug_flying = true
+		dash_t = 0.0
+		velocity = Vector2(CTL.axis_x(), CTL.axis_y()).limit_length() * flow.debug_flight_speed
+		move_and_slide()
+		return
+	if _debug_flying:
+		_debug_flying = false
+		velocity = Vector2.ZERO
 
 	coyote = maxf(0.0, coyote - delta)
 	jump_buf = maxf(0.0, jump_buf - delta)
@@ -479,10 +491,12 @@ func _strike() -> void:
 	params.shape = shape
 	params.transform = Transform2D(0.0, center)
 	params.collision_mask = ENEMY_LAYER
+	# Hostile projectiles are Areas. A strike only queries physical bodies.
 	params.collide_with_areas = false
 	params.collide_with_bodies = true
 	var found := get_world_2d().direct_space_state.intersect_shape(params, 8)
 	var fl := _flow()
+	var lethal: bool = fl != null and fl.debug_rules.damage
 	for hit in found:
 		var body = hit.get("collider")
 		if body != null and body.has_method("hit") and not _hit_targets.has(body.get_instance_id()):
@@ -491,7 +505,9 @@ func _strike() -> void:
 				continue
 			_hit_targets[body.get_instance_id()] = true
 			var hp_before := int(body.get("hp"))
-			body.hit(swing_damage, attack_facing, swing_knock)
+			if lethal and body.has_method("open_seal"):
+				body.open_seal(1.0)
+			body.hit(maxi(hp_before, swing_damage) if lethal else swing_damage, attack_facing, swing_knock)
 			if int(body.get("hp")) < hp_before:
 				soul = minf(99.0, soul + 12.0)
 				CombatFx.burst(self, body.global_position, Vector2(attack_facing, -0.35))
@@ -515,6 +531,9 @@ func _strike() -> void:
 func take_damage(amount: int, from_dir: float) -> void:
 	if dead or iframes > 0.0 or amount <= 0:
 		return
+	var fl := _flow()
+	if fl != null and fl.debug_rules.god:
+		return
 	hp = maxi(0, hp - amount)
 	iframes = HURT_INVULN
 	hurt_t = 0.28
@@ -531,7 +550,6 @@ func take_damage(amount: int, from_dir: float) -> void:
 	CTL.rumble(0.9, 0.5, 220)
 	SND.hurt()
 	CombatFx.burst(self, global_position, Vector2(from_dir, -0.6), RED, 20)
-	var fl := _flow()
 	if fl != null:
 		fl.freeze(0.09 if hp == 0 else 0.075)
 	var away := 1.0 if from_dir == 0.0 else from_dir
