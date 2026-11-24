@@ -4,7 +4,7 @@ extends RefCounted
 ## Сохранения: слотовая схема с самого начала, JSON в user://saves.
 ## Поддерживаются автосейв и три ручных слота; запись атомарная: tmp -> rename, предыдущая версия уходит в .bak.
 
-const VERSION := 5
+const VERSION := 6
 const DIR := "user://saves"
 const AUTOSAVE := "auto"
 const MANUAL_SLOTS := ["slot_1", "slot_2", "slot_3"]
@@ -136,11 +136,12 @@ static func _is_healthy(path: String) -> bool:
 	return not _read_file(path).is_empty()
 
 
-static func read_slot(slot: String) -> Dictionary:
+static func read_slot(slot: String, directory := "") -> Dictionary:
 	flush_autosave()
-	var parsed := _read_file(_slot_path(slot))
+	var path := _slot_path(slot) if directory.is_empty() else directory.path_join(slot + ".json")
+	var parsed := _read_file(path)
 	if parsed.is_empty():
-		parsed = _read_file(_slot_path(slot, ".json.bak"))
+		parsed = _read_file(path + ".bak")
 	if parsed.is_empty():
 		return {}
 	var version := int(parsed.get("version", 0))
@@ -196,6 +197,10 @@ static func migrate(data: Dictionary) -> Dictionary:
 		out["ink_marks"] = []
 	if typeof(out.get("props")) != TYPE_ARRAY:
 		out["props"] = []
+	if not out.get("switches") is Array:
+		out["switches"] = []
+	if not out.get("rooms") is Dictionary:
+		out["rooms"] = {}
 	out["dead"] = bool(out.get("dead", false))
 	if version <= VERSION:
 		out["version"] = VERSION
@@ -227,6 +232,9 @@ static func slot_summary(slot: String) -> String:
 		"cp_04":
 			zone_key = "zone.sanctum.title"
 	var enemies_left := int(data.get("enemies_left", 0))
+	var level := LVL.get_level(str(data.get("level", "")))
+	if level != null and level.world.has("display_name_key"):
+		zone_key = str(level.world.display_name_key)
 	return L10N.t("ui.slots.summary", [L10N.t(zone_key), enemies_left])
 
 

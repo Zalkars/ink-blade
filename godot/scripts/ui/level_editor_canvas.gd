@@ -2,17 +2,28 @@ extends Control
 
 signal changed
 signal selection_changed
+signal tool_changed(tool: String)
+signal view_changed(percent: int, cell: Vector2i)
 
 const Decor := preload("res://scripts/world/level_decor.gd")
 const INK := Color("#211b19")
 const PAPER := Color("#eaddc4")
 const RED := Color("#a8262c")
 const FONT := preload("res://assets/fonts/PTSerif-Regular.ttf")
+const LAYERS := {
+	"geometry": ["solids", "one_ways"], "actors": ["checkpoints", "placements", "props"],
+	"decor": ["decor"], "logic": RoomLinks.SECTIONS,
+}
 
 var draft: LevelDraft
 var tool := "solid"
 var selection := Vector2i(-1, -1)
-var hide_decor := false
+var group: Array[Vector2i] = []
+var hidden_sections: Array = []
+var locked: Array = []
+var invalid_exits := PackedStringArray()
+var grid_visible := true
+var _link_source := Vector2i(-1, -1)
 var zoom := 1.0
 var offset := Vector2.ZERO
 var cursor := Vector2.ZERO
@@ -20,11 +31,15 @@ var _origin := Vector2.ZERO
 var _dragging := false
 var _panning := false
 var _touch := -1
+var _view_size := Vector2.ZERO
+var _last_percent := 0
+var _last_cell := Vector2i(-1, -1)
 
 
 func _ready() -> void:
 	clip_contents = true
 	focus_mode = FOCUS_ALL
+	resized.connect(_keep_view_centered)
 	mouse_exited.connect(queue_redraw)
 
 
@@ -32,6 +47,7 @@ func fit() -> void:
 	var bounds := draft.bounds_rect()
 	zoom = maxf(0.06, minf((size.x - 64) / bounds.size.x, (size.y - 64) / bounds.size.y))
 	offset = (size - bounds.size * zoom) * 0.5
+	_report_view()
 	queue_redraw()
 
 
@@ -39,33 +55,100 @@ func adjust_zoom(factor: float, anchor: Vector2) -> void:
 	var world := (anchor - offset) / zoom
 	zoom = clampf(zoom * factor, 0.06, 4.0)
 	offset = anchor - world * zoom
+	_report_view()
 	queue_redraw()
 
 
 func refresh(clear_selection := true) -> void:
 	if clear_selection:
 		selection = Vector2i(-1, -1)
+		group.clear()
+		_link_source = Vector2i(-1, -1)
 		selection_changed.emit()
+	_report_view()
 	queue_redraw()
 
 
+func _keep_view_centered() -> void:
+	if _view_size != Vector2.ZERO:
+		offset += (size - _view_size) * 0.5
+	_view_size = size
+	queue_redraw()
+
+
+func _report_view() -> void:
+	var percent := roundi(zoom * 100)
+	var cell := Vector2i(cursor_point())
+	if percent != _last_percent or cell != _last_cell:
+		_last_percent = percent
+		_last_cell = cell
+		view_changed.emit(percent, cell)
+
+
 func delete_selected() -> void:
-	draft.delete_item(selection)
+	draft.delete_items(editable_selection())
 	refresh()
 	changed.emit()
 
 
 func move_selected(delta: Vector2) -> void:
-	draft.move_item(selection, delta)
+	draft.move_items(editable_selection(), delta)
 	changed.emit()
 	queue_redraw()
 
 
 func duplicate_selected() -> void:
+	if editable_selection().size() != 1:
+		return
 	selection = draft.duplicate_item(selection)
+	group.assign([selection])
 	selection_changed.emit()
 	changed.emit()
 	queue_redraw()
+
+
+func cursor_point() -> Vector2:
+	return _grid_cell(cursor)
+
+
+func set_layer(layer: String, show_layer: bool, editable: bool) -> void:
+	var before := editable_selection()
+	for section in LAYERS[layer]:
+		hidden_sections.erase(section)
+		locked.erase(section)
+		if not show_layer:
+			hidden_sections.append(section)
+		if not editable:
+			locked.append(section)
+	var available := editable_selection()
+	if before != available:
+		group.assign(available)
+		selection = available.back() if not available.is_empty() else Vector2i(-1, -1)
+		selection_changed.emit()
+	if _link_source.x >= 0 and LevelDraft.SECTIONS[_link_source.x] in _ignored():
+		_link_source = Vector2i(-1, -1)
+	queue_redraw()
+
+
+func editable_selection() -> Array[Vector2i]:
+	var items: Array[Vector2i] = []
+	if group.is_empty():
+		items.append(selection)
+	else:
+		items.assign(group)
+	return items.filter(func(key: Vector2i) -> bool: return key.x >= 0 and LevelDraft.SECTIONS[key.x] not in hidden_sections and LevelDraft.SECTIONS[key.x] not in locked)
+
+
+func _ignored() -> Array:
+	return hidden_sections + locked
+
+
+func _can_place() -> bool:
+	var kind := tool.get_slice(":", 0)
+	var section: String = {"solid": "solids", "ledge": "solids", "steps": "solids", "platform": "one_ways", "bridge": "one_ways",
+		"checkpoint": "checkpoints", "enemy": "placements", "prop": "props", "decor": "decor", "door": "doors",
+		"switch": "switches", "entry": "entries", "exit": "exits", "finish": "exits"}.get(kind, "")
+	return section not in hidden_sections and section not in locked
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -90,11 +173,11 @@ func _gui_input(event: InputEvent) -> void:
 		if event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 			adjust_zoom(1.16 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.16, event.position)
 		elif event.pressed and (left or middle):
-			_begin(event.position, middle or tool == "pan" or Input.is_key_pressed(KEY_SPACE))
+			_begin(event.position, middle or tool == "pan" or Input.is_key_pressed(KEY_SPACE), event.shift_pressed)
 		elif not event.pressed and (left or middle):
 			_end(event.position)
 		elif event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
-			draft.delete_item(draft.find_at((event.position - offset) / zoom))
+			draft.delete_item(draft.find_at((event.position - offset) / zoom, _ignored()))
 			refresh()
 			changed.emit()
 		accept_event()
@@ -112,15 +195,26 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 
 
-func _begin(screen: Vector2, pan: bool) -> void:
+func _begin(screen: Vector2, pan: bool, additive := false) -> void:
 	grab_focus()
 	cursor = (screen - offset) / zoom
 	_origin = cursor
 	_panning = pan
 	_dragging = not pan
 	if not pan and tool in ["select", "resize"]:
-		selection = draft.find_at(cursor)
+		var target := draft.find_at(cursor, _ignored())
+		if additive and target.x >= 0 and tool == "select":
+			if target in group:
+				group.erase(target)
+			else:
+				group.append(target)
+		elif target not in group or tool == "resize":
+			group.clear()
+			if target.x >= 0:
+				group.append(target)
+		selection = group.back() if not group.is_empty() else Vector2i(-1, -1)
 		selection_changed.emit()
+	_report_view()
 	queue_redraw()
 
 
@@ -128,6 +222,7 @@ func _motion(screen: Vector2, movement: Vector2) -> void:
 	if _panning:
 		offset += movement
 	cursor = (screen - offset) / zoom
+	_report_view()
 	queue_redraw()
 
 
@@ -137,20 +232,41 @@ func _end(screen: Vector2) -> void:
 		return
 	_dragging = false
 	cursor = (screen - offset) / zoom
+	_report_view()
 	var start := _grid_cell(_origin)
 	var finish := _grid_cell(cursor)
 	match tool:
 		"select":
-			draft.move_item(selection, (cursor - _origin).snapped(Vector2.ONE * LevelDraft.GRID))
+			draft.move_items(editable_selection(), (cursor - _origin).snapped(Vector2.ONE * LevelDraft.GRID))
+		"box":
+			group = draft.find_in(Rect2(_origin, cursor - _origin).abs(), _ignored())
+			selection = group.back() if not group.is_empty() else Vector2i(-1, -1)
+			if not group.is_empty():
+				tool = "select"
+				tool_changed.emit(tool)
+			selection_changed.emit()
+		"link":
+			_link_at(draft.find_at(cursor, _ignored()))
 		"resize":
 			draft.resize_item(selection, (cursor - _origin).snapped(Vector2.ONE * LevelDraft.GRID))
 		"erase":
-			draft.delete_item(draft.find_at(_origin))
-			selection = Vector2i(-1, -1)
+			draft.delete_item(draft.find_at(_origin, _ignored()))
+			refresh()
 		_:
-			draft.place(tool, start, finish)
+			if _can_place():
+				draft.place(tool, start, finish)
 	changed.emit()
 	queue_redraw()
+
+
+func _link_at(target: Vector2i) -> void:
+	if target.x < 0:
+		_link_source = Vector2i(-1, -1)
+		return
+	if LevelDraft.SECTIONS[target.x] == "switches":
+		_link_source = target
+	elif draft.link_switch(_link_source, target):
+		_link_source = Vector2i(-1, -1)
 
 
 func _grid_cell(world: Vector2) -> Vector2:
@@ -161,12 +277,12 @@ func _grid_cell(world: Vector2) -> Vector2:
 func _draw() -> void:
 	if draft == null:
 		return
-	draw_rect(Rect2(Vector2.ZERO, size), Color("#352926"))
+	draw_rect(Rect2(Vector2.ZERO, size), Color("#332b28"))
 	var bounds := draft.bounds_rect()
 	var world_view := Rect2(-offset / zoom, size / zoom).intersection(bounds)
 	draw_set_transform(offset, 0, Vector2.ONE * zoom)
 	draw_rect(bounds, PAPER)
-	if not hide_decor:
+	if "decor" not in hidden_sections:
 		InkR.set_canvas(self)
 		InkR.begin_frame(0.0)
 		InkR.t_translate(offset.x, offset.y)
@@ -176,33 +292,54 @@ func _draw() -> void:
 			if rect.intersects(world_view) and Decor.decor_has_support(row, draft.data):
 				Decor.draw_decor(row, draft.data)
 		draw_set_transform(offset, 0, Vector2.ONE * zoom)
-	for row in draft.data.solids:
+	for row in draft.data.solids if "solids" not in hidden_sections else []:
 		var rect := LevelDraft.rect(row)
 		draw_rect(rect, Color("#645349"))
 		draw_line(rect.position, Vector2(rect.end.x, rect.position.y), Color("#382c28"), 4 / zoom)
-	for row in draft.data.one_ways:
+	for row in draft.data.one_ways if "one_ways" not in hidden_sections else []:
 		var rect := LevelDraft.rect(row)
 		draw_rect(rect, Color("#a6755c"))
 		draw_line(rect.position, Vector2(rect.end.x, rect.position.y), RED, 2 / zoom)
-	_draw_grid(world_view)
+	if grid_visible:
+		_draw_grid(world_view)
 	draw_rect(bounds, Color(INK, 0.85), false, 2 / zoom)
 	_draw_pin(LevelDraft.point(draft.data.spawn), Color("#2b6745"), "▶")
-	for row in draft.data.checkpoints:
+	for row in draft.data.checkpoints if "checkpoints" not in hidden_sections else []:
 		_draw_pin(LevelDraft.point(row), Color("#415779"), "◆")
-	for row in draft.data.placements:
+	for row in draft.data.placements if "placements" not in hidden_sections else []:
 		_draw_pin(LevelDraft.point(row), RED, "!")
-	for row in draft.data.props:
+	for row in draft.data.props if "props" not in hidden_sections else []:
 		_draw_pin(LevelDraft.point(row), Color("#935f23"), "+")
-	if not hide_decor:
+	if "decor" not in hidden_sections:
 		for row in draft.data.decor:
 			if not Decor.decor_has_support(row, draft.data):
 				draw_rect(draft.item_rect("decor", row), RED, false, 2.0 / zoom)
+	if "doors" not in hidden_sections:
+		_draw_links()
 	_draw_ghost(bounds)
 	draw_set_transform(Vector2.ZERO)
-	var cell := _grid_cell(cursor)
-	var info := "%d, %d  ·  %d%%" % [roundi(cell.x), roundi(cell.y), roundi(zoom * 100)]
-	draw_rect(Rect2(Vector2(10, size.y - 31), Vector2(162, 23)), Color(INK, 0.9))
-	draw_string(FONT, Vector2(18.0, size.y - 14), info, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, PAPER)
+
+
+func _draw_links() -> void:
+	var blue := Color("#357284")
+	for lever in draft.data.switches:
+		var point := RoomLinks.point(lever)
+		for id in lever.targets:
+			var door := RoomLinks.find(draft.data, "doors", id)
+			if not door.is_empty():
+				draw_line(point - Vector2(0, 14), RoomLinks.door_rect(door).get_center(), Color(blue, 0.65), 2 / zoom, true)
+		_draw_pin(point, blue if not lever.targets.is_empty() else RED, "S")
+	for door in draft.data.doors:
+		var rect := RoomLinks.door_rect(door)
+		draw_rect(rect, Color(blue, 0.32))
+		draw_rect(rect, blue, false, 2 / zoom)
+	for entry in draft.data.entries:
+		_draw_pin(RoomLinks.point(entry), blue, "←")
+	for exit in draft.data.exits:
+		_draw_pin(RoomLinks.point(exit), RED if exit.id in invalid_exits else blue, "✓" if exit.get("finish", false) else "→")
+	var source := draft.item(_link_source)
+	if tool == "link" and not source.is_empty():
+		draw_line(RoomLinks.point(source) - Vector2(0, 14), cursor, blue, 2 / zoom, true)
 
 
 func _draw_grid(view: Rect2) -> void:
@@ -227,18 +364,24 @@ func _draw_pin(feet: Vector2, color: Color, mark: String) -> void:
 
 
 func _draw_ghost(bounds: Rect2) -> void:
-	var selected := draft.item(selection)
-	if not selected.is_empty():
-		var rect := draft.item_rect(LevelDraft.SECTIONS[selection.x], selected)
+	for target in editable_selection():
+		var selected := draft.item(target)
+		if selected.is_empty():
+			continue
+		var rect := draft.item_rect(LevelDraft.SECTIONS[target.x], selected)
 		if _dragging and tool == "select":
 			rect.position += (cursor - _origin).snapped(Vector2.ONE * LevelDraft.GRID)
 		elif _dragging and tool == "resize" and selected.has("w"):
 			var delta := (cursor - _origin).snapped(Vector2.ONE * LevelDraft.GRID)
 			rect.size.x = maxf(LevelDraft.GRID, rect.size.x + delta.x)
-			if LevelDraft.SECTIONS[selection.x] == "solids":
+			if LevelDraft.SECTIONS[target.x] != "one_ways":
 				rect.size.y = maxf(LevelDraft.GRID, rect.size.y + delta.y)
 		draw_rect(rect.grow(2 / zoom), Color("#4385a0"), false, 2.3 / zoom)
-	if not bounds.has_point(cursor) or _panning or tool in ["pan", "select", "resize"] \
+	if _dragging and tool == "box":
+		var selection_box := Rect2(_origin, cursor - _origin).abs()
+		draw_rect(selection_box, Color("#4385a044"))
+		draw_rect(selection_box, Color("#4385a0"), false, 2 / zoom)
+	if not bounds.has_point(cursor) or _panning or tool in ["pan", "select", "resize", "box", "link"] or not _can_place() \
 			or (not Rect2(Vector2.ZERO, size).has_point(get_local_mouse_position()) and not _dragging):
 		return
 	var from := _grid_cell(_origin if _dragging else cursor)

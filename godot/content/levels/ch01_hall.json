@@ -2,8 +2,11 @@
   "version": 1,
   "id": "ch01_hall",
   "name": "ГЛАВА I · ЗАЛ ПЕРВОГО ВЗМАХА",
+  "next_chapter": "ch02_cistern",
   "bounds": {"x": 0, "y": 0, "w": 14080, "h": 720},
   "spawn": {"x": 128, "y": 576},
+  "entries": [{"id": "from_annex", "x": 3488, "y": 576}],
+  "exits": [{"id": "archive_annex", "x": 3616, "y": 576, "level": "archive_annex", "entry": "from_archive"}],
   "zones": [
     {"id": "threshold", "until": 2560},
     {"id": "archive", "until": 7040},

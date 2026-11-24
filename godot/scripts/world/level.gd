@@ -22,6 +22,8 @@ const PAPER := Color("#f1e6d0")
 @export_file("*.json") var data_path := DEFAULT_DATA
 
 var spawn_point := Vector2.ZERO
+var entrance_point := Vector2.ZERO
+var devices: RoomDevices
 var bounds := Rect2(0.0, 0.0, 2560.0, 720.0)
 var enemies: Array = []
 var checkpoints: Array = []
@@ -194,10 +196,16 @@ func _build() -> void:
 	for id in world_state.get("killed", []):
 		killed_ids.append(String(id))
 
+	entrance_point = spawn_point
 	_build_checkpoints()
 	_build_tiles()
 	_build_triggers()
 	_build_props()
+	devices = RoomDevices.new()
+	devices.name = "RoomDevices"
+	add_child(devices)
+	var saved_switches = world_state.get("switches", [])
+	devices.setup(data, saved_switches if saved_switches is Array else [])
 
 	var index := 0
 	for spec in data.get("placements", []):
@@ -283,10 +291,11 @@ func _populate_dynamic_decor() -> void:
 		for x in [92.0, 520.0, 1320.0, 2370.0, 3210.0, 3320.0, 3810.0, 4480.0, 5720.0, 6830.0, 7160.0, 8400.0, 9390.0, 10280.0, 11350.0, 12780.0, 13910.0]:
 			var feet := LevelDecor._floor_y_at(x, data)
 			_candles.append({"x": x, "y": feet, "s": 0.8 if x < 11264.0 else 1.0})
-	else:
-		_candles.append({"x": 92.0, "y": 576.0, "s": 1.0})
-		_candles.append({"x": 1240.0, "y": 576.0, "s": 0.9})
-		_candles.append({"x": 2360.0, "y": 512.0, "s": 0.8})
+	elif lid in ["arena_01", "test_gallery"]:
+		for x in [92.0, 1240.0, 2360.0]:
+			var floor := LevelDecor.support_at(data, x, 576.0, 12.0)
+			if not is_inf(floor):
+				_candles.append({"x": x, "y": floor, "s": 0.9})
 
 	var gi := 0
 	for spec in data.get("solids", []):
@@ -646,6 +655,11 @@ func activate_checkpoint(id: String) -> void:
 ## Куда ставить игрока при старте: точка входа или пройденный чекпоинт.
 func resume_position() -> Vector2:
 	return spawn_point
+
+
+func entry_position(id: String) -> Vector2:
+	var entry := RoomLinks.find(data, "entries", id)
+	return entrance_point if entry.is_empty() else RoomLinks.point(entry) - Vector2(0, 23)
 
 
 func _on_checkpoint_reached(id: String, pos: Vector2) -> void:

@@ -251,6 +251,9 @@ func _press(id: int, pos: Vector2) -> void:
 			return
 		fingers[id] = {"state": flow.state, "start": pos}
 		return
+	if flow.hud.is_room_touch(pos):
+		fingers[id] = {"room_action": true}
+		return
 	var action := action_at(pos)
 	if not action.is_empty():
 		if action == "pause":
@@ -332,6 +335,11 @@ func _release(id: int, pos: Vector2, canceled := false) -> void:
 		return
 	var held: Dictionary = fingers[id]
 	fingers.erase(id)
+	if held.has("room_action"):
+		if not canceled and flow.state == flow.State.PLAY and flow.hud.is_room_touch(pos):
+			CTL.touch_tap("interact")
+			CTL.haptic()
+		return
 	if held.has("action"):
 		CTL.touch_exit(held.action)
 		return

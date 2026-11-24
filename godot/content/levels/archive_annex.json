@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "archive_annex",
+  "display_name_key": "level.archive_annex.name",
+  "story_finale": false,
+  "bounds": { "x": 0, "y": 0, "w": 1536, "h": 768 },
+  "spawn": { "x": 128, "y": 608 },
+  "entries": [{ "id": "from_archive", "x": 128, "y": 608 }],
+  "exits": [
+    { "id": "foyer_return", "x": 64, "y": 608, "level": "ch01_hall", "entry": "from_annex" },
+    { "id": "vault_return", "x": 1440, "y": 608, "requires": ["annex_lever"], "level": "ch01_hall", "entry": "from_annex" }
+  ],
+  "solids": [
+    { "x": 0, "y": 608, "w": 1536, "h": 160 },
+    { "x": 768, "y": 448, "w": 160, "h": 32 },
+    { "x": 1120, "y": 0, "w": 32, "h": 384 }
+  ],
+  "one_ways": [
+    { "x": 448, "y": 544, "w": 128, "h": 32 },
+    { "x": 608, "y": 480, "w": 128, "h": 32 }
+  ],
+  "doors": [{ "id": "vault_door", "x": 1136, "y": 608, "w": 32, "h": 224 }],
+  "switches": [{ "id": "annex_lever", "x": 832, "y": 448, "targets": ["vault_door"] }],
+  "placements": [{ "id": "annex_sentry", "def_id": "enemy.sentry", "x": 696, "y": 448 }],
+  "props": [{ "id": "archive_reward", "def_id": "prop.soul_shard", "x": 1312, "y": 608 }],
+  "decor": [
+    { "id": "shelves", "kind": "cabinet", "x": 256, "y": 608 },
+    { "id": "guard_lantern", "kind": "lantern", "x": 976, "y": 608 },
+    { "id": "vault_tablet", "kind": "tablet", "x": 1344, "y": 608 }
+  ]
+}

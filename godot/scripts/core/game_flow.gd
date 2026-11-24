@@ -56,6 +56,15 @@ var _title_guide := false
 var debug_panel: Control
 var level_editor: Control
 var _editor_room: LevelData
+var _editor_start: Dictionary = {}
+var _editor_linked_rooms: Dictionary[String, LevelData] = {}
+var _route_id := ""
+var _route_data: Dictionary = {}
+var _route_worlds: Dictionary = {}
+var _before_route_storage := ""
+var _before_route_slot := ""
+var _room_states: Dictionary = {}
+var _room_entry := ""
 var _editor_was_paused := false
 var debug_flight_speed := 420.0
 var debug_rules := {"flight": false, "god": false, "damage": false,
@@ -174,6 +183,8 @@ func _build_stage() -> void:
 	ui.add_child(title_screen)
 	title_screen.start_pressed.connect(_on_start_pressed)
 	title_screen.continue_pressed.connect(continue_run)
+	title_screen.custom_pressed.connect(open_level_editor)
+	title_screen.chapter_pressed.connect(advance_story_chapter)
 	title_screen.quit_pressed.connect(_quit)
 	title_screen.settings_pressed.connect(open_settings)
 	title_screen.guide_pressed.connect(show_title_guide)
@@ -228,6 +239,8 @@ func _physics_process(delta: float) -> void:
 		_save_delay -= delta
 		if _save_delay <= 0.0:
 			_autosave(_finale_pending or state == State.CLEARED, false, true)
+	if state != State.PLAY or settings.visible or debug_panel.visible or console.visible:
+		hud.set_room_prompt("")
 	if settings.visible or debug_panel.visible or console.visible:
 		return
 	if state == State.PLAY:
@@ -276,6 +289,8 @@ func _physics_process(delta: float) -> void:
 			elif CTL.pressed("restart"):
 				_pause()
 				overlay.request_restart()
+			else:
+				_update_room_interaction()
 		State.PAUSE, State.DEAD, State.CLEARED, State.CUTSCENE, State.DIALOGUE, State.GUIDE, State.VICTORY:
 			pass
 
@@ -407,12 +422,64 @@ func is_testing_level() -> bool:
 	return _editor_room != null
 
 
+func is_custom_route() -> bool:
+	return not _route_id.is_empty()
+
+
+func has_custom_route(id: String) -> bool:
+	return LevelDraft.valid_id(id) and SaveGame.has_unfinished_run(
+		SaveGame.read_slot(SaveGame.AUTOSAVE, LevelPackage.SAVE_DIR.path_join(id)))
+
+
+func open_custom_route(id: String, new_route: Dictionary) -> String:
+	if not level_editor.visible or not LevelDraft.valid_id(id):
+		return L10N.t("editor.error_id")
+	var directory := LevelPackage.SAVE_DIR.path_join(id)
+	var progress := {"level": id} if not new_route.is_empty() else SaveGame.read_slot(SaveGame.AUTOSAVE, directory)
+	if new_route.is_empty() and (not SaveGame.has_unfinished_run(progress) or int(progress.get("version", 0)) > SaveGame.VERSION):
+		return L10N.t("editor.error_route_save")
+	var bundle = new_route if not new_route.is_empty() else progress.get("route")
+	if not bundle is Dictionary or bundle.get("root") != id:
+		return L10N.t("editor.error_route_save")
+	var checked := LevelPackage.inspect(bundle)
+	if checked.has("error"):
+		return checked.error
+	if not checked.finish:
+		return L10N.t("editor.error_route_finish")
+	if not checked.worlds.has(progress.get("level")):
+		return L10N.t("editor.error_route_save")
+	_flush_save()
+	_restore_debug_storage()
+	_before_route_storage = SaveGame.storage
+	_before_route_slot = SaveGame.current_slot
+	SaveGame.use_storage(directory)
+	_route_id = id
+	_route_data = bundle.duplicate(true)
+	_route_worlds = checked.worlds.duplicate(true)
+	level_editor.hide()
+	if not _start_level(_respawn_if_dead(progress)):
+		_restore_route_storage()
+		level_editor.show()
+		return L10N.t("editor.error_playtest")
+	return ""
+
+
+func _restore_route_storage() -> void:
+	SaveGame.use_storage(_before_route_storage)
+	SaveGame.current_slot = _before_route_slot
+	_route_id = ""
+	_route_data.clear()
+	_route_worlds.clear()
+
+
 func open_level_editor() -> void:
 	if is_testing_level():
 		return_to_level_editor()
 		return
 	if state not in [State.TITLE, State.PAUSE, State.PLAY]:
 		return
+	if is_custom_route():
+		_show_title()
 	debug_panel.close()
 	_editor_was_paused = get_tree().paused
 	get_tree().paused = true
@@ -443,26 +510,47 @@ func close_level_editor() -> void:
 	mobile_controls.refresh_draw_state()
 
 
-func start_editor_test(world: Dictionary) -> bool:
+func start_editor_test(world: Dictionary, options := {}) -> bool:
 	if not level_editor.visible or not LevelDraft.validate_world(world).is_empty():
 		return false
+	var test_world := world.duplicate(true)
+	var initial := {}
+	if options.has("position"):
+		var position_override: Vector2 = options.position
+		var candidate := {"x": position_override.x, "y": position_override.y}
+		if not LevelDraft.valid_spawn(test_world, candidate):
+			return false
+		initial["spawn_override"] = position_override - Vector2(0, 23)
+	var weapon := str(options.get("weapon", "weapon.blade"))
+	if WDB.get_weapon(StringName(weapon)) != null:
+		initial["weapons"] = ["weapon.blade", weapon] if weapon != "weapon.blade" else [weapon]
+		initial["weapon"] = weapon
+	initial["soul"] = clampf(float(options.get("soul", 0.0)), 0.0, 99.0)
 	_autosave(false)
 	_complete_autosave(true)
-	var next := LevelData.new()
-	next.id = str(world.id)
-	next.scene_path = "res://scenes/level/test_gallery.tscn"
-	next.qa_only = true
-	next.world = world.duplicate(true)
+	var next := _draft_room(test_world)
 	_editor_room = next
+	_editor_start = initial
+	_editor_linked_rooms.clear()
 	level_editor.hide()
-	if not _start_level({}, false, next):
+	if not _start_level(initial, false, next):
 		_editor_room = null
+		_editor_start.clear()
 		get_tree().paused = true
 		level_editor.show()
 		return false
 	hud.show_toast(L10N.t("editor.return_hint"))
 	mobile_controls.refresh_draw_state()
 	return true
+
+
+func _draft_room(world: Dictionary) -> LevelData:
+	var definition := LevelData.new()
+	definition.id = str(world.id)
+	definition.scene_path = "res://scenes/level/test_gallery.tscn"
+	definition.qa_only = true
+	definition.world = world
+	return definition
 
 
 func return_to_level_editor() -> void:
@@ -473,6 +561,8 @@ func return_to_level_editor() -> void:
 	debug_panel.close()
 	_clear_level()
 	_editor_room = null
+	_editor_start.clear()
+	_editor_linked_rooms.clear()
 	_show_title()
 	_open_editor_after_test()
 
@@ -483,6 +573,105 @@ func _open_editor_after_test() -> void:
 	title_screen.hide()
 	level_editor.open()
 	mobile_controls.refresh_draw_state()
+
+
+func _update_room_interaction() -> void:
+	if not is_instance_valid(level) or not is_instance_valid(player) or not is_instance_valid(level.devices):
+		hud.set_room_prompt("")
+		return
+	var candidate: Dictionary = level.devices.nearest(player.global_position + Vector2(0, 23))
+	if candidate.is_empty():
+		hud.set_room_prompt("")
+		return
+	var enabled := level.devices.available(candidate)
+	var key := "room.open_switch" if candidate.section == "switches" else "room.enter"
+	if candidate.item.get("finish", false):
+		key = "room.finish"
+	if not enabled:
+		hud.set_room_prompt(L10N.t("room.engaged" if candidate.section == "switches" else "room.locked"))
+		return
+	var label := L10N.t(key)
+	if CTL.device != "touch":
+		label = "%s · %s" % [CTL.label_of("interact"), label]
+	hud.set_room_prompt(label, true)
+	if CTL.pressed("interact"):
+		level.devices.interact(candidate)
+
+
+func _room_target(id: String) -> LevelData:
+	if is_custom_route():
+		return _draft_room(_route_worlds[id]) if _route_worlds.has(id) else null
+	if is_testing_level():
+		if id == _editor_room.id:
+			return _editor_room
+		if _editor_linked_rooms.has(id):
+			return _editor_linked_rooms[id]
+		var world := LevelDraft.read(id)
+		if world.get("id") == id and LevelDraft.validate_world(world).is_empty():
+			var definition := _draft_room(world)
+			_editor_linked_rooms[id] = definition
+			return definition
+	return LVL.get_level(id) if is_testing_level() or _can_load_level(id) else null
+
+
+func _travel_room(exit: Dictionary) -> bool:
+	if state != State.PLAY or not is_instance_valid(player):
+		return false
+	if exit.get("finish", false):
+		if is_testing_level():
+			hud.show_toast(L10N.t("editor.route_test_finish"))
+		elif is_custom_route():
+			_finale_seen = true
+			_autosave(true)
+			_show_cleared()
+		return true
+	var target := _room_target(str(exit.get("level", "")))
+	if target == null or not RoomLinks.connects(exit, target.world):
+		hud.show_toast(L10N.t("room.missing"))
+		return false
+	var current := _room_snapshot()
+	current.merge({"rooms": _room_states, "grants": granted_rewards, "weapons": player.weapon_ids(),
+		"weapon": player.current_weapon_id(), "hp": player.hp, "soul": player.soul})
+	return _start_level(_arrival(current, level_id, target.id, str(exit.get("entry", ""))), false, target, true)
+
+
+func _arrival(current: Dictionary, from: String, target: String, entry := "") -> Dictionary:
+	var rooms: Dictionary = current.get("rooms", {}).duplicate(true)
+	var snapshot := {}
+	for key in ["checkpoint", "entry", "killed", "triggers", "props", "switches", "ink_marks"]:
+		if current.has(key):
+			snapshot[key] = current[key]
+	rooms[from] = snapshot
+	var visited = rooms.get(target, {})
+	var restored: Dictionary = visited.duplicate(true) if visited is Dictionary else {}
+	rooms.erase(target)
+	restored.merge({"rooms": rooms, "entry": entry, "level": target}, true)
+	for key in ["grants", "weapons", "weapon", "hp", "soul"]:
+		if current.has(key):
+			restored[key] = current[key]
+	return restored
+
+
+func next_story_chapter(progress: Dictionary) -> String:
+	if not bool(progress.get("cleared", false)) or not bool(progress.get("finale_seen", false)):
+		return ""
+	var from := LVL.get_level(str(progress.get("level", "")))
+	if from == null:
+		return ""
+	var next := str(from.world.get("next_chapter", ""))
+	return next if not next.is_empty() and _can_load_level(next) else ""
+
+
+func advance_story_chapter(slot: String) -> void:
+	_flush_save()
+	var progress := SaveGame.read_slot(slot)
+	var target := next_story_chapter(progress)
+	if target.is_empty():
+		return
+	var previous_slot := SaveGame.current_slot
+	SaveGame.current_slot = slot
+	if not _start_level(_arrival(SaveGame.migrate(progress), str(progress.level), target), false, null, true):
+		SaveGame.current_slot = previous_slot
 
 
 ## F11: полноэкранный режим без рамки и обратно. На Android не нужен.
@@ -569,7 +758,12 @@ func start_run(with_intro := false) -> void:
 	combo_t = 0.0
 	combo_pop = 0.0
 	hitstop = 0.0
-	_start_level({}, with_intro and not is_testing_level(), _editor_room)
+	if is_testing_level():
+		_start_level(_editor_start, false, _editor_room)
+	elif is_custom_route():
+		_start_level({"level": _route_id})
+	else:
+		_start_level({}, with_intro)
 
 
 ## Загружает указанный уровень по идентификатору (используется консолью разработчика).
@@ -593,15 +787,19 @@ func continue_run(slot: String = SaveGame.AUTOSAVE) -> void:
 	if not SaveGame.has_unfinished_run(save):
 		start_run()
 		return
-	var migrated := SaveGame.migrate(save)
-	if bool(migrated.get("dead", false)):
-		migrated["hp"] = Player.MAX_HP
-		migrated["soul"] = 0.0
-		migrated["dead"] = false
+	var migrated := _respawn_if_dead(SaveGame.migrate(save))
 	var previous_slot := SaveGame.current_slot
 	SaveGame.current_slot = slot
 	if not _start_level(migrated):
 		SaveGame.current_slot = previous_slot
+
+
+func _respawn_if_dead(data: Dictionary) -> Dictionary:
+	if bool(data.get("dead", false)):
+		data["hp"] = Player.MAX_HP
+		data["soul"] = 0.0
+		data["dead"] = false
+	return data
 
 
 func respawn_run() -> void:
@@ -623,17 +821,19 @@ func save_to_slot(slot: String) -> bool:
 
 
 func _can_load_level(id: String) -> bool:
+	if is_custom_route():
+		return _route_worlds.has(id)
 	var definition := LVL.get_level(id)
 	return definition != null and (qa_session or not definition.qa_only)
 
 
-func _start_level(save: Dictionary, with_intro := false, definition: LevelData = null) -> bool:
+func _start_level(save: Dictionary, with_intro := false, definition: LevelData = null, arriving := false) -> bool:
 	if definition == null:
 		var wanted := str(save.get("level", LVL.first_id()))
 		if not _can_load_level(wanted):
 			push_warning("level: уровень недоступен: " + wanted)
 			return false
-		definition = LVL.get_level(wanted)
+		definition = _room_target(wanted)
 	var scene := ResourceLoader.load(definition.scene_path, "PackedScene") as PackedScene
 	if scene == null:
 		return false
@@ -665,11 +865,15 @@ func _start_level(save: Dictionary, with_intro := false, definition: LevelData =
 	dialogue.close()
 	title_screen.visible = false
 	hud.visible = true
+	hud.set_room_prompt("")
 	hud.debug_on = false
 	state = State.PLAY
 
 	level_id = definition.id
 	checkpoint_id = String(save.get("checkpoint", ""))
+	_room_entry = str(save.get("entry", ""))
+	var saved_rooms = save.get("rooms", {})
+	_room_states = saved_rooms.duplicate(true) if saved_rooms is Dictionary else {}
 
 	granted_rewards.clear()
 	var saved_grants = save.get("grants", [])
@@ -688,6 +892,8 @@ func _start_level(save: Dictionary, with_intro := false, definition: LevelData =
 	level.enemy_died.connect(_on_enemy_died)
 	level.trigger_reached.connect(_on_trigger)
 	level.prop_collected.connect(_on_prop_collected)
+	level.devices.activated.connect(_on_switch_activated)
+	level.devices.travel_requested.connect(_travel_room)
 
 	var lim := level.camera_limits()
 	camera.limit_left = lim["left"]
@@ -697,6 +903,10 @@ func _start_level(save: Dictionary, with_intro := false, definition: LevelData =
 
 	player = PLAYER_SCENE.instantiate()
 	player.global_position = level.resume_position()
+	if arriving or (checkpoint_id.is_empty() and not _room_entry.is_empty()):
+		player.global_position = level.entry_position(_room_entry)
+	if save.has("spawn_override"):
+		player.global_position = save.spawn_override
 	_loaded_spawn = player.global_position
 	_skip_loaded_checkpoint_heal = not save.is_empty()
 	level.add_child(player)
@@ -718,6 +928,9 @@ func _start_level(save: Dictionary, with_intro := false, definition: LevelData =
 	combat_ink.restore_state(save.get("ink_marks", []))
 	combat_ink.persistent_marks_changed.connect(_on_ink_changed)
 	run_kills = level.killed_ids.size()
+	for saved_room in _room_states.values():
+		if saved_room is Dictionary and saved_room.get("killed") is Array:
+			run_kills += saved_room.killed.size()
 
 	var legacy_fx := preload("res://scripts/visuals/legacy_fx_layer.gd").new()
 	legacy_fx.z_index = 20
@@ -738,13 +951,13 @@ func _start_level(save: Dictionary, with_intro := false, definition: LevelData =
 		level_id, level.enemy_count(), checkpoint_id if not checkpoint_id.is_empty() else "вход"])
 	if with_intro:
 		play_cutscene("intro")
-	elif not definition.qa_only and (level.enemy_count() == 0 or pending_finale):
+	elif not definition.qa_only and not is_testing_level() and bool(level.data.get("story_finale", true)) and (level.enemy_count() == 0 or pending_finale):
 		_on_cleared()
 	else:
 		var saved_dialogue = save.get("dialogue", {})
 		if saved_dialogue is Dictionary and not String(saved_dialogue.get("id", "")).is_empty():
 			play_dialogue(String(saved_dialogue.id), int(saved_dialogue.get("line", 0)))
-	_autosave(_finale_pending)
+	_autosave(_finale_pending or state == State.CLEARED)
 	return true
 
 
@@ -874,7 +1087,7 @@ func _on_start_pressed() -> void:
 
 ## Explain controls on the loaded game screen after the opening story.
 func start_new_story() -> void:
-	if is_testing_level():
+	if is_testing_level() or is_custom_route():
 		start_run()
 		return
 	if is_instance_valid(level) and is_instance_valid(player):
@@ -939,10 +1152,9 @@ func _show_title() -> void:
 	get_tree().paused = false
 	_finale_pending = false
 	_clear_level()
-	if not _debug_storage.is_empty():
-		SaveGame.use_storage(_debug_storage)
-		SaveGame.current_slot = _debug_slot
-		_debug_storage = ""
+	_restore_debug_storage()
+	if is_custom_route():
+		_restore_route_storage()
 	reset_debug_rules()
 	hud.visible = false
 	overlay.close()
@@ -959,6 +1171,13 @@ func _show_title() -> void:
 	camera.reset_smoothing()
 
 
+func _restore_debug_storage() -> void:
+	if not _debug_storage.is_empty():
+		SaveGame.use_storage(_debug_storage)
+		SaveGame.current_slot = _debug_slot
+		_debug_storage = ""
+
+
 ## Чекпоинт лечит и пишет автосейв: смерть вернёт игрока сюда.
 ## Возврат на уже пройденный чекпоинт лечит, но лишний раз не пишет файл.
 func _on_checkpoint(id: String, _pos: Vector2) -> void:
@@ -968,6 +1187,7 @@ func _on_checkpoint(id: String, _pos: Vector2) -> void:
 	_skip_loaded_checkpoint_heal = false
 	var fresh := id != checkpoint_id
 	checkpoint_id = id
+	_room_entry = ""
 	if level != null:
 		level.activate_checkpoint(id)
 	if player != null and not loaded_overlap:
@@ -992,6 +1212,11 @@ func _on_enemy_died(id: String) -> void:
 func _on_prop_collected(display_name_key: String) -> void:
 	hud.show_toast(L10N.t("ui.hud.toast.pickup", [L10N.t(display_name_key)]))
 	_request_autosave(0.0)
+
+
+func _on_switch_activated() -> void:
+	hud.show_toast(L10N.t("room.engaged"))
+	_autosave(false)
 
 
 ## Отложенный автосейв: повторные запросы сдвигают срок к более раннему,
@@ -1113,7 +1338,7 @@ func _on_player_died() -> void:
 
 
 func _on_cleared(live := false) -> void:
-	if is_testing_level():
+	if is_testing_level() or is_custom_route() or (is_instance_valid(level) and not bool(level.data.get("story_finale", true))):
 		return
 	var definition := LVL.get_level(level_id)
 	if definition != null and definition.qa_only:
@@ -1144,7 +1369,8 @@ func _on_cleared(live := false) -> void:
 
 func _open_finale() -> void:
 	# Финал играет до окна зачистки: сначала история, потом «уровень пройден».
-	if not play_cutscene("finale"):
+	var scene := str(level.data.get("finale_cutscene", "finale"))
+	if scene.is_empty() or not play_cutscene(scene):
 		_finale_pending = false
 		_finale_seen = true
 		_autosave(true)
@@ -1196,6 +1422,7 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 	# Неизменное состояние повторно не пишется — это главная экономия на телефоне.
 	var signature := str([
 		level_id, checkpoint_id, level.killed_ids.size(), level.fired_triggers.size(), level.collected_props.size(),
+		_room_entry, level.devices.active_switches.size(),
 		granted_rewards, player.weapon_ids(), player.current_weapon_id(),
 		player.MAX_HP if dead_now else player.hp,
 		0.0 if dead_now else snappedf(player.soul, 0.1),
@@ -1207,12 +1434,10 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 	_save_delay = 0.0
 	if not force and signature == _last_save_sig:
 		return
-	var payload := {
+	var payload := _room_snapshot()
+	payload.merge({
 		"level": level_id,
-		"checkpoint": checkpoint_id,
-		"killed": level.killed_ids.duplicate(),
-		"triggers": level.fired_triggers.duplicate(),
-		"props": level.collected_props.duplicate(),
+		"rooms": _room_states.duplicate(true),
 		"grants": granted_rewards.duplicate(),
 		"weapons": player.weapon_ids(),
 		"weapon": player.current_weapon_id(),
@@ -1220,11 +1445,12 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 		"soul": 0.0 if dead_now else player.soul,
 		"dead": dead_now,
 		"dialogue": {"id": dialogue.dialogue_id, "line": dialogue.index} if dialogue_open else {},
-		"ink_marks": ink.export_state(),
 		"enemies_left": level.enemy_count(),
 		"cleared": cleared,
 		"finale_seen": _finale_seen if cleared else false,
-	}
+	}, true)
+	if is_custom_route():
+		payload["route"] = _route_data
 	if background:
 		_save_receipt = SaveGame.try_autosave(payload)
 		_queued_save_sig = signature
@@ -1232,6 +1458,12 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 			_request_autosave(0.0)
 	elif SaveGame.write_autosave(payload):
 		_last_save_sig = signature
+
+
+func _room_snapshot() -> Dictionary:
+	return {"checkpoint": checkpoint_id, "entry": _room_entry, "killed": level.killed_ids.duplicate(),
+		"triggers": level.fired_triggers.duplicate(), "props": level.collected_props.duplicate(),
+		"switches": level.devices.active_switches.duplicate(), "ink_marks": CombatFx.layer(player).export_state()}
 
 
 func _on_overlay_choice(item: String) -> void:
@@ -1267,6 +1499,8 @@ func _on_overlay_choice(item: String) -> void:
 		State.CLEARED:
 			if item == "menu":
 				_show_title()
+			elif item == "next_chapter":
+				advance_story_chapter(SaveGame.current_slot)
 			else:
 				start_run()
 

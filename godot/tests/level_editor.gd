@@ -48,7 +48,14 @@ func _ready() -> void:
 	draft.start("qa_editor_workshop", "Мастерская · тест")
 	editor._document_changed()
 	var canvas: Control = editor.canvas
-	canvas.tool = "platform"
+	editor._tool_buttons.terrain.pressed.emit()
+	_check(editor.palette.item_count == 5 and canvas.tool == "solid", "terrain shows only geometry tools")
+	editor.palette.select(1)
+	editor.palette.item_selected.emit(1)
+	editor._tool_buttons.logic.pressed.emit()
+	_check(canvas.tool == "link" and editor.palette.item_count == 6, "logic has its own tools and selection")
+	editor._tool_buttons.terrain.pressed.emit()
+	_check(canvas.tool == "platform", "a tool category remembers the last used tool")
 	_drag(canvas, Vector2(320, 416), Vector2(544, 416))
 	_check(draft.data.one_ways.size() == 1 and int(draft.data.one_ways[0].w) == 256, "canvas drag creates a snapped platform")
 	var original: Vector2i = draft.find_at(Vector2(350, 425))
@@ -73,7 +80,35 @@ func _ready() -> void:
 	_check(draft.validate().is_empty(), "completed map passes editor validation")
 	editor._save_requested()
 	_check(not draft.dirty() and LevelDraft.read("qa_editor_workshop").get("decor", []).size() == 3, "custom map is saved and reopens with decor")
-	editor._load_document("qa_editor_workshop")
+	editor._file.get_popup().id_pressed.emit(1)
+	await _ticks(3)
+	_check(editor._picker.visible and editor._map_list.item_count == 1 and editor._map_list.get_item_metadata(0) == "qa_editor_workshop",
+		"File > Open lists the saved draft by name and ID")
+	await _capture("editor-open")
+	editor._map_list.item_activated.emit(0)
+	_check(not editor._picker.visible and draft.data.id == "qa_editor_workshop", "activating a draft in the picker opens it")
+	editor._detail_buttons.layers.pressed.emit()
+	var logic_buttons: Array = editor._layer_toggles.logic
+	logic_buttons[0].button_pressed = false
+	logic_buttons[1].button_pressed = true
+	_check(editor._detail_pages.layers.visible and "doors" in canvas.hidden_sections and "doors" in canvas.locked
+		and "solids" not in canvas.hidden_sections, "layer panel controls visibility and locking independently")
+	await _capture("editor-layers")
+	logic_buttons[0].button_pressed = true
+	logic_buttons[1].button_pressed = false
+	var canvas_width: float = canvas.size.x
+	var canvas_zoom: float = canvas.zoom
+	editor._detail_toggle.pressed.emit()
+	await _ticks(3)
+	_check(not editor._details.visible and canvas.size.x > canvas_width and is_equal_approx(canvas.zoom, canvas_zoom),
+		"hiding the properties panel expands the canvas and keeps its zoom")
+	editor._detail_toggle.pressed.emit()
+	editor._detail_buttons.test.pressed.emit()
+	await _ticks(3)
+	_check(editor._route.is_visible_in_tree() and not editor._inspector.is_visible_in_tree(),
+		"test settings and route share their own tab")
+	await _capture("editor-test")
+	editor._detail_buttons.object.pressed.emit()
 	var inherited := LevelDraft.new()
 	inherited.clone_world(LVL.get_level("ch01_hall").world, "qa_chapter_copy")
 	_check(inherited.data.landmarks == "ch01_hall" and inherited.validate().is_empty(), "the first chapter can be cloned as a valid editable map")

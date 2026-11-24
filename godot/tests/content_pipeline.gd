@@ -20,7 +20,7 @@ func _ready() -> void:
 		"weapon": "weapon.brush", "ink_marks": [], "finale_seen": false}
 	SaveGame.write_slot("slot_1", old)
 	var migrated := SaveGame.migrate(SaveGame.read_slot("slot_1"))
-	_check(migrated.version == 5 and migrated.props.is_empty() and migrated.checkpoint == "cp_02"
+	_check(migrated.version == SaveGame.VERSION and migrated.props.is_empty() and migrated.checkpoint == "cp_02"
 		and migrated.soul == 41.0 and migrated.killed == ["e1"] and migrated.weapon == "weapon.brush", "v4 migration retains progress")
 	var original := SaveGame.read_slot("slot_1")
 	title.activate(title.actions.find("slots"))

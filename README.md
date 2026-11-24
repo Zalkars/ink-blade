@@ -1,20 +1,27 @@
 # Чернильный клинок · Ink Blade
 
-**v0.5.1 · Godot 4.5.1 · Windows и Android**
+**v0.5.2 · Godot 4.5.1 · Windows и Android**
 
 Windows поставляется отдельным EXE, Android — подписанным APK.
-[Описание 0.5.1](docs/RELEASE_NOTES_v0.5.1.md) ·
+[Описание 0.5.2](docs/RELEASE_NOTES_v0.5.2.md) ·
 [Результаты проверок](docs/revision-0.4.2.md).
 
-Экшн-платформер в рисованной чернильной стилистике: бумага, тушь,
-быстрый бой, рывки и лечение за накопленную душу. Текущая версия —
-вертикальный срез с четырьмя зонами первого уровня, чекпоинтами,
-диалогом, двумя видами оружия и боссом Хранителем.
+Экшн-платформер в рисованной чернильной стилистике с быстрым боем,
+рывками и лечением за накопленную душу. В текущей версии две сюжетные главы,
+Хранилище Архива и редактор, в котором можно собрать собственный маршрут.
 
-[**Скачать v0.5.1 для Windows и Android**](https://github.com/Zalkars/ink-blade/releases/tag/v0.5.1) ·
+[**Скачать v0.5.2 для Windows и Android**](https://github.com/Zalkars/ink-blade/releases/tag/v0.5.2) ·
 [История изменений](CHANGELOG.md) · [Технический бриф](docs/tech-brief.md)
 
 ![Чернильный клинок](docs/screenshots/v0.4.3-title.png)
+
+## Что нового в 0.5.2
+
+- Побочное Хранилище Архива и переходы между связанными комнатами.
+- Рычаги и двери с состоянием в сохранениях v6.
+- Связи, редактирование группы объектов, слои и параметры тестового запуска в редакторе.
+- Глава II «Цистерна и Скрипторий» после финала первой главы.
+- Свои карты с отдельным прохождением и продолжением, импорт и экспорт одиночных карт и JSON-пакетов.
 
 ## Что нового в 0.5.1
 
@@ -96,7 +103,7 @@ Windows поставляется отдельным EXE, Android — подпи�
 
 ### Windows
 
-1. Скачайте `InkBlade-0.5.1-windows-x64.exe` со [страницы релиза](https://github.com/Zalkars/ink-blade/releases/tag/v0.5.1).
+1. Скачайте `InkBlade-0.5.2-windows-x64.exe` со [страницы релиза](https://github.com/Zalkars/ink-blade/releases/tag/v0.5.2).
 2. Запустите скачанный EXE. Распаковка не требуется.
 
 Godot и .NET устанавливать не нужно: ресурсы встроены в EXE.
@@ -105,12 +112,12 @@ EXE не имеет подписи издателя Windows.
 
 ### Android
 
-1. Скачайте `InkBlade-0.5.1-android.apk` с той же страницы релиза.
+1. Скачайте `InkBlade-0.5.2-android.apk` с той же страницы релиза.
 2. Разрешите установку из выбранного браузера или файлового менеджера и установите APK.
 3. Запустите «Чернильный клинок». Игра работает в горизонтальной ориентации.
 
 Требуется Android 7.0 или новее. APK содержит ARMv7, ARM64 и x86_64. Идентификатор приложения —
-`org.inkblade.game`, версия — `0.5.1`, код версии — `50001`.
+`org.inkblade.game`, версия — `0.5.2`, код версии — `50002`.
 Для обновления поверх старого APK подпись старой установки должна совпадать;
 при несовпадении Android отклонит обновление. Удаление приложения удаляет локальные сохранения.
 Интернет игре не требуется. В релизе также опубликован `SHA256SUMS.txt`.
@@ -182,8 +189,8 @@ export templates. C#-версия в `native/` сохранена как исх�
 Godot --headless --path godot --editor --quit
 Godot --headless --path godot --script res://tools/build_manifest.gd
 Godot --headless --path godot --script res://tools/validate_content.gd
-Godot --headless --path godot --export-release "Windows Desktop" ../builds/InkBlade-0.5.1-windows-x64.exe
-Godot --headless --path godot --export-release "Android" ../builds/InkBlade-0.5.1-android.apk
+Godot --headless --path godot --export-release "Windows Desktop" ../builds/InkBlade-0.5.2-windows-x64.exe
+Godot --headless --path godot --export-release "Android" ../builds/InkBlade-0.5.2-android.apk
 ```
 
 Для Android нужны JDK 17 и Android SDK, настроенные в Editor Settings.
@@ -205,6 +212,7 @@ Godot --headless --path godot tests/progress_regression.tscn
 Godot --headless --fixed-fps 120 --path godot tests/traverse.tscn
 Godot --headless --path godot tests/content_pipeline.tscn
 Godot --headless --path godot tests/level_editor.tscn
+Godot --headless --path godot tests/interactive_rooms.tscn
 ```
 
 Smoke-тест использует отдельные тестовые сохранения: запускайте проверки

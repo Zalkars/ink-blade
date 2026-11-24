@@ -118,6 +118,7 @@ func _story(folder: String, field: String) -> Dictionary:
 
 func _levels(index: Dictionary, dialogues: Dictionary) -> Dictionary:
 	var result := {}
+	var worlds := {}
 	var seen := {}
 	var orders := {}
 	if index.get("version") != 1 or not index.get("levels") is Array:
@@ -149,10 +150,25 @@ func _levels(index: Dictionary, dialogues: Dictionary) -> Dictionary:
 			errors.append(entry.scene + ": корень сцены или data_path не совпадает с индексом")
 		instance.free()
 		_validate_world(world, entry.data, dialogues)
+		worlds[entry.id] = world
 		result[entry.id] = {"scene": entry.scene, "data": entry.data, "order": int(entry.order),
 			"qa_only": bool(entry.get("qa_only", false)), "scene_hash": _hash(scene_path),
 			"data_hash": _hash(_resolve(entry.data))}
 	var first = index.get("first")
+	for id in worlds:
+		var next = worlds[id].get("next_chapter", "")
+		if not next is String or (not next.is_empty() and (not result.has(next) or result[next].qa_only \
+				or result[next].order <= result[id].order or not worlds[id].get("story_finale", true))):
+			errors.append(result[id].data + " next_chapter: недоступная или предшествующая глава")
+		var exits = worlds[id].get("exits", [])
+		if not exits is Array:
+			continue
+		for exit in exits:
+			if not exit is Dictionary or exit.get("finish", false) or not exit.get("level") is String:
+				continue
+			if not RoomLinks.connects(exit, worlds.get(exit.level, {})) \
+					or (not result[id].qa_only and result[exit.level].qa_only):
+				errors.append(result[id].data + " exits/" + str(exit.get("id", "?")) + ": неизвестная карта или вход")
 	if not first is String or not result.has(first) or result[first].qa_only:
 		errors.append(INDEX + ": первый сюжетный уровень недоступен")
 	return result
@@ -166,6 +182,8 @@ func _validate_world(world: Dictionary, path: String, dialogues: Dictionary) -> 
 		return
 	var bounds := Rect2(raw.x, raw.y, raw.w, raw.h)
 	_position(world.get("spawn"), bounds, path + " spawn")
+	for issue in RoomLinks.issues(world, bounds):
+		errors.append(path + " " + issue + ": неверная интерактивная связь или координаты")
 	for section in ["placements", "props", "checkpoints", "triggers", "decor"]:
 		var entries = world.get(section, [])
 		if not entries is Array:

@@ -9,7 +9,7 @@ signal bindings_changed
 
 const ACTIONS := [
 	"left", "right", "up", "down",
-	"jump", "attack", "dash", "heal", "swap",
+	"jump", "attack", "dash", "heal", "swap", "interact",
 	"pause", "back", "restart", "help", "hitboxes", "mute",
 	"fullscreen", "screenshot",
 ]
@@ -17,7 +17,7 @@ const ACTIONS := [
 # Действия, доступные для переназначения (в порядке экрана настроек).
 const BINDABLE := [
 	"left", "right", "up", "down",
-	"jump", "attack", "dash", "heal", "swap",
+	"jump", "attack", "dash", "heal", "swap", "interact",
 	"pause", "back", "restart", "help", "hitboxes", "mute",
 	"fullscreen", "screenshot",
 ]
@@ -35,6 +35,7 @@ const DEFAULT_KEYBOARD := {
 	"dash": [KEY_K, KEY_C, KEY_SHIFT, -2],
 	"heal": [KEY_L, KEY_V],
 	"swap": [KEY_Q, KEY_TAB],
+	"interact": [KEY_E],
 	"pause": [KEY_ESCAPE],
 	"back": [KEY_ESCAPE],
 	"restart": [KEY_R],
@@ -51,6 +52,7 @@ const DEFAULT_PAD := {
 	"dash": [1, 4],
 	"heal": [3],
 	"swap": [7],
+	"interact": [11],
 	"pause": [9],
 	"back": [1],
 	"restart": [8],
@@ -716,7 +718,7 @@ func load_controls() -> void:
 				if (code is int or code is float) and (int(code) > 0 or int(code) in [-1, -2, -3, -8, -9]):
 					if int(code) != KEY_ESCAPE or action in ["pause", "back"]:
 						valid.append(int(code))
-			if not valid.is_empty():
+			if not valid.is_empty() or (action == "interact" and keys.is_empty()):
 				keyboard[action] = valid
 		var slots = cfg.get_value("bindings", "pad_" + action, pad_map[action])
 		if slots is Array:
@@ -730,6 +732,18 @@ func load_controls() -> void:
 			keyboard[action].append(KEY_ESCAPE)
 	if not pad_map.back.has(PAD_BACK_SLOT):
 		pad_map.back.append(PAD_BACK_SLOT)
+	if not cfg.has_section_key("bindings", "key_interact"):
+		keyboard.interact = []
+		for code in [KEY_E, KEY_G, KEY_T, KEY_Y, KEY_U, KEY_I, KEY_O, KEY_P, KEY_H]:
+			if not _key_used(code, "interact"):
+				keyboard.interact = [code]
+				break
+	if not cfg.has_section_key("bindings", "pad_interact"):
+		pad_map.interact = []
+		for slot in [11, 10, 6]:
+			if not pad_map.values().any(func(slots): return slots.has(slot)):
+				pad_map.interact = [slot]
+				break
 	pad_movement = str(cfg.get_value("controls", "pad_movement", "both"))
 	if pad_movement not in ["both", "stick", "dpad"]:
 		pad_movement = "both"

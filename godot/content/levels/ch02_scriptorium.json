@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "ch02_scriptorium",
+  "display_name_key": "level.ch02_scriptorium.name",
+  "finale_cutscene": "",
+  "bounds": { "x": 0, "y": 0, "w": 2272, "h": 768 },
+  "spawn": { "x": 144, "y": 608 },
+  "entries": [{ "id": "from_cistern", "x": 144, "y": 608 }],
+  "exits": [{ "id": "to_cistern", "x": 64, "y": 608, "level": "ch02_cistern", "entry": "from_scriptorium" }],
+  "checkpoints": [{ "id": "scriptorium_checkpoint", "x": 320, "y": 608 }],
+  "solids": [
+    { "x": 0, "y": 608, "w": 2272, "h": 160 },
+    { "x": 784, "y": 544, "w": 224, "h": 32 },
+    { "x": 1456, "y": 512, "w": 208, "h": 32 }
+  ],
+  "one_ways": [
+    { "x": 1088, "y": 480, "w": 176, "h": 32 },
+    { "x": 1304, "y": 416, "w": 128, "h": 32 }
+  ],
+  "placements": [
+    { "id": "ink_blot", "def_id": "enemy.blot", "x": 688, "y": 608 },
+    { "id": "desk_sentry", "def_id": "enemy.sentry", "x": 1152, "y": 448 },
+    { "id": "last_keeper", "def_id": "enemy.grunt", "x": 1872, "y": 608 }
+  ],
+  "props": [{ "id": "desk_shard", "def_id": "prop.soul_shard", "x": 1368, "y": 404 }],
+  "decor": [
+    { "id": "entry_shelves", "kind": "cabinet", "x": 432, "y": 608 },
+    { "id": "writing_banner", "kind": "banner", "x": 1168, "y": 176 },
+    { "id": "reading_lamp", "kind": "lantern", "x": 1524, "y": 512 },
+    { "id": "far_shelves", "kind": "cabinet", "x": 1780, "y": 608 },
+    { "id": "end_tablet", "kind": "tablet", "x": 2152, "y": 608 }
+  ]
+}

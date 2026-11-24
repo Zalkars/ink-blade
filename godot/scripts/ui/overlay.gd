@@ -61,6 +61,9 @@ func open(m: int, subtitle: String = "") -> void:
 			if flow != null and flow.is_testing_level():
 				_set_items([["resume", "ui.pause.resume"], ["editor_return", "editor.return"],
 					["settings", "MENU_SETTINGS"], ["debug", "debug.title"], ["restart", "ui.pause.restart"]])
+			elif flow != null and flow.is_custom_route():
+				_set_items([["resume", "ui.pause.resume"], ["settings", "MENU_SETTINGS"], ["restart", "ui.pause.restart"],
+					["menu", "editor.route_leave"]])
 		Mode.DEAD:
 			heading = L10N.t("DEATH_TITLE")
 			sub = L10N.t("DEATH_SUB")
@@ -70,12 +73,20 @@ func open(m: int, subtitle: String = "") -> void:
 			])
 			if flow != null and flow.is_testing_level():
 				_set_items([["checkpoint", "ui.death.checkpoint"], ["editor_return", "editor.return"]])
+			elif flow != null and flow.is_custom_route():
+				_set_items([["checkpoint", "ui.death.checkpoint"], ["menu", "editor.route_leave"]])
 		Mode.CLEARED:
 			heading = L10N.t("ui.cleared.title")
+			if flow != null and flow.is_custom_route():
+				heading = L10N.t("editor.route_complete")
+				sub = L10N.t("ui.overlay.subtitle", [flow._level_name()])
 			_set_items([
 				["menu", "ui.cleared.menu"],
 				["restart", "ui.cleared.restart"],
 			])
+			if flow != null and not flow.is_custom_route() and not flow.next_story_chapter(SaveGame.read_slot(SaveGame.current_slot)).is_empty():
+				actions.push_front("next_chapter")
+				labels.push_front(L10N.t("ui.chapter.next"))
 	visible = true
 	queue_redraw()
 

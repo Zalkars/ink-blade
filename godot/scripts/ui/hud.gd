@@ -20,6 +20,23 @@ const DEBUG_HELP := 1
 const DEBUG_PERFORMANCE := 2
 const DEBUG_WORLD := 4
 const DEBUG_ALL := DEBUG_HELP | DEBUG_PERFORMANCE | DEBUG_WORLD
+var room_prompt := ""
+var room_action_available := false
+
+
+func set_room_prompt(message: String, enabled := false) -> void:
+	if room_prompt != message or room_action_available != enabled:
+		room_prompt = message
+		room_action_available = enabled
+		queue_redraw()
+
+
+func room_prompt_rect() -> Rect2:
+	return Rect2(Vector2((size.x - 286.0) * 0.5, size.y - 94.0), Vector2(286, 48))
+
+
+func is_room_touch(point: Vector2) -> bool:
+	return visible and room_action_available and room_prompt_rect().has_point(get_global_transform().affine_inverse() * point)
 
 var debug_sections := 0:
 	set(value):
@@ -189,6 +206,12 @@ func _draw() -> void:
 
 	if debug_on or debug_all or debug_sections > 0:
 		_draw_debug()
+	if not room_prompt.is_empty():
+		var button := room_prompt_rect()
+		draw_rect(button, Color(INK, 0.92))
+		draw_rect(button, Color(RED, 0.85), false, 2.0)
+		draw_string(FONT_BOLD, button.position + Vector2(8, 30), room_prompt,
+			HORIZONTAL_ALIGNMENT_CENTER, button.size.x - 16, 17, Color("#f1e6d0"))
 
 
 func _draw_masks() -> void:

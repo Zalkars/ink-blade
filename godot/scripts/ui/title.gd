@@ -5,6 +5,8 @@ extends Control
 
 signal start_pressed
 signal continue_pressed(slot: String)
+signal chapter_pressed(slot: String)
+signal custom_pressed
 signal settings_pressed
 signal quit_pressed
 signal guide_pressed
@@ -75,11 +77,15 @@ func refresh() -> void:
 		actions.append("slots_back")
 		items.append(L10N.t("ui.slots.back"))
 	elif _play_open:
-		if SaveGame.has_unfinished_run(SaveGame.read_slot(_active_slot())):
+		var progress := SaveGame.read_slot(_active_slot())
+		if SaveGame.has_unfinished_run(progress):
 			actions.append("continue")
 			items.append(L10N.t("ui.title.continue"))
-		actions.append_array(["normal", "guide", "back"])
-		items.append_array([L10N.t("ui.title.normal"), L10N.t("ui.title.guide"), L10N.t("ui.slots.back")])
+		elif flow != null and not flow.next_story_chapter(progress).is_empty():
+			actions.append("next_chapter")
+			items.append(L10N.t("ui.chapter.next"))
+		actions.append_array(["normal", "custom", "guide", "back"])
+		items.append_array([L10N.t("ui.title.normal"), L10N.t("ui.title.custom"), L10N.t("ui.title.guide"), L10N.t("ui.slots.back")])
 	else:
 		actions.assign(["play", "slots", "settings", "quit"])
 		items.assign([L10N.t("ui.title.play"), L10N.t("ui.title.slots"), L10N.t("MENU_SETTINGS"), L10N.t("ui.title.quit")])
@@ -502,6 +508,10 @@ func activate(i: int) -> void:
 	match action:
 		"continue":
 			continue_pressed.emit(_active_slot())
+		"next_chapter":
+			chapter_pressed.emit(_active_slot())
+		"custom":
+			custom_pressed.emit()
 		"slots":
 			_slots_open = true
 			selected = SaveGame.MANUAL_SLOTS.find(_active_slot()) + 1

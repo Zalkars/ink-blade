@@ -5,7 +5,7 @@ const Decor := preload("res://scripts/world/level_decor.gd")
 const DIR := "user://level_editor"
 const GRID := 32
 const MAX_SIZE := Vector2i(16384, 2048)
-const SECTIONS := ["solids", "one_ways", "checkpoints", "placements", "props", "decor"]
+const SECTIONS := ["solids", "one_ways", "checkpoints", "placements", "props", "decor", "doors", "switches", "entries", "exits"]
 const GEOMETRY_TOOLS := ["solid", "platform", "ledge", "bridge", "steps"]
 const HISTORY_LIMIT := 32
 
@@ -107,7 +107,8 @@ func place(tool: String, from: Vector2, to: Vector2) -> void:
 		data.spawn = item
 		return
 	var kind := tool.get_slice(":", 0)
-	var section: String = {"checkpoint": "checkpoints", "enemy": "placements", "prop": "props", "decor": "decor"}.get(kind, "")
+	var section: String = {"checkpoint": "checkpoints", "enemy": "placements", "prop": "props", "decor": "decor",
+		"door": "doors", "switch": "switches", "entry": "entries", "exit": "exits", "finish": "exits"}.get(kind, "")
 	if section.is_empty():
 		return
 	edit()
@@ -115,9 +116,32 @@ func place(tool: String, from: Vector2, to: Vector2) -> void:
 	if kind == "decor":
 		item.kind = tool.get_slice(":", 1)
 		item.grounded = item.kind != "banner"
-	elif kind != "checkpoint":
+	elif kind == "enemy" or kind == "prop":
 		item.def_id = tool.get_slice(":", 1)
+	elif kind == "door":
+		item["w"] = GRID
+		item["h"] = GRID * 4
+	elif kind == "switch":
+		item["targets"] = []
+	elif kind == "exit":
+		item["level"] = ""
+		item["entry"] = ""
+	elif kind == "finish":
+		item["finish"] = true
 	data[section].append(item)
+
+
+func link_switch(source: Vector2i, target: Vector2i) -> bool:
+	var lever := item(source)
+	var door := item(target)
+	if lever.is_empty() or door.is_empty() or SECTIONS[source.x] != "switches" or SECTIONS[target.x] != "doors":
+		return false
+	edit()
+	if door.id in lever.targets:
+		lever.targets.erase(door.id)
+	else:
+		lever.targets.append(door.id)
+	return true
 
 
 static func geometry(tool: String, start: Vector2, finish: Vector2) -> Array[Rect2]:
@@ -155,9 +179,11 @@ func _next_id(section: String, prefix: String) -> String:
 	return "%s_%d" % [prefix, index]
 
 
-func find_at(world: Vector2) -> Vector2i:
+func find_at(world: Vector2, ignored: Array = []) -> Vector2i:
 	# Interactive items are drawn above terrain and selected first.
 	for section in range(SECTIONS.size() - 1, -1, -1):
+		if SECTIONS[section] in ignored:
+			continue
 		var rows: Array = data[SECTIONS[section]]
 		for index in range(rows.size() - 1, -1, -1):
 			if item_rect(SECTIONS[section], rows[index]).has_point(world):
@@ -165,11 +191,25 @@ func find_at(world: Vector2) -> Vector2i:
 	return Vector2i(-1, -1)
 
 
+func find_in(area: Rect2, ignored: Array = []) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for section in SECTIONS.size():
+		if SECTIONS[section] in ignored:
+			continue
+		var rows: Array = data[SECTIONS[section]]
+		for index in rows.size():
+			if area.intersects(item_rect(SECTIONS[section], rows[index])):
+				result.append(Vector2i(section, index))
+	return result
+
+
 func item_rect(section: String, row: Dictionary) -> Rect2:
 	if section == "solids" or section == "one_ways":
 		return rect(row)
 	if section == "decor":
 		return Decor.decor_rect(row, data)
+	if section == "doors":
+		return RoomLinks.door_rect(row)
 	return Rect2(point(row) - Vector2(17, 32), Vector2(34, 38))
 
 
@@ -180,41 +220,74 @@ func item(selected: Vector2i) -> Dictionary:
 
 
 func move_item(selected: Vector2i, delta: Vector2) -> void:
-	var target := item(selected)
-	if target.is_empty() or delta == Vector2.ZERO:
+	move_items([selected], delta)
+
+
+func move_items(selected: Array[Vector2i], delta: Vector2) -> void:
+	if selected.is_empty() or delta == Vector2.ZERO:
 		return
-	var shifted := point(target) + delta
 	var world := bounds_rect()
-	if target.has("w"):
-		if not world.encloses(Rect2(shifted, rect(target).size)):
+	for key in selected:
+		var target := item(key)
+		if target.is_empty() or not world.has_point(point(target) + delta):
 			return
-	elif not world.has_point(shifted):
-		return
+		if target.has("w") and not world.encloses(Rect2(item_rect(SECTIONS[key.x], target).position + delta, item_rect(SECTIONS[key.x], target).size)):
+			return
 	edit()
-	target.x = int(shifted.x)
-	target.y = int(shifted.y)
+	for key in selected:
+		var target := item(key)
+		target.x = int(float(target.x) + delta.x)
+		target.y = int(float(target.y) + delta.y)
 
 
 func delete_item(selected: Vector2i) -> void:
-	if item(selected).is_empty():
+	delete_items([selected])
+
+
+func delete_items(selected: Array[Vector2i]) -> void:
+	var ordered := selected.filter(func(key: Vector2i) -> bool: return not item(key).is_empty())
+	if ordered.is_empty():
 		return
 	edit()
-	data[SECTIONS[selected.x]].remove_at(selected.y)
+	ordered.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.y > b.y)
+	for key in ordered:
+		var section: String = SECTIONS[key.x]
+		var removed: Dictionary = data[section][key.y]
+		if section == "doors":
+			for lever in data.switches:
+				lever.targets.erase(removed.id)
+		elif section == "switches":
+			for gate in data.exits:
+				if gate.has("requires"):
+					gate.requires.erase(removed.id)
+		data[section].remove_at(key.y)
+
+
+func set_item_properties(selected: Vector2i, changes: Dictionary) -> bool:
+	var target := item(selected)
+	if target.is_empty():
+		return false
+	var updated := target.duplicate(true)
+	updated.merge(changes, true)
+	if not bounds_rect().has_point(point(updated)):
+		return false
+	if updated.has("w"):
+		var rectangle := item_rect(SECTIONS[selected.x], updated)
+		if not rectangle.has_area() or not bounds_rect().encloses(rectangle):
+			return false
+	if updated != target:
+		edit()
+		data[SECTIONS[selected.x]][selected.y] = updated
+	return true
 
 
 func resize_item(selected: Vector2i, delta: Vector2) -> void:
 	var target := item(selected)
 	if not target.has("w") or delta == Vector2.ZERO:
 		return
-	var area := rect(target)
-	area.size.x = maxf(GRID, area.size.x + delta.x)
-	if SECTIONS[selected.x] == "solids":
-		area.size.y = maxf(GRID, area.size.y + delta.y)
-	if not bounds_rect().encloses(area) or rect(target).size == area.size:
-		return
-	edit()
-	target.w = int(area.size.x)
-	target.h = int(area.size.y)
+	var width := maxi(GRID, int(float(target.w) + delta.x))
+	var height := int(target.h) if SECTIONS[selected.x] == "one_ways" else maxi(GRID, int(float(target.h) + delta.y))
+	set_item_properties(selected, {"w": width, "h": height})
 
 
 func duplicate_item(selected: Vector2i) -> Vector2i:
@@ -266,18 +339,25 @@ func save() -> Error:
 	if created != OK:
 		return created
 	var target := DIR.path_join(str(data.id) + ".json")
-	var temporary := target + ".tmp"
+	var result := write_json(target, data)
+	if result == OK:
+		saved = data.duplicate(true)
+	return result
+
+
+static func write_json(target: String, payload: Dictionary, atomic := true) -> Error:
+	var temporary := target + ".tmp" if atomic else target
 	var file := FileAccess.open(temporary, FileAccess.WRITE)
 	if file == null:
 		return FileAccess.get_open_error()
-	file.store_string(JSON.stringify(data, "  ") + "\n")
+	file.store_string(JSON.stringify(payload, "  ") + "\n")
 	file.flush()
 	var result := file.get_error()
 	file.close()
-	if result == OK:
+	if result == OK and atomic:
 		result = DirAccess.rename_absolute(temporary, target)
-	if result == OK:
-		saved = data.duplicate(true)
+	if result != OK and atomic:
+		DirAccess.remove_absolute(temporary)
 	return result
 
 
@@ -287,7 +367,7 @@ func validate() -> PackedStringArray:
 
 static func validate_world(world: Dictionary) -> PackedStringArray:
 	var errors := PackedStringArray()
-	if world.get("version") != 1 or not valid_id(str(world.get("id", ""))) or LVL.has(str(world.get("id", ""))):
+	if world.get("version") != 1 or not world.get("id") is String or not valid_id(world.id) or LVL.has(world.id):
 		errors.append(L10N.t("editor.error_id"))
 	var area = world.get("bounds")
 	if not _point_valid(area) or not _number(area.get("w")) or not _number(area.get("h")):
@@ -296,6 +376,8 @@ static func validate_world(world: Dictionary) -> PackedStringArray:
 	if bounds.position != Vector2.ZERO or bounds.size.x < 640 or bounds.size.y < 384 or bounds.size.x > MAX_SIZE.x or bounds.size.y > MAX_SIZE.y:
 		return errors + PackedStringArray([L10N.t("editor.error_size")])
 	for section in SECTIONS:
+		if section in RoomLinks.SECTIONS:
+			continue
 		var rows = world.get(section, [])
 		if not rows is Array or rows.size() > 1024:
 			errors.append(L10N.t("editor.error_rows", [section]))
@@ -322,16 +404,15 @@ static func validate_world(world: Dictionary) -> PackedStringArray:
 					errors.append(L10N.t("editor.error_decor", [id]))
 	if not errors.is_empty():
 		return errors
-	var spawn = world.get("spawn")
-	if not _point_valid(spawn) or not bounds.has_point(point(spawn)):
-		return PackedStringArray([L10N.t("editor.error_spawn")])
-	var body := Rect2(point(spawn) - Vector2(14, 46), Vector2(28, 46))
-	if not bounds.encloses(body):
-		errors.append(L10N.t("editor.error_spawn"))
-	for row in world.get("solids", []):
-		if rect(row).intersects(body):
+	var issues := RoomLinks.issues(world, bounds)
+	for issue in issues:
+		errors.append(L10N.t("editor.error_link", [issue]))
+	if issues.is_empty():
+		if not valid_spawn(world, world.get("spawn")):
 			errors.append(L10N.t("editor.error_spawn"))
-			break
+		for entry in world.get("entries", []):
+			if not valid_spawn(world, entry):
+				errors.append(L10N.t("editor.error_link", [entry.id]))
 	# Clones retain gameplay-linked objects only while their data stays valid.
 	var triggers = world.get("triggers", [])
 	if not triggers is Array:
@@ -341,6 +422,22 @@ static func validate_world(world: Dictionary) -> PackedStringArray:
 			if not _point_valid(row) or not bounds.has_point(point(row)) or not valid_id(str(row.get("id", ""))):
 				errors.append(L10N.t("editor.error_rows", ["triggers"]))
 	return errors
+
+
+static func valid_spawn(world: Dictionary, spawn: Variant) -> bool:
+	if not _point_valid(spawn):
+		return false
+	var body := Rect2(point(spawn) - Vector2(14, 46), Vector2(28, 46))
+	var bounds := rect(world.bounds)
+	if not bounds.has_point(point(spawn)) or not bounds.encloses(body):
+		return false
+	for row in world.get("solids", []):
+		if rect(row).intersects(body):
+			return false
+	for row in world.get("doors", []):
+		if row is Dictionary and _point_valid(row) and _number(row.get("w")) and _number(row.get("h")) and RoomLinks.door_rect(row).intersects(body):
+			return false
+	return true
 
 
 static func _number(value: Variant) -> bool:

@@ -36,8 +36,16 @@
       "version": 1
     }
   },
-  "level_index_hash": "ab20f834b49e07ffc6a37536e53fd6c88e97168bb93247ad7cbe37bb2f9cae4f",
+  "level_index_hash": "ed6c6816ebb65aa774d5565a68803fb6e09efd1c84eb6c5dff5702a0418fd17e",
   "levels": {
+    "archive_annex": {
+      "data": "res://content/levels/archive_annex.json",
+      "data_hash": "eef470bad2ab1f1a0b03d9eceeb02ff53db347ac92a9a4b60802f6445c9ed385",
+      "order": 3,
+      "qa_only": false,
+      "scene": "res://scenes/level/archive_annex.tscn",
+      "scene_hash": "93de0d7291e5e6e1f3c71201c90072c9ee1df53ab70ace00f2f71d751090ac5d"
+    },
     "arena_01": {
       "data": "res://content/levels/arena_01.json",
       "data_hash": "aff9cb3ee998d9a5efd29c748b73ee919d2cd334a4d74f58833408102cf221ac",
@@ -48,11 +56,27 @@
     },
     "ch01_hall": {
       "data": "res://content/levels/ch01_hall.json",
-      "data_hash": "393ea5a503124097c3760cfcc9f4245fa8f00583deadfdde6ebe5b18df879016",
+      "data_hash": "f32d4a67087c35e4780a704e082d9535f11cc60f5ffc4506a3f86d079bf4df85",
       "order": 0,
       "qa_only": false,
       "scene": "res://scenes/level/ch01_hall.tscn",
       "scene_hash": "05edb720a4795cbd2637919504101746ad3211b0e9e7df1e1e4a67012d1b15cb"
+    },
+    "ch02_cistern": {
+      "data": "res://content/levels/ch02_cistern.json",
+      "data_hash": "d9c55dacf4227f7f10b04057d93826460d189f08c62ed2014e83799e19d6c4ba",
+      "order": 4,
+      "qa_only": false,
+      "scene": "res://scenes/level/ch02_cistern.tscn",
+      "scene_hash": "b95c53b19acc503be60cfd0b34029e62b90b56ecf2ef48d0c1a1fb3cf349cd5a"
+    },
+    "ch02_scriptorium": {
+      "data": "res://content/levels/ch02_scriptorium.json",
+      "data_hash": "3097b33267618b0bca2744ccb7742b2fa3f11b608bb1eca9e87cbcc542d9383c",
+      "order": 5,
+      "qa_only": false,
+      "scene": "res://scenes/level/ch02_scriptorium.tscn",
+      "scene_hash": "e8797e3862b98ae69971962fcdbe0783bded5dc05a82923be6cd6dbf76bd82dd"
     },
     "test_gallery": {
       "data": "res://content/levels/test_gallery.json",

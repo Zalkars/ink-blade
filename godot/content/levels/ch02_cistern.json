@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "ch02_cistern",
+  "display_name_key": "level.ch02_cistern.name",
+  "story_finale": false,
+  "bounds": { "x": 0, "y": 0, "w": 2048, "h": 768 },
+  "spawn": { "x": 128, "y": 608 },
+  "entries": [{ "id": "from_scriptorium", "x": 1760, "y": 608 }],
+  "exits": [{ "id": "to_scriptorium", "x": 1936, "y": 608, "level": "ch02_scriptorium", "entry": "from_cistern", "requires": ["sluice_lever"] }],
+  "checkpoints": [{ "id": "cistern_checkpoint", "x": 352, "y": 608 }],
+  "solids": [
+    { "x": 0, "y": 608, "w": 2048, "h": 160 },
+    { "x": 928, "y": 416, "w": 192, "h": 32 },
+    { "x": 1376, "y": 0, "w": 32, "h": 384 }
+  ],
+  "one_ways": [
+    { "x": 512, "y": 544, "w": 144, "h": 32 },
+    { "x": 720, "y": 480, "w": 144, "h": 32 }
+  ],
+  "doors": [{ "id": "sluice", "x": 1392, "y": 608, "w": 32, "h": 224 }],
+  "switches": [{ "id": "sluice_lever", "x": 1040, "y": 416, "targets": ["sluice"] }],
+  "placements": [
+    { "id": "cistern_guard", "def_id": "enemy.grunt", "x": 480, "y": 608 },
+    { "id": "sluice_sentry", "def_id": "enemy.sentry", "x": 812, "y": 448 }
+  ],
+  "props": [{ "id": "sluice_shard", "def_id": "prop.soul_shard", "x": 1600, "y": 608 }],
+  "decor": [
+    { "id": "cistern_arch", "kind": "gate", "x": 160, "y": 608 },
+    { "id": "cistern_lamp", "kind": "lantern", "x": 240, "y": 608 },
+    { "id": "cistern_column", "kind": "pillar", "x": 832, "y": 608 },
+    { "id": "sluice_marker", "kind": "tablet", "x": 1272, "y": 608 },
+    { "id": "far_lamp", "kind": "lantern", "x": 1800, "y": 608 }
+  ]
+}

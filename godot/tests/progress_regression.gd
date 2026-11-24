@@ -242,6 +242,7 @@ func _ready() -> void:
 		flow.cutscene.advance()
 	var post_finale := SaveGame.read_slot(SaveGame.AUTOSAVE)
 	check(bool(post_finale.get("cleared", false)) and bool(post_finale.get("finale_seen", false)), "finishing finale writes finale_seen")
+	check(flow.overlay.actions.has("next_chapter"), "Chapter I victory offers to start Chapter II")
 	flow.title_screen.refresh()
 	check(not flow.title_screen.actions.has("continue"), "title hides Continue after finale seen")
 

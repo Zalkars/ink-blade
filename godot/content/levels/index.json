@@ -4,6 +4,9 @@
   "levels": [
     { "id": "ch01_hall", "scene": "res://scenes/level/ch01_hall.tscn", "data": "res://content/levels/ch01_hall.json", "order": 0 },
     { "id": "arena_01", "scene": "res://scenes/level/arena_01.tscn", "data": "res://content/levels/arena_01.json", "order": 1 },
-    { "id": "test_gallery", "scene": "res://scenes/level/test_gallery.tscn", "data": "res://content/levels/test_gallery.json", "order": 2, "qa_only": true }
+    { "id": "test_gallery", "scene": "res://scenes/level/test_gallery.tscn", "data": "res://content/levels/test_gallery.json", "order": 2, "qa_only": true },
+    { "id": "archive_annex", "scene": "res://scenes/level/archive_annex.tscn", "data": "res://content/levels/archive_annex.json", "order": 3 },
+    { "id": "ch02_cistern", "scene": "res://scenes/level/ch02_cistern.tscn", "data": "res://content/levels/ch02_cistern.json", "order": 4 },
+    { "id": "ch02_scriptorium", "scene": "res://scenes/level/ch02_scriptorium.tscn", "data": "res://content/levels/ch02_scriptorium.json", "order": 5 }
   ]
 }

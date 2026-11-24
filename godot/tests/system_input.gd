@@ -125,6 +125,15 @@ func _ready() -> void:
 	CTL._notification(NOTIFICATION_APPLICATION_FOCUS_OUT)
 	CTL.update(1.0 / 120.0)
 	check(not CTL.down("mute") and not CTL.pressed("mute"), "focus loss clears pending and held event keys")
+	var cfg := ConfigFile.new()
+	cfg.set_value("bindings", "key_attack", [KEY_E])
+	cfg.set_value("bindings", "pad_attack", [11])
+	var settings_saved := cfg.save("user://settings.cfg") == OK
+	CTL.load_controls()
+	check(settings_saved and CTL.keyboard.attack == [KEY_E] and CTL.keyboard.interact == [KEY_G],
+		"old keyboard settings keep a custom attack and assign a free interaction key")
+	check(CTL.pad_map.attack == [11] and CTL.pad_map.interact == [10],
+		"old controller settings keep the right stick and assign a free interaction button")
 	get_tree().paused = false
 	print("SYSTEM_INPUT_RESULT=%s (%d checks)" % ["OK" if failures == 0 else "FAIL", checks])
 	get_tree().quit(0 if failures == 0 else 1)
