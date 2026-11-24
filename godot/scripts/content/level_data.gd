@@ -1,6 +1,11 @@
 class_name LevelData
 extends Resource
 
+const DECOR_SIZES := {
+	"gate": Vector2(150, 192), "cabinet": Vector2(154, 190), "pillar": Vector2(58, 220),
+	"lantern": Vector2(40, 74), "banner": Vector2(70, 144), "tablet": Vector2(116, 124),
+}
+
 var id: String
 var scene_path: String
 var data_path: String

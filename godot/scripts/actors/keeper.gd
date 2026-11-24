@@ -281,7 +281,7 @@ func _slam() -> void:
 	drop.floor_y = _floor_below(slam_x)
 	# Печать открывается, когда тяжёлый удар действительно дошёл до пола,
 	# а не в момент замаха: у игрока есть время подойти.
-	drop.landed.connect(_on_drop_landed)
+	drop.resolved.connect(_on_drop_landed)
 	get_parent().add_child(drop)
 
 

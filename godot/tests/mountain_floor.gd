@@ -90,7 +90,16 @@ func _ready() -> void:
 			level._fallback.set_process(false)
 			await frame()
 			var sky := get_viewport().get_texture().get_image()
-			check(sky.get_pixel(640,700).is_equal_approx(Decor.RIDGE_MID), "mountains stay present at zone boundary x=%d" % int(x))
+			var middle := 0
+			var near := 0
+			for sample_x in range(32, 1248, 32):
+				for sample_y in range(500, 714, 12):
+					var pixel := sky.get_pixel(sample_x, sample_y)
+					if pixel.is_equal_approx(Decor.RIDGE_MID):
+						middle += 1
+					elif pixel.is_equal_approx(Decor.RIDGE_NEAR):
+						near += 1
+			check(middle > 20 and near > 20, "middle and near ridges stay visible at zone boundary x=%d" % int(x))
 			level._strips_root.visible = true
 			level._fallback.set_process(true)
 			level._fallback.visible = true

@@ -50,6 +50,7 @@ var _backdrop: _BackdropLayer
 var _strips_root: Node2D
 var _fallback: _FallbackLayer
 var _dynamic: _DynamicDecorLayer
+var _platform_art: _PlatformLayer
 var _baked_strips: Dictionary = {}
 var _bake_range := Vector2i(-1, -1)
 var _baking := false
@@ -61,6 +62,7 @@ var _dust: Array = []
 class _BackdropLayer extends Node2D:
 	var owner_level: Level
 	var cam_x := 640.0
+	var cam_y := 360.0
 	var vp_w := 1280.0
 	var vp_h := 720.0
 	var paper: Texture2D
@@ -68,11 +70,12 @@ class _BackdropLayer extends Node2D:
 	func _process(_delta: float) -> void:
 		var cam := get_viewport().get_camera_2d()
 		var vp := get_viewport_rect().size
-		var x := cam.get_screen_center_position().x if cam != null else 640.0
+		var center := cam.get_screen_center_position() if cam != null else Vector2(640.0, 360.0)
 		var width := maxf(1280.0, vp.x)
 		var height := maxf(720.0, vp.y)
-		if x != cam_x or width != vp_w or height != vp_h or paper != InkR.tex_paper:
-			cam_x = x
+		if center.x != cam_x or center.y != cam_y or width != vp_w or height != vp_h or paper != InkR.tex_paper:
+			cam_x = center.x
+			cam_y = center.y
 			vp_w = width
 			vp_h = height
 			paper = InkR.tex_paper
@@ -80,8 +83,7 @@ class _BackdropLayer extends Node2D:
 
 	func _draw() -> void:
 		if is_instance_valid(owner_level):
-			var lid := String(owner_level.data.get("id", "ch01_hall"))
-			LevelDecor.draw_backdrop(self, cam_x, vp_w, vp_h, lid)
+			LevelDecor.draw_backdrop(self, Vector2(cam_x, cam_y), Vector2(vp_w, vp_h), owner_level.bounds)
 
 
 class _FallbackLayer extends Node2D:
@@ -90,7 +92,7 @@ class _FallbackLayer extends Node2D:
 
 	func _process(_delta: float) -> void:
 		if is_instance_valid(owner_level):
-			visible = owner_level._background_enabled and owner_level._platforms_enabled and not owner_level._all_strips_baked()
+			visible = owner_level._background_enabled and not owner_level._all_strips_baked()
 			var strips := _visible_strips()
 			if visible and strips != _last_strips:
 				_last_strips = strips
@@ -120,10 +122,17 @@ class _FallbackLayer extends Node2D:
 				var r := owner_level._rect_of(spec)
 				if r.end.x >= sx0 - 32.0 and r.position.x <= sx1 + 32.0:
 					LevelDecor.draw_surface(r, false, owner_level.bounds, owner_level.data.get("solids", []))
-			for spec in owner_level.data.get("one_ways", []):
-				var r := owner_level._rect_of(spec)
-				if r.end.x >= sx0 - 32.0 and r.position.x <= sx1 + 32.0:
-					LevelDecor.draw_surface(r, true, owner_level.bounds)
+
+
+class _PlatformLayer extends Node2D:
+	var owner_level: Level
+
+	func _draw() -> void:
+		InkR.init_static()
+		InkR.set_canvas(self)
+		InkR.begin_frame(0.0)
+		for spec in owner_level.data.get("one_ways", []):
+			LevelDecor.draw_surface(owner_level._rect_of(spec), true, owner_level.bounds)
 
 
 class _DynamicDecorLayer extends Node2D:
@@ -151,10 +160,11 @@ class _DynamicDecorLayer extends Node2D:
 		for g in owner_level._grass:
 			if g.x >= vx0 and g.x <= vx1:
 				LevelDecor.draw_grass_tuft(g.x, g.y, t, g.seed)
-		for d in owner_level._dust:
-			if d.x >= vx0 and d.x <= vx1:
-				var yy: float = d.y + sin(t * d.sp + d.ph) * 14.0
-				InkR.fill_circle_color(d.x + sin(t * 0.25 + d.ph) * 6.0, yy, d.r, InkR.INK, d.a)
+		if InkFx.particles_enabled:
+			for d in owner_level._dust:
+				if d.x >= vx0 and d.x <= vx1:
+					var yy: float = d.y + sin(t * d.sp + d.ph) * 14.0
+					InkR.fill_circle_color(d.x + sin(t * 0.25 + d.ph) * 6.0, yy, d.r, InkR.INK, d.a)
 
 
 func _ready() -> void:
@@ -245,6 +255,11 @@ func _build_visual_layers() -> void:
 	_fallback.z_index = -4
 	_fallback.owner_level = self
 	add_child(_fallback)
+	_platform_art = _PlatformLayer.new()
+	_platform_art.name = "PlatformArt"
+	_platform_art.owner_level = self
+	_platform_art.z_index = -3
+	add_child(_platform_art)
 
 	_populate_dynamic_decor()
 	_dynamic = _DynamicDecorLayer.new()
@@ -263,7 +278,7 @@ func _populate_dynamic_decor() -> void:
 	_candles.clear()
 	_grass.clear()
 	_dust.clear()
-	var lid := String(data.get("id", "ch01_hall"))
+	var lid := str(data.get("landmarks", data.get("id", "ch01_hall")))
 	if lid == "ch01_hall":
 		for x in [92.0, 520.0, 1320.0, 2370.0, 3210.0, 3320.0, 3810.0, 4480.0, 5720.0, 6830.0, 7160.0, 8400.0, 9390.0, 10280.0, 11350.0, 12780.0, 13910.0]:
 			var feet := LevelDecor._floor_y_at(x, data)
@@ -348,7 +363,7 @@ func _bake_strips_async() -> void:
 		# Keep the frozen render target as the sprite texture. Reading it back
 		# and re-uploading it synchronously stalls the first frames in a new area.
 		var sub := SubViewport.new()
-		sub.size = Vector2i(int(LevelDecor.STRIP_W), int(LevelDecor.STRIP_H))
+		sub.size = Vector2i(int(LevelDecor.STRIP_W), maxi(int(LevelDecor.STRIP_H), ceili(bounds.end.y)))
 		sub.disable_3d = true
 		sub.transparent_bg = true
 		sub.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -483,7 +498,7 @@ func set_debug_environment(show_enemies: bool, show_platforms: bool, show_backgr
 	if enemies_enabled != show_enemies:
 		enemies_enabled = show_enemies
 		for child in get_children():
-			if child in enemies or child is InkBolt or child is InkDrop or child is InkWave:
+			if child in enemies or child is EnemyProjectile:
 				child.visible = show_enemies
 				child.process_mode = Node.PROCESS_MODE_INHERIT if show_enemies else Node.PROCESS_MODE_DISABLED
 	if _platforms_enabled != show_platforms:
@@ -497,22 +512,23 @@ func set_debug_environment(show_enemies: bool, show_platforms: bool, show_backgr
 	_background_enabled = show_background
 	_backdrop.visible = show_background
 	_dynamic.visible = show_background
-	_strips_root.visible = show_background and show_platforms
+	_dynamic.set_process(show_background)
+	_dynamic.queue_redraw()
+	_strips_root.visible = show_background
+	_platform_art.visible = show_platforms
 	_fallback.visible = _strips_root.visible and not _all_strips_baked()
 	queue_redraw()
 
 
 func _draw() -> void:
-	if _background_enabled and _platforms_enabled:
+	if _background_enabled:
 		return
-	for solid in data.get("solids", []):
-		var rect := _rect_of(solid)
-		draw_rect(rect, Color("#655548"))
-		draw_line(rect.position, Vector2(rect.end.x, rect.position.y), Color("#17130f"), 3.0)
-	if _platforms_enabled:
-		for platform in data.get("one_ways", []):
-			var rect := _rect_of(platform)
-			draw_rect(Rect2(rect.position, Vector2(rect.size.x, 6.0)), Color("#9c1f24"))
+	InkR.init_static()
+	InkR.set_canvas(self)
+	InkR.begin_frame(0.0)
+	var solids: Array = data.get("solids", [])
+	for solid in solids:
+		LevelDecor.draw_surface(_rect_of(solid), false, bounds, solids)
 
 
 func _add_enemy(spec: Dictionary, index: int = 0) -> void:

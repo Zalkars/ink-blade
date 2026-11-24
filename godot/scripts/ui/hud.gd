@@ -16,10 +16,40 @@ var flow: Node
 var player: Player
 var boss: Keeper
 var debug_on := false
-var debug_page := 0:
+const DEBUG_HELP := 1
+const DEBUG_PERFORMANCE := 2
+const DEBUG_WORLD := 4
+const DEBUG_ALL := DEBUG_HELP | DEBUG_PERFORMANCE | DEBUG_WORLD
+
+var debug_sections := 0:
 	set(value):
-		debug_page = value
+		debug_sections = value
 		queue_redraw()
+var debug_all := false:
+	set(value):
+		debug_all = value
+		queue_redraw()
+
+
+func toggle_debug_section(section: int) -> void:
+	if debug_all:
+		debug_sections = DEBUG_ALL
+		debug_on = true
+		debug_all = false
+	debug_sections ^= section
+
+
+func hitboxes_visible() -> bool:
+	return debug_on or debug_all
+
+
+func toggle_hitboxes() -> void:
+	if debug_all:
+		debug_all = false
+		debug_sections = DEBUG_ALL
+		debug_on = false
+	else:
+		debug_on = not debug_on
 var hint := ""
 var toast := ""
 var toast_t := 0.0
@@ -88,7 +118,7 @@ func _process(delta: float) -> void:
 	var combo_visible: bool = flow != null and flow.combo >= 2 and flow.combo_t > 0.0
 	if animate or int(_t * 10.0) != ink_frame or vitals != _vitals or boss_status != _boss_status \
 		or screen_fx != _screen_fx or combo_visible or combo_visible != _combo_visible \
-		or debug_on or debug_page > 0 or debug_on != _was_debug_on:
+		or debug_on or debug_all or debug_sections > 0 or debug_on != _was_debug_on:
 		queue_redraw()
 	_vitals = vitals
 	_boss_status = boss_status
@@ -157,7 +187,7 @@ func _draw() -> void:
 	if toast_t > 0.0 and not toast.is_empty():
 		_draw_toast(132.0 if boss_visible else 96.0)
 
-	if debug_on or debug_page > 0:
+	if debug_on or debug_all or debug_sections > 0:
 		_draw_debug()
 
 
@@ -387,28 +417,49 @@ func _draw_toast(y: float) -> void:
 
 
 func _draw_debug() -> void:
-	var lines := PackedStringArray()
-	match debug_page:
-		1:
-			lines = ["F2 · " + L10N.t("debug.hitboxes"), "F3 · " + L10N.t("debug.console"),
-				"F4 · " + L10N.t("debug.title"), "F5 · " + L10N.t("debug.performance"), "F6 · " + L10N.t("debug.world")]
-		2:
-			lines = ["FPS %d · %d Hz" % [Engine.get_frames_per_second(), Engine.physics_ticks_per_second],
-				"Draw calls %d" % Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
-				"Physics %.2f ms" % (Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0),
-				"Video %.1f MB" % (Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0),
-				"Particles %d" % InkFx.parts.size()]
-		3:
-			if is_instance_valid(player) and flow != null and is_instance_valid(flow.level):
-				lines = ["%s / %s" % [flow.level_id, flow.checkpoint_id],
-					"XY %.1f, %.1f" % [player.global_position.x, player.global_position.y],
-					"V %.0f, %.0f · HP %d" % [player.velocity.x, player.velocity.y, player.hp],
-					"%s · %d / %d" % [L10N.t("debug.enemies"), flow.level.enemy_count(), flow.level.killed_ids.size()]]
-	if debug_on:
-		lines.append("F2 · " + L10N.t("debug.hitboxes"))
-	var origin := Vector2(size.x - 243.0, 90.0)
-	draw_rect(Rect2(origin, Vector2(223, 14 + lines.size() * 20)), Color(INK, 0.91))
+	var shown := DEBUG_ALL if debug_all else debug_sections
+	var left := Vector2(18, 110)
+	var right := Vector2(size.x - 288, 96)
+	if shown & DEBUG_WORLD:
+		_draw_debug_block(left, L10N.t("debug.world"), _debug_world_lines())
+	if shown & DEBUG_PERFORMANCE:
+		right.y += _draw_debug_block(right, L10N.t("debug.performance"), [
+			"FPS %d · %d Hz" % [Engine.get_frames_per_second(), Engine.physics_ticks_per_second],
+			"Draw calls %d" % Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+			"Physics %.2f ms" % (Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0),
+			"Video %.1f MB" % (Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0),
+			"Particles %d" % InkFx.parts.size()]) + 9.0
+	if shown & DEBUG_HELP or hitboxes_visible():
+		var shortcuts: PackedStringArray = ["F2 · " + L10N.t("debug.hitboxes")]
+		if shown & DEBUG_HELP:
+			shortcuts.append_array(["F3 · " + L10N.t("debug.all"), "F4 · " + L10N.t("debug.title"), "F7 · " + L10N.t("debug.console")])
+		_draw_debug_block(right, L10N.t("debug.diagnostics"), shortcuts)
+
+
+func _debug_world_lines() -> PackedStringArray:
+	if not is_instance_valid(player) or flow == null or not is_instance_valid(flow.level):
+		return []
+	var result: PackedStringArray = ["%s / %s" % [flow.level_id, flow.checkpoint_id],
+		"XY %.1f / %.1f" % [player.global_position.x, player.global_position.y],
+		"V %.0f, %.0f · HP %d" % [player.velocity.x, player.velocity.y, player.hp],
+		"%s · %.1f" % [L10N.t("debug.soul"), player.soul],
+		"%s · %d (%d)" % [L10N.t("debug.enemies"), flow.level.enemy_count(), flow.level.killed_ids.size()]]
+	var initial_count := result.size()
+	for rule in ["flight", "god", "damage"]:
+		if flow.debug_rules[rule]:
+			result.append("+ " + L10N.t("debug." + rule))
+	if result.size() == initial_count:
+		result.append(L10N.t("debug.rules_default"))
+	return result
+
+
+func _draw_debug_block(origin: Vector2, heading: String, lines: PackedStringArray) -> float:
+	var height := 33.0 + lines.size() * 19.0
+	draw_rect(Rect2(origin, Vector2(270, height)), Color(INK, 0.89))
+	draw_rect(Rect2(origin, Vector2(3, height)), RED)
+	draw_string(FONT_BOLD, origin + Vector2(12, 20), heading, HORIZONTAL_ALIGNMENT_LEFT, 246, 16, Color("#f1e6d0"))
 	var y := origin.y + 22.0
 	for line in lines:
-		draw_string(FONT_TEXT, Vector2(origin.x + 12.0, y), line, HORIZONTAL_ALIGNMENT_LEFT, 199, 15, Color("#f1e6d0"))
-		y += 20.0
+		y += 19.0
+		draw_string(FONT_TEXT, Vector2(origin.x + 12.0, y), line, HORIZONTAL_ALIGNMENT_LEFT, 246, 15, Color("#f1e6d0"))
+	return height

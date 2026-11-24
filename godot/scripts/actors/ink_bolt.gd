@@ -1,5 +1,5 @@
 class_name InkBolt
-extends Area2D
+extends EnemyProjectile
 
 ## Чернильный болт часового: летит по прямой, ранит игрока и исчезает.
 ## Живёт в сцене уровня, поэтому убирается вместе с ним.
@@ -14,12 +14,11 @@ const RED := Color("#9c1f24")
 var velocity := Vector2.ZERO
 var damage := 1
 var life := LIFETIME
-var _done := false
 var _trail: Array[Vector2] = []
 
 
 func _ready() -> void:
-	collision_layer = 0
+	collision_layer = ATTACK_LAYER
 	collision_mask = 3
 	monitoring = true
 	var shape := CollisionShape2D.new()
@@ -56,7 +55,8 @@ func _physics_process(delta: float) -> void:
 		_trail.pop_back()
 	global_position = next
 	life -= delta
-	if life <= 0.0 or position.y < -80.0 or position.y > 800.0:
+	var vertical_bounds: Rect2 = par.bounds.grow(80.0) if par is Level else Rect2(0, -80, 0, 880)
+	if life <= 0.0 or position.y < vertical_bounds.position.y or position.y > vertical_bounds.end.y:
 		queue_free()
 		return
 	queue_redraw()

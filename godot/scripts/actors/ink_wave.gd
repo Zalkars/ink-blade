@@ -1,5 +1,5 @@
 class_name InkWave
-extends Area2D
+extends EnemyProjectile
 
 ## Волна чернил от замаха Хранителя: идёт по полу, ранит игрока и исчезает.
 ## Живёт в сцене уровня, поэтому убирается вместе с ним.
@@ -15,11 +15,10 @@ var velocity := Vector2.ZERO
 var damage := 1
 var life := LIFETIME
 var _t := 0.0
-var _done := false
 
 
 func _ready() -> void:
-	collision_layer = 0
+	collision_layer = ATTACK_LAYER
 	collision_mask = 2
 	monitoring = true
 	var shape := CollisionShape2D.new()

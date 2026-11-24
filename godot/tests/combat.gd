@@ -120,10 +120,14 @@ func _ready() -> void:
 	through_dash.position = player.position + Vector2(42, 0)
 	await ticks(2)
 	player._physics_process(0.06)
-	check(is_instance_valid(through_dash) and not through_dash.is_queued_for_deletion(), "blade attack passes through the bolt")
+	check(not is_instance_valid(through_dash) or through_dash.is_queued_for_deletion(), "blade destroys a bolt in the active hitbox")
+	var normal_bolt := InkBolt.new()
+	normal_bolt.position = player.position + Vector2(42, 0)
+	room.add_child(normal_bolt)
+	normal_bolt.set_physics_process(false)
 	player.iframes = 0.0
-	through_dash._on_body_entered(player)
-	check(through_dash.is_queued_for_deletion() and player.hp == hp_before - 1, "normal player hit still consumes the bolt")
+	normal_bolt._on_body_entered(player)
+	check(normal_bolt.is_queued_for_deletion() and player.hp == hp_before - 1, "normal player hit still consumes the bolt")
 	player.attack_t = 0.0
 	var drop := InkDrop.new()
 	drop.position = Vector2(450, 280)
@@ -150,7 +154,10 @@ func _ready() -> void:
 	rain.set_physics_process(false)
 	rain._on_body_entered(player)
 	check(not rain._hit_player and not rain.is_queued_for_deletion(), "dashing through boss rain does not consume its hit")
-	rain.queue_free()
+	var resolved := [false, false]
+	rain.resolved.connect(func(): resolved[0] = true)
+	rain.landed.connect(func(): resolved[1] = true)
+	check(rain.break_by_attack() and resolved[0] and not resolved[1], "shattering the falling drop resolves the boss attack without landing")
 	player.dash_t = 0.0
 	wave._physics_process(0.1)
 	check(fx.marks.size() == 3, "wave stains the wall on contact")

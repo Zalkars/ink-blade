@@ -166,7 +166,7 @@ func _validate_world(world: Dictionary, path: String, dialogues: Dictionary) -> 
 		return
 	var bounds := Rect2(raw.x, raw.y, raw.w, raw.h)
 	_position(world.get("spawn"), bounds, path + " spawn")
-	for section in ["placements", "props", "checkpoints", "triggers"]:
+	for section in ["placements", "props", "checkpoints", "triggers", "decor"]:
 		var entries = world.get(section, [])
 		if not entries is Array:
 			errors.append(path + ": " + section + " должен быть массивом")
@@ -186,6 +186,9 @@ func _validate_world(world: Dictionary, path: String, dialogues: Dictionary) -> 
 				errors.append(label + ": неизвестный def_id " + reference)
 			if section == "triggers" and spec.has("dialogue") and not dialogues.has(str(spec.dialogue)):
 				errors.append(label + ": неизвестный dialogue " + str(spec.dialogue))
+			if section == "decor" and (not LevelData.DECOR_SIZES.has(str(spec.get("kind", ""))) \
+					or not spec.get("grounded", true) is bool):
+				errors.append(label + ": неизвестный декор или неверная привязка")
 	if world.has("display_name_key"):
 		_validate_key(world.display_name_key, path)
 	var zones = world.get("zones", [])

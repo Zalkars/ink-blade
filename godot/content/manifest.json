@@ -56,7 +56,7 @@
     },
     "test_gallery": {
       "data": "res://content/levels/test_gallery.json",
-      "data_hash": "eed05b7b29d45b91ce7c00e2c909be18f186bfc2c9149cc5dbaba2751bae5e9f",
+      "data_hash": "94056d929381c504c5c6aa48c2666729843e60757e0f22f0a2e2049ba2ec211c",
       "order": 2,
       "qa_only": true,
       "scene": "res://scenes/level/test_gallery.tscn",

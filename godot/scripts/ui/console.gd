@@ -1,7 +1,7 @@
 extends Control
 
 ## Debug-консоль каркаса: warp, give, spawn, kill, fps.
-## Открывается клавишей «ё» (клавиша слева от единицы) или F3.
+## Открывается клавишей «ё» (клавиша слева от единицы) или F7.
 ## Пока консоль открыта, игра стоит на паузе, а ввод уходит в строку.
 
 signal opened
@@ -100,8 +100,9 @@ func _input(event: InputEvent) -> void:
 	var key := int(event.physical_keycode)
 	if key == 0:
 		key = int(event.keycode)
-	if key == KEY_QUOTELEFT or key == KEY_F3:
-		if flow != null and is_instance_valid(flow.debug_panel) and flow.debug_panel.visible:
+	if key == KEY_QUOTELEFT or key == KEY_F7:
+		if flow != null and ((is_instance_valid(flow.debug_panel) and flow.debug_panel.visible) \
+				or (is_instance_valid(flow.level_editor) and flow.level_editor.visible)):
 			return
 		if visible:
 			close()

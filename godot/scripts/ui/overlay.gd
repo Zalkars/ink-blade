@@ -58,6 +58,9 @@ func open(m: int, subtitle: String = "") -> void:
 				["restart", "ui.pause.restart"],
 				["menu", "ui.pause.menu"],
 			])
+			if flow != null and flow.is_testing_level():
+				_set_items([["resume", "ui.pause.resume"], ["editor_return", "editor.return"],
+					["settings", "MENU_SETTINGS"], ["debug", "debug.title"], ["restart", "ui.pause.restart"]])
 		Mode.DEAD:
 			heading = L10N.t("DEATH_TITLE")
 			sub = L10N.t("DEATH_SUB")
@@ -65,6 +68,8 @@ func open(m: int, subtitle: String = "") -> void:
 				["checkpoint", "ui.death.checkpoint"],
 				["menu", "ui.death.menu"],
 			])
+			if flow != null and flow.is_testing_level():
+				_set_items([["checkpoint", "ui.death.checkpoint"], ["editor_return", "editor.return"]])
 		Mode.CLEARED:
 			heading = L10N.t("ui.cleared.title")
 			_set_items([

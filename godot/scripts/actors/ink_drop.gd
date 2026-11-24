@@ -1,10 +1,11 @@
 class_name InkDrop
-extends Area2D
+extends EnemyProjectile
 
 ## Капля чернил с потолка. Сначала показывает тонкую красную линию,
 ## потом падает. Нужна и для удара сверху, и для дождя во второй фазе.
 
 signal landed
+signal resolved
 
 const TELEGRAPH := 0.55
 const GRAVITY := 1500.0
@@ -18,14 +19,13 @@ var damage := 1
 var falling := false
 var fall_speed := 0.0
 var _t := 0.0
-var _done := false
 var _hit_player := false
 ## Уровень пола: на этой высоте капля считается приземлившейся.
 var floor_y := 760.0
 
 
 func _ready() -> void:
-	collision_layer = 0
+	collision_layer = ATTACK_LAYER
 	collision_mask = 2
 	monitoring = false
 	var shape := CollisionShape2D.new()
@@ -77,11 +77,21 @@ func _on_body_entered(body: Node2D) -> void:
 		# and expose the seal, including when the player mistimes a dodge.
 
 
-func _finish() -> void:
+func _can_break() -> bool:
+	return falling
+
+
+func _on_broken() -> void:
+	_finish(false)
+
+
+func _finish(ground_contact := true) -> void:
 	if _done:
 		return
 	_done = true
-	landed.emit()
+	if ground_contact:
+		landed.emit()
+	resolved.emit()
 	queue_free()
 
 

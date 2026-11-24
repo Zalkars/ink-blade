@@ -1,0 +1,351 @@
+class_name LevelDraft
+extends RefCounted
+
+const Decor := preload("res://scripts/world/level_decor.gd")
+const DIR := "user://level_editor"
+const GRID := 32
+const MAX_SIZE := Vector2i(16384, 2048)
+const SECTIONS := ["solids", "one_ways", "checkpoints", "placements", "props", "decor"]
+const GEOMETRY_TOOLS := ["solid", "platform", "ledge", "bridge", "steps"]
+const HISTORY_LIMIT := 32
+
+var data: Dictionary
+var saved: Dictionary
+var undo_stack: Array[Dictionary] = []
+var redo_stack: Array[Dictionary] = []
+
+
+func _init() -> void:
+	start("custom_level", L10N.t("editor.new_name"))
+
+
+func start(id: String, title: String) -> void:
+	replace({"version": 1, "id": id, "name": title, "bounds": {"x": 0, "y": 0, "w": 2048, "h": 768},
+		"spawn": {"x": 128, "y": 608}, "solids": [{"x": 0, "y": 608, "w": 2048, "h": 160}]})
+	# New drafts have never been saved and can be offered for saving on exit.
+	saved = {}
+
+
+func replace(world: Dictionary) -> void:
+	data = world.duplicate(true)
+	for section in SECTIONS:
+		if not data.has(section):
+			data[section] = []
+	saved = data.duplicate(true)
+	undo_stack.clear()
+	redo_stack.clear()
+
+
+func clone_world(world: Dictionary, id: String) -> void:
+	replace(world)
+	data.id = id
+	if world.get("id") == "ch01_hall":
+		data.landmarks = "ch01_hall"
+	data.erase("display_name_key")
+	data.name = str(world.get("name", id)).capitalize()
+	var bounds: Dictionary = data.bounds
+	bounds.h = ceili(float(bounds.h) / GRID) * GRID
+	for section in ["solids", "one_ways"]:
+		for row in data[section]:
+			bounds.h = maxi(int(bounds.h), int(float(row.y) + float(row.h)))
+	saved = {}
+
+
+func edit() -> void:
+	undo_stack.append(data.duplicate(true))
+	if undo_stack.size() > HISTORY_LIMIT:
+		undo_stack.pop_front()
+	redo_stack.clear()
+
+
+func undo() -> void:
+	if not undo_stack.is_empty():
+		redo_stack.append(data)
+		data = undo_stack.pop_back()
+
+
+func redo() -> void:
+	if not redo_stack.is_empty():
+		undo_stack.append(data)
+		data = redo_stack.pop_back()
+
+
+func dirty() -> bool:
+	return JSON.stringify(data) != JSON.stringify(saved)
+
+
+func bounds_rect() -> Rect2:
+	return rect(data.bounds)
+
+
+static func rect(row: Dictionary) -> Rect2:
+	return Rect2(float(row.x), float(row.y), float(row.w), float(row.h))
+
+
+static func point(row: Dictionary) -> Vector2:
+	return Vector2(float(row.x), float(row.y))
+
+
+func place(tool: String, from: Vector2, to: Vector2) -> void:
+	if tool in GEOMETRY_TOOLS:
+		var shapes := geometry(tool, from, to)
+		for shape in shapes:
+			if not bounds_rect().encloses(shape):
+				return
+		if shapes.is_empty():
+			return
+		edit()
+		var section := "one_ways" if tool in ["platform", "bridge"] else "solids"
+		for shape in shapes:
+			data[section].append(_rectangle(shape))
+		return
+	if not bounds_rect().has_point(from):
+		return
+	var item := {"x": int(from.x), "y": int(from.y)}
+	if tool == "spawn":
+		edit()
+		data.spawn = item
+		return
+	var kind := tool.get_slice(":", 0)
+	var section: String = {"checkpoint": "checkpoints", "enemy": "placements", "prop": "props", "decor": "decor"}.get(kind, "")
+	if section.is_empty():
+		return
+	edit()
+	item.id = _next_id(section, kind)
+	if kind == "decor":
+		item.kind = tool.get_slice(":", 1)
+		item.grounded = item.kind != "banner"
+	elif kind != "checkpoint":
+		item.def_id = tool.get_slice(":", 1)
+	data[section].append(item)
+
+
+static func geometry(tool: String, start: Vector2, finish: Vector2) -> Array[Rect2]:
+	var top_left := start.min(finish)
+	var dimensions := (start - finish).abs() + Vector2(GRID, GRID)
+	if tool in ["platform", "ledge", "bridge"]:
+		dimensions.y = GRID
+	var result: Array[Rect2] = []
+	if tool == "steps":
+		var step_count := mini(12, int(dimensions.x / GRID))
+		var rightward := finish.x >= start.x
+		for index in step_count:
+			var height := minf(GRID * (index + 1), dimensions.y)
+			var column := index if rightward else int(dimensions.x / GRID) - index - 1
+			result.append(Rect2(top_left + Vector2(column * GRID, dimensions.y - height), Vector2(GRID, height)))
+	elif tool == "bridge":
+		for dx in range(0, int(dimensions.x), GRID * 5):
+			result.append(Rect2(top_left + Vector2(dx, 0), Vector2(minf(GRID * 4, dimensions.x - dx), GRID)))
+	else:
+		result.append(Rect2(top_left, dimensions))
+	return result
+
+
+func _rectangle(area: Rect2) -> Dictionary:
+	return {"x": int(area.position.x), "y": int(area.position.y), "w": int(area.size.x), "h": int(area.size.y)}
+
+
+func _next_id(section: String, prefix: String) -> String:
+	var taken := {}
+	for row in data[section]:
+		taken[row.id] = true
+	var index := 1
+	while taken.has("%s_%d" % [prefix, index]):
+		index += 1
+	return "%s_%d" % [prefix, index]
+
+
+func find_at(world: Vector2) -> Vector2i:
+	# Interactive items are drawn above terrain and selected first.
+	for section in range(SECTIONS.size() - 1, -1, -1):
+		var rows: Array = data[SECTIONS[section]]
+		for index in range(rows.size() - 1, -1, -1):
+			if item_rect(SECTIONS[section], rows[index]).has_point(world):
+				return Vector2i(section, index)
+	return Vector2i(-1, -1)
+
+
+func item_rect(section: String, row: Dictionary) -> Rect2:
+	if section == "solids" or section == "one_ways":
+		return rect(row)
+	if section == "decor":
+		return Decor.decor_rect(row, data)
+	return Rect2(point(row) - Vector2(17, 32), Vector2(34, 38))
+
+
+func item(selected: Vector2i) -> Dictionary:
+	if selected.x < 0 or selected.x >= SECTIONS.size() or selected.y < 0 or selected.y >= data[SECTIONS[selected.x]].size():
+		return {}
+	return data[SECTIONS[selected.x]][selected.y]
+
+
+func move_item(selected: Vector2i, delta: Vector2) -> void:
+	var target := item(selected)
+	if target.is_empty() or delta == Vector2.ZERO:
+		return
+	var shifted := point(target) + delta
+	var world := bounds_rect()
+	if target.has("w"):
+		if not world.encloses(Rect2(shifted, rect(target).size)):
+			return
+	elif not world.has_point(shifted):
+		return
+	edit()
+	target.x = int(shifted.x)
+	target.y = int(shifted.y)
+
+
+func delete_item(selected: Vector2i) -> void:
+	if item(selected).is_empty():
+		return
+	edit()
+	data[SECTIONS[selected.x]].remove_at(selected.y)
+
+
+func resize_item(selected: Vector2i, delta: Vector2) -> void:
+	var target := item(selected)
+	if not target.has("w") or delta == Vector2.ZERO:
+		return
+	var area := rect(target)
+	area.size.x = maxf(GRID, area.size.x + delta.x)
+	if SECTIONS[selected.x] == "solids":
+		area.size.y = maxf(GRID, area.size.y + delta.y)
+	if not bounds_rect().encloses(area) or rect(target).size == area.size:
+		return
+	edit()
+	target.w = int(area.size.x)
+	target.h = int(area.size.y)
+
+
+func duplicate_item(selected: Vector2i) -> Vector2i:
+	var source := item(selected)
+	if source.is_empty():
+		return selected
+	var section: String = SECTIONS[selected.x]
+	var copy := source.duplicate(true)
+	var area := item_rect(section, source)
+	var shift := maxf(GRID, ceilf(area.size.x / GRID) * GRID)
+	if not bounds_rect().encloses(Rect2(area.position + Vector2(shift, 0), area.size)):
+		shift = -shift
+	if not bounds_rect().encloses(Rect2(area.position + Vector2(shift, 0), area.size)):
+		return selected
+	edit()
+	copy.x = int(float(copy.x) + shift)
+	if copy.has("id"):
+		copy.id = _next_id(section, str(copy.id).get_slice("_", 0))
+	data[section].append(copy)
+	return Vector2i(selected.x, data[section].size() - 1)
+
+
+static func valid_id(id: String) -> bool:
+	if id.is_empty() or id.length() > 48:
+		return false
+	for character in id:
+		if character not in "abcdefghijklmnopqrstuvwxyz0123456789_-":
+			return false
+	return id[0] in "abcdefghijklmnopqrstuvwxyz"
+
+
+static func files() -> PackedStringArray:
+	var result := PackedStringArray()
+	if DirAccess.dir_exists_absolute(DIR):
+		for file in DirAccess.get_files_at(DIR):
+			if file.get_extension() == "json" and valid_id(file.get_basename()):
+				result.append(file.get_basename())
+	return result
+
+
+static func read(id: String) -> Dictionary:
+	return LevelData.read_json(DIR.path_join(id + ".json")) if valid_id(id) else {}
+
+
+func save() -> Error:
+	if not validate().is_empty():
+		return ERR_INVALID_DATA
+	var created := DirAccess.make_dir_recursive_absolute(DIR)
+	if created != OK:
+		return created
+	var target := DIR.path_join(str(data.id) + ".json")
+	var temporary := target + ".tmp"
+	var file := FileAccess.open(temporary, FileAccess.WRITE)
+	if file == null:
+		return FileAccess.get_open_error()
+	file.store_string(JSON.stringify(data, "  ") + "\n")
+	file.flush()
+	var result := file.get_error()
+	file.close()
+	if result == OK:
+		result = DirAccess.rename_absolute(temporary, target)
+	if result == OK:
+		saved = data.duplicate(true)
+	return result
+
+
+func validate() -> PackedStringArray:
+	return validate_world(data)
+
+
+static func validate_world(world: Dictionary) -> PackedStringArray:
+	var errors := PackedStringArray()
+	if world.get("version") != 1 or not valid_id(str(world.get("id", ""))) or LVL.has(str(world.get("id", ""))):
+		errors.append(L10N.t("editor.error_id"))
+	var area = world.get("bounds")
+	if not _point_valid(area) or not _number(area.get("w")) or not _number(area.get("h")):
+		return errors + PackedStringArray([L10N.t("editor.error_size")])
+	var bounds := rect(area)
+	if bounds.position != Vector2.ZERO or bounds.size.x < 640 or bounds.size.y < 384 or bounds.size.x > MAX_SIZE.x or bounds.size.y > MAX_SIZE.y:
+		return errors + PackedStringArray([L10N.t("editor.error_size")])
+	for section in SECTIONS:
+		var rows = world.get(section, [])
+		if not rows is Array or rows.size() > 1024:
+			errors.append(L10N.t("editor.error_rows", [section]))
+			continue
+		var ids := {}
+		for row in rows:
+			if not _point_valid(row) or not bounds.has_point(point(row)):
+				errors.append(L10N.t("editor.error_rows", [section]))
+				continue
+			if section in ["solids", "one_ways"]:
+				if not _number(row.get("w")) or not _number(row.get("h")) or not rect(row).has_area() or not bounds.encloses(rect(row)):
+					errors.append(L10N.t("editor.error_rows", [section]))
+				continue
+			var id := str(row.get("id", ""))
+			if not valid_id(id) or ids.has(id):
+				errors.append(L10N.t("editor.error_rows", [section]))
+			ids[id] = true
+			if section == "placements" and not DB.has(StringName(str(row.get("def_id", "")))) \
+					or section == "props" and PDB.get_def(StringName(str(row.get("def_id", "")))) == null \
+					or section == "decor" and not Decor.DECOR_SIZES.has(str(row.get("kind", ""))):
+				errors.append(L10N.t("editor.error_rows", [section]))
+			elif section == "decor" and row.kind != "banner" and bool(row.get("grounded", true)):
+				if not bounds.encloses(Decor.decor_rect(row, world)) or not Decor.decor_has_support(row, world):
+					errors.append(L10N.t("editor.error_decor", [id]))
+	if not errors.is_empty():
+		return errors
+	var spawn = world.get("spawn")
+	if not _point_valid(spawn) or not bounds.has_point(point(spawn)):
+		return PackedStringArray([L10N.t("editor.error_spawn")])
+	var body := Rect2(point(spawn) - Vector2(14, 46), Vector2(28, 46))
+	if not bounds.encloses(body):
+		errors.append(L10N.t("editor.error_spawn"))
+	for row in world.get("solids", []):
+		if rect(row).intersects(body):
+			errors.append(L10N.t("editor.error_spawn"))
+			break
+	# Clones retain gameplay-linked objects only while their data stays valid.
+	var triggers = world.get("triggers", [])
+	if not triggers is Array:
+		errors.append(L10N.t("editor.error_rows", ["triggers"]))
+	else:
+		for row in triggers:
+			if not _point_valid(row) or not bounds.has_point(point(row)) or not valid_id(str(row.get("id", ""))):
+				errors.append(L10N.t("editor.error_rows", ["triggers"]))
+	return errors
+
+
+static func _number(value: Variant) -> bool:
+	return (value is float or value is int) and is_finite(float(value))
+
+
+static func _point_valid(value: Variant) -> bool:
+	return value is Dictionary and _number(value.get("x")) and _number(value.get("y"))

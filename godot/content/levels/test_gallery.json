@@ -7,9 +7,17 @@
   "solids": [{ "x": 0, "y": 576, "w": 1280, "h": 160 }],
   "one_ways": [
     { "x": 448, "y": 480, "w": 96, "h": 32 },
-    { "x": 672, "y": 416, "w": 128, "h": 32 }
+    { "x": 672, "y": 416, "w": 128, "h": 32 },
+    { "x": 896, "y": 448, "w": 96, "h": 32 },
+    { "x": 1024, "y": 448, "w": 96, "h": 32 }
   ],
   "checkpoints": [{ "id": "cp_gallery", "x": 192, "y": 576 }],
   "placements": [{ "id": "gallery_grunt", "def_id": "enemy.grunt", "x": 1056, "y": 576 }],
-  "props": [{ "id": "shard_1", "def_id": "prop.soul_shard", "x": 352, "y": 576 }]
+  "props": [{ "id": "shard_1", "def_id": "prop.soul_shard", "x": 352, "y": 576 }],
+  "decor": [
+    { "id": "gallery_gate", "kind": "gate", "x": 192, "y": 576 },
+    { "id": "gallery_cabinet", "kind": "cabinet", "x": 512, "y": 576 },
+    { "id": "gallery_lantern", "kind": "lantern", "x": 778, "y": 576 },
+    { "id": "gallery_tablet", "kind": "tablet", "x": 1152, "y": 576 }
+  ]
 }

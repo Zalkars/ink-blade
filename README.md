@@ -1,9 +1,9 @@
 # Чернильный клинок · Ink Blade
 
-**v0.5.0 · Godot 4.5.1 · Windows и Android**
+**v0.5.1 · Godot 4.5.1 · Windows и Android**
 
 Windows поставляется отдельным EXE, Android — подписанным APK.
-[Описание 0.5.0](docs/RELEASE_NOTES_v0.5.0.md) ·
+[Описание 0.5.1](docs/RELEASE_NOTES_v0.5.1.md) ·
 [Результаты проверок](docs/revision-0.4.2.md).
 
 Экшн-платформер в рисованной чернильной стилистике: бумага, тушь,
@@ -11,10 +11,17 @@ Windows поставляется отдельным EXE, Android — подпи�
 вертикальный срез с четырьмя зонами первого уровня, чекпоинтами,
 диалогом, двумя видами оружия и боссом Хранителем.
 
-[**Скачать v0.5.0 для Windows и Android**](https://github.com/Zalkars/ink-blade/releases/tag/v0.5.0) ·
+[**Скачать v0.5.1 для Windows и Android**](https://github.com/Zalkars/ink-blade/releases/tag/v0.5.1) ·
 [История изменений](CHANGELOG.md) · [Технический бриф](docs/tech-brief.md)
 
 ![Чернильный клинок](docs/screenshots/v0.4.3-title.png)
+
+## Что нового в 0.5.1
+
+- Редактор карт в панели разработчика с сохранением черновиков и тестовым запуском.
+- Общая диагностика по F3, консоль по F7 и независимые переключатели карты.
+- Атака в полёте и разрушение снарядов оружием.
+- Красное солнце с параллаксом и декор, привязанный к поверхностям карты.
 
 ## Что нового в 0.5.0
 
@@ -89,7 +96,7 @@ Windows поставляется отдельным EXE, Android — подпи�
 
 ### Windows
 
-1. Скачайте `InkBlade-0.5.0-windows-x64.exe` со [страницы релиза](https://github.com/Zalkars/ink-blade/releases/tag/v0.5.0).
+1. Скачайте `InkBlade-0.5.1-windows-x64.exe` со [страницы релиза](https://github.com/Zalkars/ink-blade/releases/tag/v0.5.1).
 2. Запустите скачанный EXE. Распаковка не требуется.
 
 Godot и .NET устанавливать не нужно: ресурсы встроены в EXE.
@@ -98,12 +105,12 @@ EXE не имеет подписи издателя Windows.
 
 ### Android
 
-1. Скачайте `InkBlade-0.5.0-android.apk` с той же страницы релиза.
+1. Скачайте `InkBlade-0.5.1-android.apk` с той же страницы релиза.
 2. Разрешите установку из выбранного браузера или файлового менеджера и установите APK.
 3. Запустите «Чернильный клинок». Игра работает в горизонтальной ориентации.
 
 Требуется Android 7.0 или новее. APK содержит ARMv7, ARM64 и x86_64. Идентификатор приложения —
-`org.inkblade.game`, версия — `0.5.0`, код версии — `50000`.
+`org.inkblade.game`, версия — `0.5.1`, код версии — `50001`.
 Для обновления поверх старого APK подпись старой установки должна совпадать;
 при несовпадении Android отклонит обновление. Удаление приложения удаляет локальные сохранения.
 Интернет игре не требуется. В релизе также опубликован `SHA256SUMS.txt`.
@@ -175,8 +182,8 @@ export templates. C#-версия в `native/` сохранена как исх�
 Godot --headless --path godot --editor --quit
 Godot --headless --path godot --script res://tools/build_manifest.gd
 Godot --headless --path godot --script res://tools/validate_content.gd
-Godot --headless --path godot --export-release "Windows Desktop" ../builds/InkBlade-0.5.0-windows-x64.exe
-Godot --headless --path godot --export-release "Android" ../builds/InkBlade-0.5.0-android.apk
+Godot --headless --path godot --export-release "Windows Desktop" ../builds/InkBlade-0.5.1-windows-x64.exe
+Godot --headless --path godot --export-release "Android" ../builds/InkBlade-0.5.1-android.apk
 ```
 
 Для Android нужны JDK 17 и Android SDK, настроенные в Editor Settings.
@@ -197,6 +204,7 @@ Godot --headless --path godot tests/mobile.tscn -- --touch
 Godot --headless --path godot tests/progress_regression.tscn
 Godot --headless --fixed-fps 120 --path godot tests/traverse.tscn
 Godot --headless --path godot tests/content_pipeline.tscn
+Godot --headless --path godot tests/level_editor.tscn
 ```
 
 Smoke-тест использует отдельные тестовые сохранения: запускайте проверки
@@ -204,7 +212,7 @@ Smoke-тест использует отдельные тестовые сохр
 `settings.cfg` и затем восстанавливает его. Без `--headless` он сохраняет
 снимки экранов настроек в `builds/controls-review/`.
 
-На ПК F1 открывает справку, F2 показывает хитбоксы, F3 открывает консоль, F4 — панель разработчика, F5 — производительность, F6 — состояние игрока и карты. Панель также доступна в меню паузы. В консоли `help` показывает синтаксис, стрелки выбирают подсказки, Tab подставляет команду или аргумент, а Enter исполняет строку.
+На ПК F3 показывает всю диагностику, F4 открывает панель разработчика, F7 или `ё` — консоль. Отдельные блоки переключаются по F1, F2, F5 и F6. В панели выберите «Карта» → «Редактор уровней». F8 запускает тест карты и возвращает в редактор. В консоли `help` показывает синтаксис, стрелки выбирают подсказки, Tab подставляет команду или аргумент, а Enter исполняет строку.
 
 ## Структура
 

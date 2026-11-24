@@ -54,6 +54,9 @@ var title_slot := SaveGame.AUTOSAVE
 var qa_session := false
 var _title_guide := false
 var debug_panel: Control
+var level_editor: Control
+var _editor_room: LevelData
+var _editor_was_paused := false
 var debug_flight_speed := 420.0
 var debug_rules := {"flight": false, "god": false, "damage": false,
 	"enemies": true, "particles": true, "platforms": true, "background": true}
@@ -194,6 +197,9 @@ func _build_stage() -> void:
 	debug_panel = preload("res://scripts/ui/debug_panel.gd").new()
 	debug_panel.flow = self
 	ui.add_child(debug_panel)
+	level_editor = preload("res://scripts/ui/level_editor.gd").new()
+	level_editor.flow = self
+	ui.add_child(level_editor)
 	if mobile_controls.visible:
 		mobile_controls._layout()
 
@@ -211,8 +217,10 @@ func _build_stage() -> void:
 
 func _physics_process(delta: float) -> void:
 	# Единственная точка, где обновляется ввод. Все читают его после этого кадра.
-	CTL.mouse_gameplay_enabled = state == State.PLAY and not settings.visible and not console.visible and not debug_panel.visible
+	CTL.mouse_gameplay_enabled = state == State.PLAY and not settings.visible and not console.visible and not debug_panel.visible and not level_editor.visible
 	CTL.update(delta)
+	if level_editor.visible:
+		return
 	# Глобальные клавиши (F11, M, F12, отладочный HUD) работают и в настройках.
 	_handle_global()
 	_complete_autosave(false)
@@ -302,9 +310,9 @@ func _handle_global() -> void:
 	if console.visible:
 		return
 	if CTL.pressed("help"):
-		hud.debug_page = 0 if hud.debug_page == 1 else 1
+		hud.toggle_debug_section(hud.DEBUG_HELP)
 	if CTL.pressed("hitboxes"):
-		hud.debug_on = not hud.debug_on
+		hud.toggle_hitboxes()
 		if is_instance_valid(level):
 			level.queue_redraw()
 	if CTL.pressed("mute"):
@@ -321,23 +329,31 @@ func _handle_global() -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not is_instance_valid(debug_panel) or not event is InputEventKey or not event.pressed or event.echo:
 		return
+	if level_editor.visible:
+		return
 	var key: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
 	match key:
+		KEY_F3:
+			if not console.visible:
+				hud.debug_all = not hud.debug_all
 		KEY_F4:
 			if debug_panel.visible:
 				debug_panel.close()
 			elif not settings.visible and not control_guide.visible:
 				debug_panel.open()
 		KEY_F5, KEY_F6:
-			var page := 2 if key == KEY_F5 else 3
-			hud.debug_page = 0 if hud.debug_page == page else page
+			hud.toggle_debug_section(hud.DEBUG_PERFORMANCE if key == KEY_F5 else hud.DEBUG_WORLD)
+		KEY_F8:
+			if not is_testing_level():
+				return
+			return_to_level_editor()
 		_:
 			return
 	get_viewport().set_input_as_handled()
 
 
 func begin_debug_session() -> void:
-	if qa_session or not _debug_storage.is_empty():
+	if is_testing_level() or qa_session or not _debug_storage.is_empty():
 		return
 	_flush_save()
 	_complete_autosave(true)
@@ -348,6 +364,8 @@ func begin_debug_session() -> void:
 
 
 func set_debug_rule(rule: String, enabled: bool) -> void:
+	if not debug_rules.has(rule) or debug_rules[rule] == enabled:
+		return
 	debug_rules[rule] = enabled
 	_apply_debug_rules()
 
@@ -364,7 +382,9 @@ func _apply_debug_rules() -> void:
 	if not InkFx.particles_enabled:
 		InkFx.parts.clear()
 		if is_instance_valid(player):
-			CombatFx.layer(player).particles.clear()
+			var ink := CombatFx.layer(player)
+			ink.particles.clear()
+			ink.queue_redraw()
 	if is_instance_valid(level):
 		level.set_debug_environment(debug_rules.enemies, debug_rules.platforms, debug_rules.background)
 
@@ -381,6 +401,88 @@ func debug_respawn() -> bool:
 	_follow_player()
 	camera.reset_smoothing()
 	return true
+
+
+func is_testing_level() -> bool:
+	return _editor_room != null
+
+
+func open_level_editor() -> void:
+	if is_testing_level():
+		return_to_level_editor()
+		return
+	if state not in [State.TITLE, State.PAUSE, State.PLAY]:
+		return
+	debug_panel.close()
+	_editor_was_paused = get_tree().paused
+	get_tree().paused = true
+	CTL.clear_touch()
+	title_screen.hide()
+	overlay.hide()
+	hud.hide()
+	level_editor.open()
+	mobile_controls.refresh_draw_state()
+
+
+func close_level_editor() -> void:
+	level_editor.hide()
+	level_editor.release_focus()
+	CTL.clear_touch()
+	for action in ["pause", "back", "attack", "jump"]:
+		CTL.consume(action)
+	get_tree().paused = _editor_was_paused
+	if state == State.TITLE:
+		title_screen.show()
+		title_screen.input_guard = 0.18
+	elif state == State.PAUSE:
+		overlay.show()
+		overlay.input_guard = 0.18
+	elif state == State.PLAY:
+		hud.show()
+	_console_guard = 2
+	mobile_controls.refresh_draw_state()
+
+
+func start_editor_test(world: Dictionary) -> bool:
+	if not level_editor.visible or not LevelDraft.validate_world(world).is_empty():
+		return false
+	_autosave(false)
+	_complete_autosave(true)
+	var next := LevelData.new()
+	next.id = str(world.id)
+	next.scene_path = "res://scenes/level/test_gallery.tscn"
+	next.qa_only = true
+	next.world = world.duplicate(true)
+	_editor_room = next
+	level_editor.hide()
+	if not _start_level({}, false, next):
+		_editor_room = null
+		get_tree().paused = true
+		level_editor.show()
+		return false
+	hud.show_toast(L10N.t("editor.return_hint"))
+	mobile_controls.refresh_draw_state()
+	return true
+
+
+func return_to_level_editor() -> void:
+	if not is_testing_level():
+		return
+	if console.visible:
+		console.close()
+	debug_panel.close()
+	_clear_level()
+	_editor_room = null
+	_show_title()
+	_open_editor_after_test()
+
+
+func _open_editor_after_test() -> void:
+	_editor_was_paused = false
+	get_tree().paused = true
+	title_screen.hide()
+	level_editor.open()
+	mobile_controls.refresh_draw_state()
 
 
 ## F11: полноэкранный режим без рамки и обратно. На Android не нужен.
@@ -467,16 +569,19 @@ func start_run(with_intro := false) -> void:
 	combo_t = 0.0
 	combo_pop = 0.0
 	hitstop = 0.0
-	_start_level({}, with_intro)
+	_start_level({}, with_intro and not is_testing_level(), _editor_room)
 
 
 ## Загружает указанный уровень по идентификатору (используется консолью разработчика).
 func load_level(wanted: String) -> bool:
-	return _start_level({"level": wanted}, false)
+	return not is_testing_level() and _start_level({"level": wanted}, false)
 
 
 ## Обычная загрузка сохраняет HP и душу. Смерть отмечается в сейве отдельно.
 func continue_run(slot: String = SaveGame.AUTOSAVE) -> void:
+	if is_testing_level():
+		debug_respawn()
+		return
 	# Отложенный сейв дописывается до чтения: «Продолжить» не должно
 	# откатывать последние убийства на один тик.
 	_flush_save()
@@ -505,6 +610,8 @@ func respawn_run() -> void:
 
 
 func save_to_slot(slot: String) -> bool:
+	if is_testing_level():
+		return false
 	SaveGame.current_slot = slot
 	if level == null or player == null:
 		var auto_data := SaveGame.read_slot(SaveGame.AUTOSAVE)
@@ -520,12 +627,13 @@ func _can_load_level(id: String) -> bool:
 	return definition != null and (qa_session or not definition.qa_only)
 
 
-func _start_level(save: Dictionary, with_intro := false) -> bool:
-	var wanted := str(save.get("level", LVL.first_id()))
-	if not _can_load_level(wanted):
-		push_warning("level: уровень недоступен: " + wanted)
-		return false
-	var definition := LVL.get_level(wanted)
+func _start_level(save: Dictionary, with_intro := false, definition: LevelData = null) -> bool:
+	if definition == null:
+		var wanted := str(save.get("level", LVL.first_id()))
+		if not _can_load_level(wanted):
+			push_warning("level: уровень недоступен: " + wanted)
+			return false
+		definition = LVL.get_level(wanted)
 	var scene := ResourceLoader.load(definition.scene_path, "PackedScene") as PackedScene
 	if scene == null:
 		return false
@@ -560,7 +668,7 @@ func _start_level(save: Dictionary, with_intro := false) -> bool:
 	hud.debug_on = false
 	state = State.PLAY
 
-	level_id = wanted
+	level_id = definition.id
 	checkpoint_id = String(save.get("checkpoint", ""))
 
 	granted_rewards.clear()
@@ -766,6 +874,9 @@ func _on_start_pressed() -> void:
 
 ## Explain controls on the loaded game screen after the opening story.
 func start_new_story() -> void:
+	if is_testing_level():
+		start_run()
+		return
 	if is_instance_valid(level) and is_instance_valid(player):
 		_autosave(_finale_pending or state == State.CLEARED)
 	CTL.clear_touch()
@@ -818,6 +929,9 @@ func show_title_guide() -> void:
 
 
 func _show_title() -> void:
+	if is_testing_level():
+		return_to_level_editor()
+		return
 	_guide_pending = false
 	if is_instance_valid(level) and is_instance_valid(player):
 		_autosave(_finale_pending or state == State.CLEARED)
@@ -999,6 +1113,8 @@ func _on_player_died() -> void:
 
 
 func _on_cleared(live := false) -> void:
+	if is_testing_level():
+		return
 	var definition := LVL.get_level(level_id)
 	if definition != null and definition.qa_only:
 		return
@@ -1067,7 +1183,8 @@ func _complete_autosave(wait: bool) -> bool:
 
 
 func _autosave(cleared: bool, force := false, background := false) -> void:
-	if level == null or player == null:
+	if is_testing_level() or level == null or player == null:
+		_save_dirty = false
 		return
 	if not _complete_autosave(not background):
 		_request_autosave(0.0)
@@ -1118,6 +1235,9 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 
 
 func _on_overlay_choice(item: String) -> void:
+	if item == "editor_return":
+		return_to_level_editor()
+		return
 	match state:
 		State.PAUSE:
 			if item.begins_with("save_slot_"):
@@ -1173,12 +1293,16 @@ func _notification(what: int) -> void:
 		_request_android_refresh(frame_rate)
 	elif what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
 		CTL.clear_touch()
+		if is_instance_valid(level_editor) and level_editor.visible:
+			return
 		if is_instance_valid(level) and is_instance_valid(player):
 			_autosave(_finale_pending or state == State.CLEARED)
 		if state == State.PLAY and is_instance_valid(overlay):
 			_pause()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
-		if is_instance_valid(debug_panel) and debug_panel.visible:
+		if is_instance_valid(level_editor) and level_editor.visible:
+			level_editor.request_close()
+		elif is_instance_valid(debug_panel) and debug_panel.visible:
 			debug_panel.close()
 		elif settings.visible:
 			settings.go_back()

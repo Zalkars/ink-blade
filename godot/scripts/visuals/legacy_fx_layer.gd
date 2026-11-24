@@ -34,7 +34,7 @@ func _draw() -> void:
 
 
 func _show_hitboxes() -> bool:
-	return flow != null and flow.hud != null and flow.hud.visible and flow.hud.debug_on
+	return flow != null and flow.hud != null and flow.hud.visible and flow.hud.hitboxes_visible()
 
 
 func _draw_hitboxes() -> void:
@@ -48,12 +48,14 @@ func _draw_hitboxes() -> void:
 	if lvl == null or not is_instance_valid(lvl):
 		return
 	for e in lvl.enemies:
-		if not is_instance_valid(e):
+		if not is_instance_valid(e) or not e.visible:
 			continue
 		var r := Vector2(28.0, 44.0) if e is Keeper else Vector2(18.0, 20.0)
 		var off := Vector2(0.0, -32.0) if e is Keeper else Vector2.ZERO
 		InkR.dbg_rect(e.global_position.x + off.x - r.x, e.global_position.y + off.y - r.y, r.x * 2.0, r.y * 2.0, InkR.RED, 0.85)
 	for child in lvl.get_children():
+		if child is EnemyProjectile and not child.visible:
+			continue
 		if child is InkBolt or child is InkDrop:
 			InkR.dbg_rect(child.global_position.x - 11.0, child.global_position.y - 11.0, 22.0, 22.0, InkR.RED_BRIGHT, 0.9)
 		elif child is InkWave:

@@ -9,46 +9,44 @@ const RIDGE_MID := Color("#c0b299")
 const RIDGE_NEAR := Color("#998c77")
 const INK_DARK := Color("#17130f")
 const RED := Color("#9c1f24")
+const DECOR_SIZES := LevelData.DECOR_SIZES
 
 const STRIP_W := 1280.0
 const STRIP_H := 720.0
 
 
-static func zone_at(x: float, level_id: String) -> String:
-	if level_id != "ch01_hall":
-		return "sanctum"
-	if x < 2560.0:
-		return "threshold"
-	if x < 7040.0:
-		return "archive"
-	if x < 11264.0:
-		return "gallery"
-	return "sanctum"
+static func sun_position(camera: Vector2, viewport: Vector2, bounds: Rect2) -> Vector2:
+	var progress := clampf((camera.x - bounds.position.x) / maxf(bounds.size.x, viewport.x), 0.0, 1.0)
+	return camera + Vector2(viewport.x * (0.28 - 0.49 * progress), -viewport.y * 0.28 + 18.0 * sin(progress * PI))
 
 
-static func draw_backdrop(cv: CanvasItem, cam_x: float, vp_w: float, vp_h: float, level_id: String) -> void:
+static func draw_backdrop(cv: CanvasItem, camera: Vector2, viewport: Vector2, bounds: Rect2) -> void:
 	InkR.init_static()
 	InkR.set_canvas(cv)
 	InkR.begin_frame(0.0)
 
 	# Бумага на весь экран в координатах камеры.
-	var x0 := cam_x - vp_w * 0.5 - 40.0
-	var bw := vp_w + 80.0
+	var x0 := camera.x - viewport.x * 0.5 - 40.0
+	var y0 := camera.y - viewport.y * 0.5
+	var bw := viewport.x + 80.0
+	var sky := Rect2(x0, y0 - 36.0, bw, viewport.y + 72.0)
 	if InkR.tex_paper != null:
-		cv.draw_texture_rect(InkR.tex_paper, Rect2(x0, -20.0, bw, vp_h + 40.0), false)
+		cv.draw_texture_rect(InkR.tex_paper, sky, false)
 	else:
-		cv.draw_rect(Rect2(x0, -20.0, bw, vp_h + 40.0), PAPER)
+		cv.draw_rect(sky, PAPER)
 
-	# All zones keep the original paper palette. Variety comes from their decor.
-	var zone := zone_at(cam_x, level_id)
-	if zone == "threshold":
-		var sx := 920.0 + cam_x * 0.08
-		InkR.srand(3)
-		InkR.circle(sx, 168.0, 106.0, InkR.rgba(156, 33, 41, 18), InkR.rgba(156, 33, 41, 110), 2.0, 1.0, 1.4, 36)
-		InkR.circle(sx - 15.0, 160.0, 88.0, PAPER, InkR.rgba(23, 19, 15, 100), 2.0, 1.0, 1.1, 32)
-	# The sky is continuous: interior landmarks change, not the distant landscape.
-	_draw_parallax_ridge(cv, x0, bw, vp_h, 490.0, 62.0, RIDGE_FAR, cam_x * 0.14, 0.004, 0.0)
-	_draw_parallax_ridge(cv, x0, bw, vp_h, 590.0, 48.0, RIDGE_MID, cam_x * 0.23, 0.006, 1.4)
+	var sun := sun_position(camera, viewport, bounds)
+	var radius := viewport.y * 0.123
+	InkR.srand(3)
+	InkR.circle(sun.x, sun.y, radius, Color("#a8262c"), Color("#77242a"), 2.2, 0.92, 1.2, 48)
+	InkR.arc(sun.x, sun.y, radius + 7.0, 0.86, 4.68, 1.8, RED, 0.32, 0.8, 38)
+	InkR.srand(12)
+	InkR.line(sun.x - radius * 0.75, sun.y + radius * 0.46, sun.x + radius * 0.79, sun.y + radius * 0.46,
+		2.0, PAPER, 0.24, 1.0)
+	var bottom := y0 + viewport.y
+	_draw_parallax_ridge(cv, x0, bw, bottom, y0 + viewport.y * 0.66, 62.0, RIDGE_FAR, camera.x * 0.14, 0.004, 0.0)
+	_draw_parallax_ridge(cv, x0, bw, bottom, y0 + viewport.y * 0.80, 48.0, RIDGE_MID, camera.x * 0.23, 0.006, 1.4)
+	_draw_parallax_ridge(cv, x0, bw, bottom, y0 + viewport.y * 0.94, 36.0, RIDGE_NEAR, camera.x * 0.32, 0.008, 2.6)
 
 
 static func _draw_parallax_ridge(cv: CanvasItem, x0: float, w: float, h: float, base_y: float, amp: float, col: Color, scroll: float, freq: float, phase: float) -> void:
@@ -60,7 +58,7 @@ static func _draw_parallax_ridge(cv: CanvasItem, x0: float, w: float, h: float, 
 	while x <= x0 + w + step:
 		var wx := x - scroll
 		var y := base_y - sin(wx * freq + phase) * amp - sin(wx * (freq * 2.3) + 1.7) * amp * 0.35
-		pts.append(Vector2(x, clampf(y, 80.0, h - 2.0)))
+		pts.append(Vector2(x, minf(y, h - 2.0)))
 		x += step
 	pts.append(Vector2(x0 + w + step, h + 10.0))
 	pts.append(Vector2(x0 - step, h + 10.0))
@@ -72,20 +70,21 @@ static func draw_strip_decor(strip_index: int, level_id: String, data: Dictionar
 	var x1 := minf(x0 + STRIP_W, bounds.end.x)
 	if x1 <= x0:
 		return
-	var floor_y := _floor_y_at(x0 + STRIP_W * 0.5, data)
 	_draw_strip_dust(x0, x1, strip_index)
 	# Draw fixed world landmarks through every intersecting bake strip. No strip-sized motif loop.
-	if level_id != "ch01_hall":
-		_draw_sanctum_strip(strip_index, x0, floor_y)
-	else:
+	if data.get("landmarks", level_id) == "ch01_hall":
 		if x0 < 2560.0:
-			_draw_threshold_strip(strip_index, floor_y)
+			_draw_threshold_strip(data)
 		if x1 > 2560.0 and x0 < 7040.0:
-			_draw_archive_strip(strip_index, x0, x1, data)
+			_draw_archive_strip(data)
 		if x1 > 7040.0 and x0 < 11264.0:
-			_draw_gallery_strip(strip_index, x0, x1, floor_y, data)
+			_draw_gallery_strip(data)
 		if x1 > 11264.0:
-			_draw_sanctum_strip(strip_index, x0, floor_y)
+			_draw_sanctum_strip(data)
+	for spec in data.get("decor", []):
+		var rect := decor_rect(spec, data)
+		if rect.end.x >= x0 - 32.0 and rect.position.x <= x1 + 32.0:
+			draw_decor(spec, data)
 
 	# Угловые штриховки на границах уровня.
 	if strip_index == 0:
@@ -95,15 +94,70 @@ static func draw_strip_decor(strip_index: int, level_id: String, data: Dictionar
 		InkR.srand(302)
 		InkR.hatch([Vector2(bounds.end.x, 470), Vector2(bounds.end.x, 620), Vector2(bounds.end.x - 140, 620)], 12.0, 0.1, InkR.INK, 1.0, true)
 
-	# Поверхности земли и платформ (solid + one_way), попадающие в полосу.
+	# Односторонние платформы рисуются отдельным слоем, который можно отключить.
 	for spec in data.get("solids", []):
 		var r := _rect_of(spec)
 		if r.end.x >= x0 - 32.0 and r.position.x <= x1 + 32.0:
 			draw_surface(r, false, bounds, data.get("solids", []))
-	for spec in data.get("one_ways", []):
-		var r := _rect_of(spec)
-		if r.end.x >= x0 - 32.0 and r.position.x <= x1 + 32.0:
-			draw_surface(r, true, bounds)
+
+
+static func support_at(data: Dictionary, x: float, near_y: float, half_width := 0.0) -> float:
+	var best := INF
+	for row in data.get("solids", []):
+		var rect := _rect_of(row)
+		if x - half_width < rect.position.x or x + half_width > rect.end.x:
+			continue
+		if absf(rect.position.y - near_y) < absf(best - near_y):
+			best = rect.position.y
+	return best
+
+
+static func decor_rect(spec: Dictionary, data: Dictionary) -> Rect2:
+	var kind := str(spec.get("kind", ""))
+	var dims: Vector2 = DECOR_SIZES.get(kind, Vector2(32, 32))
+	var x := float(spec.get("x", 0))
+	var y := float(spec.get("y", 0))
+	if kind != "banner" and bool(spec.get("grounded", true)):
+		var support := support_at(data, x, y, dims.x * 0.5)
+		if not is_inf(support):
+			y = support
+	return Rect2(Vector2(x - dims.x * 0.5, y - dims.y), dims)
+
+
+static func decor_has_support(spec: Dictionary, data: Dictionary) -> bool:
+	var kind := str(spec.get("kind", ""))
+	if kind == "banner" or not bool(spec.get("grounded", true)):
+		return true
+	var dims: Vector2 = DECOR_SIZES.get(kind, Vector2(32, 32))
+	return not is_inf(support_at(data, float(spec.x), float(spec.y), dims.x * 0.5))
+
+
+static func draw_decor(spec: Dictionary, data: Dictionary) -> void:
+	if not decor_has_support(spec, data):
+		return
+	var rect := decor_rect(spec, data)
+	var x := rect.position.x
+	var y := rect.position.y
+	var mid := rect.get_center().x
+	var bottom := rect.end.y
+	var kind := str(spec.get("kind", ""))
+	if kind != "banner":
+		InkR.ellipse_shadow(mid, bottom - 3.0, rect.size.x * 0.55, 6.0, 0.28)
+	match kind:
+		"gate":
+			draw_gate(mid, y, bottom)
+		"cabinet":
+			_draw_archive_alcove(x, y, rect.size.x, rect.size.y, int(mid))
+		"pillar":
+			draw_pillar(x, y, rect.size.x, rect.size.y)
+		"lantern":
+			InkR.line(mid, bottom, mid, y + 12, 5.0, INK_DARK, 0.62, 0.4)
+			InkR.rect(mid - 14, y + 4, 28, 29, Color("#db9e61"), INK_DARK, 2.4, 0.9, 0.5)
+			InkR.line(mid - 20, y + 4, mid + 20, y + 4, 4.0, INK_DARK, 0.65, 0.5)
+		"banner":
+			draw_banner(x, y, rect.size.x, rect.size.y, 0.44, "")
+		"tablet":
+			draw_name_tablet(x, y, rect.size.x, rect.size.y, int(mid) % 19)
 
 
 static func _floor_y_at(x: float, data: Dictionary) -> float:
@@ -132,38 +186,39 @@ static func _draw_strip_dust(x0: float, x1: float, strip_index: int) -> void:
 		InkR.fill_circle_color(x0 + 32.0 + rx * (x1 - x0 - 64.0), 84.0 + ry * 440.0, rr, InkR.INK, 0.07)
 
 
-static func _draw_threshold_strip(_strip_index: int, _floor_y: float) -> void:
+static func _draw_threshold_strip(data: Dictionary) -> void:
 	# One entrance ruin, one lintel, then open country; no colonnade.
 	draw_pillar(420.0, 120.0, 64.0, 456.0)
 	InkR.line(420.0, 120.0, 1040.0, 92.0, 12.0, InkR.rgba(23, 19, 15, 65), 1.0, 1.0)
-	draw_gate(790.0, 128.0, 340.0)
+	draw_decor({"kind": "gate", "x": 790, "y": 480}, data)
 	draw_banner(548.0, 126.0, 70.0, 192.0, 0.19, "I")
 	InkR.text(L10N.t("WORLD_INK_REMEMBERS"), 790.0, 70.0, 19.0, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.25, 8.0)
 	InkR.srand(102)
 	InkR.poly([Vector2(1760, 512), Vector2(1770, 244), Vector2(1850, 226), Vector2(1864, 416)], 9.0, InkR.rgba(23, 19, 15, 65), 1.0, 1.0)
-	draw_name_tablet(2380.0, 150.0, 132.0, 180.0, 2)
+	draw_decor({"kind": "tablet", "x": 2420, "y": 512}, data)
 
 
-static func _draw_archive_strip(_strip_index: int, _x0: float, _x1: float, _data: Dictionary) -> void:
+static func _draw_archive_strip(data: Dictionary) -> void:
 	# Asymmetric storage bays: broad bookcase, hanging scrolls, sunken reading room.
-	_draw_archive_alcove(2690.0, 156.0, 310.0, 250.0, 17)
+	draw_decor({"kind": "cabinet", "x": 2810, "y": 576}, data)
 	draw_banner(3170.0, 40.0, 84.0, 222.0, 0.17, "")
 	InkR.text(L10N.t("zone.archive.title"), 3330.0, 100.0, 22.0, InkR.F_DISPLAY, InkR.A_CENTER, InkR.INK, 0.28, 6.0)
-	_draw_archive_alcove(3560.0, 218.0, 192.0, 220.0, 51)
+	draw_decor({"kind": "cabinet", "x": 3660, "y": 640}, data)
 	InkR.srand(418)
 	InkR.poly([Vector2(3910, 510), Vector2(3910, 220), Vector2(4050, 110), Vector2(4510, 110), Vector2(4670, 220), Vector2(4670, 410)], 7.0, InkR.rgba(23, 19, 15, 74), 1.0, 1.2)
-	_draw_archive_alcove(4070.0, 248.0, 380.0, 250.0, 68)
-	for scroll in [[5150.0, 110.0, 84.0, 204.0], [5310.0, 76.0, 110.0, 250.0], [5490.0, 138.0, 64.0, 154.0]]:
-		draw_name_tablet(scroll[0], scroll[1], scroll[2], scroll[3], int(scroll[0]))
-	_draw_archive_alcove(5930.0, 100.0, 270.0, 244.0, 93)
-	draw_gate(6770.0, 134.0, 360.0)
+	draw_decor({"kind": "cabinet", "x": 4140, "y": 640}, data)
+	for x in [5150, 5260, 5490]:
+		draw_decor({"kind": "tablet", "x": x, "y": 576}, data)
+	draw_decor({"kind": "cabinet", "x": 6060, "y": 576}, data)
+	draw_decor({"kind": "gate", "x": 6704, "y": 480}, data)
 
 
 static func _draw_archive_alcove(x: float, y: float, w: float, h: float, seed_id: int) -> void:
 	InkR.srand(seed_id)
-	InkR.rect(x, y, w, h, InkR.rgba(120, 100, 70, 16), InkR.rgba(23, 19, 15, 58), 1.6, 1.0, 0.8)
+	InkR.rect(x, y, w, h, InkR.rgba(120, 100, 70, 30), InkR.rgba(23, 19, 15, 102), 2, 1.0, 0.8)
+	InkR.rect(x - 5.0, y + h - 11.0, w + 10.0, 11.0, InkR.rgba(120, 100, 70, 70), InkR.rgba(23, 19, 15, 95), 1.8)
 	for row in range(4):
-		var py := y + 42.0 + float(row) * 46.0
+		var py := y + (float(row) + 1.0) * (h - 14.0) / 4.0
 		InkR.line(x + 8.0, py, x + w - 8.0, py, 2.0, InkR.rgba(23, 19, 15, 68), 1.0, 0.4)
 		for book in range(int(w / 22.0) - 1):
 			var bx := x + 14.0 + float(book) * 20.0
@@ -171,24 +226,24 @@ static func _draw_archive_alcove(x: float, y: float, w: float, h: float, seed_id
 			InkR.rect(bx, py - bh, 13.0, bh, InkR.rgba(23, 19, 15, 28), InkR.rgba(23, 19, 15, 76), 1.0, 1.0, 0.4)
 
 
-static func _draw_gallery_strip(_strip_index: int, _x0: float, _x1: float, _floor_y: float, _data: Dictionary) -> void:
+static func _draw_gallery_strip(data: Dictionary) -> void:
 	# Broken memorial wall with three distinct groups, open space between them.
 	InkR.srand(661)
 	InkR.fill_poly([Vector2(7350, 576), Vector2(7350, 176), Vector2(7540, 132), Vector2(7770, 200), Vector2(7910, 480)], InkR.rgba(110, 119, 119, 28), 1.0, 1.0)
-	draw_name_tablet(7420.0, 218.0, 210.0, 226.0, 4)
-	draw_name_tablet(8130.0, 140.0, 150.0, 230.0, 7)
+	draw_decor({"kind": "tablet", "x": 7440, "y": 576}, data)
+	draw_decor({"kind": "tablet", "x": 8200, "y": 544}, data)
 	InkR.poly([Vector2(8530, 448), Vector2(8530, 122), Vector2(8680, 98), Vector2(8710, 352)], 6.0, InkR.rgba(23, 19, 15, 68), 1.0, 1.0)
-	draw_name_tablet(8950.0, 80.0, 168.0, 194.0, 8)
+	draw_decor({"kind": "tablet", "x": 8960, "y": 352}, data)
 	InkR.fill_poly([Vector2(9640, 544), Vector2(9710, 284), Vector2(10020, 244), Vector2(10180, 480)], InkR.rgba(110, 119, 119, 35), 1.0, 1.0)
-	draw_name_tablet(9760.0, 124.0, 260.0, 170.0, 11)
+	draw_decor({"kind": "tablet", "x": 9840, "y": 544}, data)
 	draw_banner(10570.0, 40.0, 74.0, 196.0, 0.13, "")
-	draw_name_tablet(10950.0, 164.0, 180.0, 150.0, 13)
+	draw_decor({"kind": "tablet", "x": 11040, "y": 480}, data)
 
 
-static func _draw_sanctum_strip(_strip_index: int, _x0: float, _floor_y: float) -> void:
+static func _draw_sanctum_strip(data: Dictionary) -> void:
 	# One ceremonial doorway and one enormous seal, framed only at the arena edges.
-	draw_pillar(11300.0, 56.0, 80.0, 520.0)
-	draw_gate(12000.0, 120.0, 350.0)
+	draw_decor({"kind": "pillar", "x": 11340, "y": 576}, data)
+	draw_decor({"kind": "gate", "x": 12000, "y": 576}, data)
 	draw_banner(11610.0, 56.0, 86.0, 244.0, 0.20, "")
 	InkR.srand(701)
 	InkR.circle(13350.0, 270.0, 208.0, InkR.rgba(156, 33, 41, 14), InkR.rgba(156, 33, 41, 80), 3.0, 1.0, 1.6, 48)
@@ -241,6 +296,9 @@ static func draw_gate(cx: float, top: float, bottom: float) -> void:
 
 
 static func draw_banner(x: float, y: float, w: float, h: float, alpha: float, emblem := "") -> void:
+	InkR.line(x - 12, y - 4, x + w + 12, y - 4, 4.0, INK_DARK, minf(alpha + 0.25, 0.8), 0.45)
+	InkR.line(x + 7, y - 12, x + 7, y + 9, 3.0, INK_DARK, minf(alpha + 0.18, 0.8), 0.3)
+	InkR.line(x + w - 7, y - 12, x + w - 7, y + 9, 3.0, INK_DARK, minf(alpha + 0.18, 0.8), 0.3)
 	var pts: Array = Array(banner_polygon(x, y, w, h))
 	InkR.srand(int(x))
 	InkR.fill_poly(pts, InkR.rgba(156, 33, 41, int(alpha * 255.0)), 1.0, 1.2)

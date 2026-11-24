@@ -272,7 +272,11 @@ func _physics_process(delta: float) -> void:
 	if flow != null and flow.debug_rules.flight:
 		_debug_flying = true
 		dash_t = 0.0
-		velocity = Vector2(CTL.axis_x(), CTL.axis_y()).limit_length() * flow.debug_flight_speed
+		var flight_input := Vector2(CTL.axis_x(), CTL.axis_y()).limit_length()
+		if absf(flight_input.x) > 0.2 and attack_t <= 0.0 and hurt_t <= 0.0:
+			facing = 1 if flight_input.x > 0.0 else -1
+		_handle_weapon_input(delta)
+		velocity = flight_input * flow.debug_flight_speed
 		move_and_slide()
 		return
 	if _debug_flying:
@@ -281,7 +285,6 @@ func _physics_process(delta: float) -> void:
 
 	coyote = maxf(0.0, coyote - delta)
 	jump_buf = maxf(0.0, jump_buf - delta)
-	attack_buf = maxf(0.0, attack_buf - delta)
 	dash_buf = maxf(0.0, dash_buf - delta)
 
 	if is_on_floor():
@@ -296,13 +299,7 @@ func _physics_process(delta: float) -> void:
 		_dash_hint = CTL.dash_hint
 	if dash_buf > 0.0 and _try_dash():
 		dash_buf = 0.0
-	if CTL.pressed("attack"):
-		attack_buf = INPUT_BUFFER
-	# Удержание атаки — серия: следующий удар сразу после восстановления.
-	if (attack_buf > 0.0 or (CTL.hold_attack and CTL.down("attack"))) and _try_attack():
-		attack_buf = 0.0
-	if CTL.pressed("swap"):
-		next_weapon()
+	_handle_weapon_input(delta)
 
 	var can_heal := (CTL.down("heal") and is_on_floor() and hp < MAX_HP
 		and soul >= HEAL_COST and attack_t <= 0.0 and dash_t <= 0.0
@@ -412,6 +409,16 @@ func _try_dash() -> bool:
 	return true
 
 
+func _handle_weapon_input(delta: float) -> void:
+	attack_buf = maxf(0.0, attack_buf - delta)
+	if CTL.pressed("attack"):
+		attack_buf = INPUT_BUFFER
+	if (attack_buf > 0.0 or (CTL.hold_attack and CTL.down("attack"))) and _try_attack():
+		attack_buf = 0.0
+	if CTL.pressed("swap"):
+		next_weapon()
+
+
 func _try_attack() -> bool:
 	if attack_cd > 0.0 or weapon == null or hurt_t > 0.0 or dash_t > 0.0 or dead:
 		return false
@@ -456,6 +463,10 @@ func _try_attack() -> bool:
 func active_attack_hitbox() -> Rect2:
 	if attack_t <= 0.0 or attack_windup > 0.0 or weapon == null:
 		return Rect2()
+	return _attack_bounds()
+
+
+func _attack_bounds() -> Rect2:
 	var reach: Vector2 = swing_reach
 	var center := global_position
 	if attack_dir != "fwd":
@@ -475,23 +486,13 @@ func _strike() -> void:
 		spawn_slash()
 		SND.slash(attack_step)
 		_struck = true
-	var reach: Vector2 = swing_reach
-	var center := global_position
-	if attack_dir != "fwd":
-		reach = Vector2(54, swing_reach.x)
-		center += Vector2(0, -23 - reach.y * 0.5 + 10 if attack_dir == "up" else 23 + reach.y * 0.5 - 12)
-	elif weapon.hit_both_sides:
-		# Кисть бьёт вокруг: широкая фигура без смещения вперёд.
-		reach = Vector2(swing_reach.x * 2.0, swing_reach.y)
-	else:
-		center += Vector2(swing_reach.x * 0.5 * attack_facing, 0.0)
+	var hitbox := _attack_bounds()
 	var shape := RectangleShape2D.new()
-	shape.size = reach
+	shape.size = hitbox.size
 	var params := PhysicsShapeQueryParameters2D.new()
 	params.shape = shape
-	params.transform = Transform2D(0.0, center)
+	params.transform = Transform2D(0.0, hitbox.get_center())
 	params.collision_mask = ENEMY_LAYER
-	# Hostile projectiles are Areas. A strike only queries physical bodies.
 	params.collide_with_areas = false
 	params.collide_with_bodies = true
 	var found := get_world_2d().direct_space_state.intersect_shape(params, 8)
@@ -521,6 +522,16 @@ func _strike() -> void:
 					air_dash = true
 					InkFx.ring(global_position.x, global_position.y + 23, 8, 44, InkR.RED)
 				SND.hit(swing_damage >= 3)
+	params.collision_mask = EnemyProjectile.ATTACK_LAYER
+	params.collide_with_areas = true
+	params.collide_with_bodies = false
+	for hit in get_world_2d().direct_space_state.intersect_shape(params, 32):
+		var projectile := hit.collider as EnemyProjectile
+		if not is_instance_valid(projectile):
+			continue
+		var sight := PhysicsRayQueryParameters2D.create(global_position, projectile.global_position, SOLID_MASK)
+		if get_world_2d().direct_space_state.intersect_ray(sight).is_empty():
+			projectile.break_by_attack()
 	var start := global_position + Vector2(0, -4)
 	var ray := PhysicsRayQueryParameters2D.create(start, start + Vector2(swing_reach.x * attack_facing, 0), SOLID_MASK)
 	var wall := get_world_2d().direct_space_state.intersect_ray(ray)
