@@ -14,4 +14,4 @@
 - **Android.** Установите `InkBlade-0.6.2-android.apk`. APK подписан тем же ключом, что и 0.5.2.
 - **Контрольные суммы** доступны в `SHA256SUMS.txt`.
 
-[План боевой системы](https://github.com/Zalkars/ink-blade/blob/v0.6.2/docs/game-design/03-combat.md) · [Схема сохранений](https://github.com/Zalkars/ink-blade/blob/v0.6.2/docs/saves.md)
+[Схема сохранений](https://github.com/Zalkars/ink-blade/blob/v0.6.2/docs/saves.md) · [История изменений](https://github.com/Zalkars/ink-blade/blob/v0.6.2/CHANGELOG.md)
