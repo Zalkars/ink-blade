@@ -4,7 +4,7 @@ extends RefCounted
 ## Сохранения: слотовая схема с самого начала, JSON в user://saves.
 ## Поддерживаются автосейв и три ручных слота; запись атомарная: tmp -> rename, предыдущая версия уходит в .bak.
 
-const VERSION := 6
+const VERSION := 7
 const DIR := "user://saves"
 const AUTOSAVE := "auto"
 const MANUAL_SLOTS := ["slot_1", "slot_2", "slot_3"]
@@ -189,7 +189,6 @@ static func migrate(data: Dictionary) -> Dictionary:
 		out["grants"] = inferred
 	if not out.has("weapon"):
 		out["weapon"] = ""
-	out["soul"] = clampf(float(out.get("soul", 0.0)), 0.0, 99.0)
 	out["finale_seen"] = bool(out.get("finale_seen", false))
 	if typeof(out.get("dialogue")) != TYPE_DICTIONARY:
 		out["dialogue"] = {}
@@ -202,6 +201,27 @@ static func migrate(data: Dictionary) -> Dictionary:
 	if not out.get("rooms") is Dictionary:
 		out["rooms"] = {}
 	out["dead"] = bool(out.get("dead", false))
+	if version < 7:
+		# v7: ink заменяет soul. Постоянная прогрессия до 0.8 пустая,
+		# но поля уже пишутся, чтобы следующие версии не меняли схему снова.
+		out["ink"] = clampf(float(out.get("soul", 0.0)), 0.0, 100.0)
+		if out.has("soul"):
+			out["soul"] = clampf(float(out.get("soul", 0.0)), 0.0, 99.0)
+		out["abilities"] = []
+		out["shards"] = 0
+		out["vessels"] = 0
+		out["marks_owned"] = []
+		out["marks_equipped"] = []
+		out["names"] = []
+		var chapter := str(out.get("level", ""))
+		out["chapters_cleared"] = [chapter] if bool(out.get("cleared", false)) and not chapter.is_empty() else []
+		out["map"] = {}
+		out["ending"] = ""
+		out["epilogue_seen"] = false
+		out["ng_plus"] = false
+		out["hp"] = mini(int(out.get("hp", 5)), 5)
+	if not out.has("ink"):
+		out["ink"] = 0.0
 	if version <= VERSION:
 		out["version"] = VERSION
 	return out

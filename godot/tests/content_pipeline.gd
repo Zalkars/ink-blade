@@ -10,6 +10,7 @@ func _ready() -> void:
 	for slot in [SaveGame.AUTOSAVE, "slot_1", "slot_2"]:
 		SaveGame.erase_slot(slot)
 	_check_schema()
+	_check_save_v7()
 	flow = preload("res://scenes/flow/game_flow.tscn").instantiate()
 	add_child(flow)
 	await _ticks(2)
@@ -22,7 +23,8 @@ func _ready() -> void:
 	SaveGame.write_slot("slot_1", old)
 	var migrated := SaveGame.migrate(SaveGame.read_slot("slot_1"))
 	_check(migrated.version == SaveGame.VERSION and migrated.props.is_empty() and migrated.checkpoint == "cp_02"
-		and migrated.soul == 41.0 and migrated.killed == ["e1"] and migrated.weapon == "weapon.brush", "v4 migration retains progress")
+		and migrated.soul == 41.0 and migrated.ink == 41.0 and migrated.killed == ["e1"]
+		and migrated.weapon == "weapon.brush", "v4 migration retains progress")
 	var original := SaveGame.read_slot("slot_1")
 	title.activate(title.actions.find("slots"))
 	await _capture("slots")
@@ -153,6 +155,35 @@ func _check_schema() -> void:
 		and PGS.marks_equipped.size() == 2 and PGS.marks_equipped.has(&"mark.blot"),
 		"PGS state round-trips through save_dict")
 	PGS.reset()
+
+
+## Схема v7: ink заменяет soul, старые ключи и неизвестные поля не теряются.
+func _check_save_v7() -> void:
+	var v6 := {"version": 6, "level": "ch01_hall", "checkpoint": "cp_02", "hp": 7, "soul": 80.0,
+		"killed": ["e1"], "triggers": ["archivist"], "props": ["shard_1"], "switches": ["lever"],
+		"rooms": {"archive_annex": {"killed": []}}, "weapons": ["weapon.brush"], "weapon": "weapon.brush",
+		"cleared": true, "finale_seen": true, "dead": false, "custom": "keep"}
+	var migrated := SaveGame.migrate(v6)
+	_check(migrated.version == 7 and migrated.ink == 80.0 and migrated.soul == 80.0 and migrated.hp == 5,
+		"v6 migration turns soul into ink and caps hp")
+	_check(migrated.abilities.is_empty() and migrated.shards == 0 and migrated.vessels == 0
+		and migrated.marks_owned.is_empty() and migrated.marks_equipped.is_empty()
+		and migrated.names.is_empty(), "v6 migration starts empty progression")
+	_check(migrated.chapters_cleared == ["ch01_hall"] and migrated.map.is_empty()
+		and migrated.ending == "" and not migrated.epilogue_seen and not migrated.ng_plus,
+		"v6 migration adds chapter, map and ending fields")
+	_check(migrated.killed == ["e1"] and migrated.triggers == ["archivist"] and migrated.props == ["shard_1"]
+		and migrated.switches == ["lever"] and migrated.rooms.has("archive_annex") and migrated.custom == "keep",
+		"v7 keeps legacy keys and unknown fields")
+	var clamped := SaveGame.migrate({"version": 6, "level": "ch01_hall", "soul": 120.0, "hp": 9})
+	_check(clamped.ink == 100.0 and clamped.hp == 5 and clamped.chapters_cleared.is_empty(),
+		"v6 migration clamps ink and ignores uncleared chapters")
+	var v1 := SaveGame.migrate({"version": 1})
+	_check(v1.version == 7 and v1.checkpoint == "" and v1.killed.is_empty() and v1.ink == 0.0
+		and v1.abilities.is_empty(), "v1 save still opens as v7")
+	var v7 := SaveGame.migrate({"version": 7, "ink": 30.0, "hp": 2})
+	_check(v7.version == 7 and v7.ink == 30.0 and v7.hp == 2 and not v7.has("soul"),
+		"v7 migration does not write the legacy soul key")
 
 
 func _pickup() -> SoulPickup:

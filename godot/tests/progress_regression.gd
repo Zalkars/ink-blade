@@ -48,6 +48,18 @@ func _ready() -> void:
 	SaveGame.write_slot("auto", old_save)
 	flow.continue_run()
 	check(flow.player.has_weapon("weapon.brush") and flow.player.soul == 0, "old interrupted-dialogue save repaired")
+	var v6_save := {"version": 6, "level": "ch01_hall", "checkpoint": "", "hp": 7, "soul": 80.0,
+		"weapons": ["weapon.blade", "weapon.brush"], "weapon": "weapon.brush", "cleared": false}
+	SaveGame.write_slot("auto", v6_save)
+	flow.continue_run()
+	check(flow.player.soul == 80 and flow.player.hp == 5, "v6 save opens with ink and capped hp")
+	PGS.grant_ability(&"ability.double_jump")
+	PGS.shards = 3
+	flow._autosave(true)
+	PGS.reset()
+	flow.continue_run()
+	check(PGS.has_ability(&"ability.double_jump") and PGS.shards == 3,
+		"progression survives autosave and continue")
 	flow.player.soul = 80
 	flow.player.hp = 2
 	flow._autosave(false)
@@ -133,7 +145,8 @@ func _ready() -> void:
 	await get_tree().physics_frame
 	p._strike()
 	await get_tree().process_frame
-	check(p.soul == 12 and SaveGame.read_slot("auto").soul == 12, "killing blow soul included in autosave")
+	var saved := SaveGame.read_slot("auto")
+	check(p.soul == 12 and saved.ink == 12 and not saved.has("soul"), "killing blow ink included in v7 autosave")
 	# Kill all placements but the final splitting enemy, then reload mid-split.
 	fresh()
 	var last
@@ -264,7 +277,7 @@ func _ready() -> void:
 	check(flow.title_screen.actions[flow.title_screen.selected] == "cancel_new", "overwrite confirmation defaults to Cancel")
 	flow.title_screen.input_guard = 0.0
 	flow.title_screen.activate(0)
-	check(not flow.title_screen._confirm_play and SaveGame.read_slot("auto").soul == 44, "repeated confirm on safe default preserves save")
+	check(not flow.title_screen._confirm_play and SaveGame.read_slot("auto").ink == 44, "repeated confirm on safe default preserves save")
 	flow.title_screen.activate(flow.title_screen.actions.find("normal"))
 	flow.title_screen.input_guard = 0.0
 	flow.title_screen.activate(flow.title_screen.actions.find("confirm_new"))

@@ -525,7 +525,7 @@ func start_editor_test(world: Dictionary, options := {}) -> bool:
 	if WDB.get_weapon(StringName(weapon)) != null:
 		initial["weapons"] = ["weapon.blade", weapon] if weapon != "weapon.blade" else [weapon]
 		initial["weapon"] = weapon
-	initial["soul"] = clampf(float(options.get("soul", 0.0)), 0.0, 99.0)
+	initial["ink"] = clampf(float(options.get("soul", 0.0)), 0.0, 99.0)
 	_autosave(false)
 	_complete_autosave(true)
 	var next := _draft_room(test_world)
@@ -631,7 +631,7 @@ func _travel_room(exit: Dictionary) -> bool:
 		return false
 	var current := _room_snapshot()
 	current.merge({"rooms": _room_states, "grants": granted_rewards, "weapons": player.weapon_ids(),
-		"weapon": player.current_weapon_id(), "hp": player.hp, "soul": player.soul})
+		"weapon": player.current_weapon_id(), "hp": player.hp, "ink": player.soul})
 	return _start_level(_arrival(current, level_id, target.id, str(exit.get("entry", ""))), false, target, true)
 
 
@@ -646,7 +646,7 @@ func _arrival(current: Dictionary, from: String, target: String, entry := "") ->
 	var restored: Dictionary = visited.duplicate(true) if visited is Dictionary else {}
 	rooms.erase(target)
 	restored.merge({"rooms": rooms, "entry": entry, "level": target}, true)
-	for key in ["grants", "weapons", "weapon", "hp", "soul"]:
+	for key in ["grants", "weapons", "weapon", "hp", "ink"]:
 		if current.has(key):
 			restored[key] = current[key]
 	return restored
@@ -665,12 +665,14 @@ func next_story_chapter(progress: Dictionary) -> String:
 func advance_story_chapter(slot: String) -> void:
 	_flush_save()
 	var progress := SaveGame.read_slot(slot)
-	var target := next_story_chapter(progress)
+	var migrated := SaveGame.migrate(progress)
+	var target := next_story_chapter(migrated)
 	if target.is_empty():
 		return
+	PGS.load_dict(migrated)
 	var previous_slot := SaveGame.current_slot
 	SaveGame.current_slot = slot
-	if not _start_level(_arrival(SaveGame.migrate(progress), str(progress.level), target), false, null, true):
+	if not _start_level(_arrival(migrated, str(progress.level), target), false, null, true):
 		SaveGame.current_slot = previous_slot
 
 
@@ -751,6 +753,7 @@ func _check_world_bounds() -> bool:
 ## Новая игра. with_intro = true только при запуске с титула:
 ## перезапуск из паузы и продолжение с чекпоинта катсцену не повторяют.
 func start_run(with_intro := false) -> void:
+	PGS.reset()
 	run_time = 0.0
 	run_kills = 0
 	combo = 0
@@ -788,6 +791,7 @@ func continue_run(slot: String = SaveGame.AUTOSAVE) -> void:
 		start_run()
 		return
 	var migrated := _respawn_if_dead(SaveGame.migrate(save))
+	PGS.load_dict(migrated)
 	var previous_slot := SaveGame.current_slot
 	SaveGame.current_slot = slot
 	if not _start_level(migrated):
@@ -797,7 +801,7 @@ func continue_run(slot: String = SaveGame.AUTOSAVE) -> void:
 func _respawn_if_dead(data: Dictionary) -> Dictionary:
 	if bool(data.get("dead", false)):
 		data["hp"] = Player.MAX_HP
-		data["soul"] = 0.0
+		data["ink"] = 0.0
 		data["dead"] = false
 	return data
 
@@ -922,7 +926,8 @@ func _start_level(save: Dictionary, with_intro := false, definition: LevelData =
 		player.equip_weapon(wanted_weapon)
 	var hp := int(save.get("hp", player.MAX_HP))
 	player.hp = clampi(hp, 1, player.MAX_HP)
-	player.soul = clampf(float(save.get("soul", 0.0)), 0.0, 99.0)
+	# v7 пишет ink; fallback soul держит прямые вызовы _start_level со старыми данными.
+	player.soul = clampf(float(save.get("ink", save.get("soul", 0.0))), 0.0, 99.0)
 	player.hp_changed.emit(player.hp, player.MAX_HP)
 	var combat_ink := CombatFx.layer(player)
 	combat_ink.restore_state(save.get("ink_marks", []))
@@ -1427,6 +1432,7 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 		player.MAX_HP if dead_now else player.hp,
 		0.0 if dead_now else snappedf(player.soul, 0.1),
 		dead_now, ink.revision, level.enemy_count(), cleared, _finale_seen,
+		PGS.save_dict(),
 		String(dialogue.dialogue_id) if dialogue_open else "",
 		dialogue.index if dialogue_open else -1,
 	])
@@ -1442,13 +1448,14 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 		"weapons": player.weapon_ids(),
 		"weapon": player.current_weapon_id(),
 		"hp": player.MAX_HP if dead_now else player.hp,
-		"soul": 0.0 if dead_now else player.soul,
+		"ink": 0.0 if dead_now else player.soul,
 		"dead": dead_now,
 		"dialogue": {"id": dialogue.dialogue_id, "line": dialogue.index} if dialogue_open else {},
 		"enemies_left": level.enemy_count(),
 		"cleared": cleared,
 		"finale_seen": _finale_seen if cleared else false,
 	}, true)
+	payload.merge(PGS.save_dict(), true)
 	if is_custom_route():
 		payload["route"] = _route_data
 	if background:

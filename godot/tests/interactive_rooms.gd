@@ -18,7 +18,8 @@ func _ready() -> void:
 	flow.start_run()
 	await _ticks(4)
 	var old := SaveGame.migrate({"version": 5, "level": "ch01_hall", "killed": ["e1"], "props": ["test"]})
-	_check(old.version == 6 and old.rooms.is_empty() and old.switches.is_empty() and old.killed == ["e1"] and old.props == ["test"],
+	_check(old.version == SaveGame.VERSION and old.rooms.is_empty() and old.switches.is_empty()
+		and old.killed == ["e1"] and old.props == ["test"] and old.ink == 0.0,
 		"v5 migration preserves existing progress")
 	_move(Vector2(3312, 576))
 	await _ticks(4)
@@ -264,7 +265,7 @@ func _check_json(editor: Control) -> void:
 
 func _check_story_chapter() -> void:
 	SaveGame.write_slot("auto", {"level": "ch01_hall", "cleared": true, "finale_seen": true,
-		"weapons": ["weapon.blade", "weapon.brush"], "weapon": "weapon.brush", "soul": 21, "hp": 3})
+		"weapons": ["weapon.blade", "weapon.brush"], "weapon": "weapon.brush", "ink": 21, "hp": 3})
 	flow.title_screen.reset_menu()
 	await _ticks(ceili(Engine.physics_ticks_per_second * 0.2) + 1)
 	flow.title_screen.activate(flow.title_screen.actions.find("play"))
