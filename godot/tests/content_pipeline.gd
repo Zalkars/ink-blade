@@ -47,34 +47,34 @@ func _ready() -> void:
 	if shard == null:
 		get_tree().quit(1)
 		return
-	flow.player.soul = 96.0
+	flow.player.ink = 96.0
 	flow.player.global_position = shard.global_position - Vector2(0, 23)
 	await _ticks(10)
-	_check(flow.player.soul == 99.0 and flow.level.collected_props == ["shard_1"], "physical pickup clamps soul and is collected once")
+	_check(flow.player.ink == 100.0 and flow.level.collected_props == ["shard_1"], "physical pickup clamps ink and is collected once")
 	flow._flush_save()
 	flow.continue_run()
-	_check(_pickup() == null and flow.player.soul == 99.0, "pickup remains collected after save/load")
+	_check(_pickup() == null and flow.player.ink == 100.0, "pickup remains collected after save/load")
 	flow.load_level("test_gallery")
 	shard = _pickup()
 	_check(shard != null, "a new run restores pickups")
-	flow.player.soul = 99.0
+	flow.player.ink = 100.0
 	flow._autosave(false)
 	flow.player.global_position = shard.global_position - Vector2(0, 23)
 	await _ticks(10)
 	flow._flush_save()
-	_check(SaveGame.read_slot("auto").props == ["shard_1"], "pickup at full soul is still persisted")
+	_check(SaveGame.read_slot("auto").props == ["shard_1"], "pickup at full ink is still persisted")
 	flow.player.iframes = 0.0
 	flow.player.take_damage(Player.MAX_HP, 0.0)
 	flow.respawn_run()
-	_check(_pickup() == null and flow.player.soul == 0.0, "respawn keeps pickup state and resets soul")
+	_check(_pickup() == null and flow.player.ink == 0.0, "respawn keeps pickup state and resets ink")
 	flow.qa_session = false
 	flow._show_title()
 	SaveGame.use_storage(previous)
 	_check(SaveGame.read_slot("slot_1") == original and SaveGame.read_slot("auto").is_empty(), "QA does not touch story saves")
 	flow.start_run()
 	var before := SaveGame.read_slot("auto")
-	flow.console.execute("set soul nope", true)
-	_check(SaveGame.storage == previous and flow.player.soul == 0.0, "invalid command leaves session unchanged")
+	flow.console.execute("set ink nope", true)
+	_check(SaveGame.storage == previous and flow.player.ink == 0.0, "invalid command leaves session unchanged")
 	flow.console.open()
 	flow.console._edit.text = "map p"
 	flow.console._update_suggestions("map p")

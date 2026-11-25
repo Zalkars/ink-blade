@@ -43,16 +43,16 @@ func _ready() -> void:
 	player.set_physics_process(false)
 	check(player.is_on_floor(), "player grounded")
 	player.hp = 3
-	player.soul = 80
+	player.ink = 80
 	CTL.state["heal"] = true
 	for i in 50:
 		player._physics_process(1.0 / 60)
-	check(player.hp == 4 and is_equal_approx(player.soul, 40), "heal completes and spends ink once")
+	check(player.hp == 4 and is_equal_approx(player.ink, 30), "heal completes and spends ink once")
 	CTL.state["heal"] = false
 	player._physics_process(0.01)
 	check(not player.healing and player.heal_t == 0, "release cancels channel")
 	player.hp = 3
-	player.soul = 0
+	player.ink = 0
 	CTL.state["heal"] = true
 	player._physics_process(1.0)
 	check(player.hp == 3 and not player.healing, "no heal without ink")
@@ -60,10 +60,11 @@ func _ready() -> void:
 	player.attack_t = 0.1
 	player.healing = true
 	player.dash_t = 0.1
+	player.ink = 20.0
 	player.take_damage(1, -1)
 	player.take_damage(1, -1)
-	check(player.hp == 2 and player.attack_t == 0 and not player.healing and player.dash_t == 0,
-		"damage interrupts actions; invulnerability blocks duplicate damage")
+	check(player.hp == 2 and player.ink == 0 and player.attack_t == 0 and not player.healing and player.dash_t == 0,
+		"damage interrupts actions, spills ink and invulnerability blocks duplicate damage")
 	player.iframes = 0
 	player.hurt_t = 0
 	player.position = Vector2(300, 297)
@@ -79,13 +80,18 @@ func _ready() -> void:
 	check(player.hp == 1, "melee strike lands after windup")
 	player.iframes = 0
 	player.hurt_t = 0
-	player.soul = 0
+	player.ink = 0
 	player.attack_cd = 0
 	player.facing = 1
 	player._try_attack()
 	check(grunt.hp == 2, "blade anticipation precedes damage")
 	player._physics_process(0.06)
-	check(grunt.hp == 1 and player.soul == 12, "successful blade hit earns ink")
+	check(grunt.hp == 1 and player.ink == 7, "successful blade hit earns ink")
+	player.attack_t = 0
+	player.attack_cd = 0
+	player._try_attack()
+	player._physics_process(0.06)
+	check(grunt.hp <= 0 and player.ink == 24, "killing blow adds the kill ink bonus")
 	player.attack_t = 0
 	grunt.queue_free()
 	var bolt := InkBolt.new()
@@ -119,8 +125,10 @@ func _ready() -> void:
 	player._try_attack()
 	through_dash.position = player.position + Vector2(42, 0)
 	await ticks(2)
-	player._physics_process(0.06)
-	check(not is_instance_valid(through_dash) or through_dash.is_queued_for_deletion(), "blade destroys a bolt in the active hitbox")
+	player._physics_process(0.09)
+	check(not is_instance_valid(through_dash) or through_dash.is_queued_for_deletion(),
+		"blade destroys a bolt in the active hitbox")
+	check(player.ink == 29, "destroying a projectile earns ink")
 	var normal_bolt := InkBolt.new()
 	normal_bolt.position = player.position + Vector2(42, 0)
 	room.add_child(normal_bolt)

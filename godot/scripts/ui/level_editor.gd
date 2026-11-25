@@ -56,7 +56,7 @@ var _view_zoom: Label
 var _view_cursor: Label
 var _test_start: OptionButton
 var _test_weapon: OptionButton
-var _test_soul: SpinBox
+var _test_ink: SpinBox
 var _route: MenuButton
 var _json_dialog: FileDialog
 var _json_data: Dictionary
@@ -347,9 +347,9 @@ func _build_test_options(body: VBoxContainer) -> void:
 		_test_weapon.add_item(L10N.t(definition.display_name_key))
 		_test_weapon.set_item_metadata(_test_weapon.item_count - 1, str(id))
 	_form_field(body, "editor.test_weapon", _test_weapon)
-	_test_soul = SpinBox.new()
-	_test_soul.max_value = 99
-	_form_field(body, "debug.soul", _test_soul)
+	_test_ink = SpinBox.new()
+	_test_ink.max_value = 100
+	_form_field(body, "debug.ink", _test_ink)
 	body.add_child(_note("editor.test_help"))
 	body.add_child(_button("editor.playtest", _playtest, true))
 	body.add_child(HSeparator.new())
@@ -878,7 +878,7 @@ func _playtest() -> void:
 	_apply_and_report()
 	if not draft.validate().is_empty() or not canvas.invalid_exits.is_empty():
 		return
-	var options := {"weapon": str(_test_weapon.get_selected_metadata()), "soul": _test_soul.value}
+	var options := {"weapon": str(_test_weapon.get_selected_metadata()), "ink": _test_ink.value}
 	var start := str(_test_start.get_selected_metadata())
 	if start == "@cursor":
 		options["position"] = canvas.cursor_point()

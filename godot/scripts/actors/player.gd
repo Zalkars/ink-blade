@@ -81,8 +81,13 @@ var attack_windup := 0.0
 var attack_total := ATTACK_TIME
 var _struck := false
 const HEAL_TIME := 0.8
-const HEAL_COST := 40.0
-var soul := 0.0
+const HEAL_COST := 50.0
+const INK_HIT := 7.0
+const INK_KILL := 10.0
+const INK_PROJECTILE := 5.0
+const INK_DAMAGE := 20.0
+var ink := 0.0
+var max_ink := 100.0
 var healing := false
 var heal_t := 0.0
 var heal_flash := 0.0
@@ -113,6 +118,8 @@ var _debug_flying := false
 func _ready() -> void:
 	_spawn = global_position
 	collision_mask = GROUND_MASK
+	max_ink = float(PGS.max_ink())
+	ink = clampf(ink, 0.0, max_ink)
 	# На старте открыт только клинок: кисть выдаёт Переписчик.
 	var all := WDB.all()
 	if not all.is_empty():
@@ -302,7 +309,7 @@ func _physics_process(delta: float) -> void:
 	_handle_weapon_input(delta)
 
 	var can_heal := (CTL.down("heal") and is_on_floor() and hp < MAX_HP
-		and soul >= HEAL_COST and attack_t <= 0.0 and dash_t <= 0.0
+		and ink >= HEAL_COST and attack_t <= 0.0 and dash_t <= 0.0
 		and hurt_t <= 0.0 and jump_buf <= 0.0)
 	if can_heal and not healing:
 		SND.heal_loop()
@@ -314,7 +321,7 @@ func _physics_process(delta: float) -> void:
 			InkFx.sparks(global_position.x, global_position.y + 10, -PI / 2, 2, InkR.GOLD)
 		velocity.x = move_toward(velocity.x, 0.0, DEC_GROUND * delta)
 		if heal_t >= HEAL_TIME:
-			soul -= HEAL_COST
+			ink -= HEAL_COST
 			hp = mini(MAX_HP, hp + 1)
 			heal_t = 0.0
 			healing = false
@@ -509,14 +516,17 @@ func _strike() -> void:
 			if lethal and body.has_method("open_seal"):
 				body.open_seal(1.0)
 			body.hit(maxi(hp_before, swing_damage) if lethal else swing_damage, attack_facing, swing_knock)
-			if int(body.get("hp")) < hp_before:
-				soul = minf(99.0, soul + 12.0)
+			var hp_after := int(body.get("hp"))
+			if hp_after < hp_before:
+				_add_ink(INK_HIT)
+				if hp_after <= 0:
+					_add_ink(INK_KILL)
 				CombatFx.burst(self, body.global_position, Vector2(attack_facing, -0.35))
 				InkFx.add_shake(3.0)
 				InkFx.sparks(body.global_position.x, body.global_position.y, 0.0, 7, InkR.CREAM)
 				if fl != null:
 					fl.add_combo()
-					fl.freeze(0.075 if (swing_damage >= 2 or int(body.get("hp")) <= 0) else 0.055)
+					fl.freeze(0.075 if (swing_damage >= 2 or hp_after <= 0) else 0.055)
 				if attack_dir == "down":
 					velocity.y = -660
 					air_dash = true
@@ -531,12 +541,17 @@ func _strike() -> void:
 			continue
 		var sight := PhysicsRayQueryParameters2D.create(global_position, projectile.global_position, SOLID_MASK)
 		if get_world_2d().direct_space_state.intersect_ray(sight).is_empty():
-			projectile.break_by_attack()
+			if projectile.break_by_attack():
+				_add_ink(INK_PROJECTILE)
 	var start := global_position + Vector2(0, -4)
 	var ray := PhysicsRayQueryParameters2D.create(start, start + Vector2(swing_reach.x * attack_facing, 0), SOLID_MASK)
 	var wall := get_world_2d().direct_space_state.intersect_ray(ray)
 	if not wall.is_empty():
 		CombatFx.burst(self, wall.position, wall.normal, BONE, 8)
+
+
+func _add_ink(amount: float) -> void:
+	ink = clampf(ink + amount, 0.0, max_ink)
 
 
 func take_damage(amount: int, from_dir: float) -> void:
@@ -546,6 +561,7 @@ func take_damage(amount: int, from_dir: float) -> void:
 	if fl != null and fl.debug_rules.god:
 		return
 	hp = maxi(0, hp - amount)
+	ink = maxf(0.0, ink - INK_DAMAGE)
 	iframes = HURT_INVULN
 	hurt_t = 0.28
 	attack_t = 0.0
@@ -568,6 +584,7 @@ func take_damage(amount: int, from_dir: float) -> void:
 	hp_changed.emit(hp, MAX_HP)
 	if hp == 0:
 		dead = true
+		ink = 0.0
 		InkFx.ink_burst(global_position.x, global_position.y, 34, 440, [INK, RED], 7, true, null, 0, 0, 1300, global_position.y + 23)
 		InkFx.ring(global_position.x, global_position.y, 10, 140, RED, 0.7, 4)
 		InkFx.add_shake(16.0, 0.02)
@@ -601,9 +618,9 @@ func respawn() -> void:
 	_dash_hint = 0.0
 	jump_buf = 0.0
 	coyote = 0.0
-	# Возрождение согласовано с загрузкой сейва: душа обнуляется,
+	# Возрождение согласовано с загрузкой сейва: чернила обнуляются,
 	# незавершённый замах и накопленное комбо не переезжают в новый забег.
-	soul = 0.0
+	ink = 0.0
 	combo_time = 0.0
 	attack_step = 0
 	attack_dir = "fwd"

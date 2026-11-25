@@ -21,8 +21,8 @@ const COMMANDS := {
 	"inspect": "inspect",
 	"warp": "warp [x y]",
 	"checkpoint": "checkpoint [id]",
-	"give": "give [hp [n] | soul [n] | dash | all]",
-	"set": "set <hp|soul|speed> <число>",
+	"give": "give [hp [n] | ink [n] | dash | all]",
+	"set": "set <hp|ink|speed> <число>",
 	"weapon": "weapon <id>",
 	"spawn": "spawn [враг [x y [количество]]]",
 	"kill": "kill",
@@ -268,8 +268,8 @@ func _cmd_give(args: PackedStringArray, isolate: bool) -> String:
 	if p == null:
 		return _reply("игрок не в игре")
 	var what := str(args[0]).to_lower() if args.size() > 0 else "hp"
-	if args.size() > 2 or (args.size() == 2 and (what not in ["hp", "soul"] or not _numeric(args[1]) or float(args[1]) < 0)) \
-			or what not in ["hp", "soul", "dash", "all"]:
+	if args.size() > 2 or (args.size() == 2 and (what not in ["hp", "ink"] or not _numeric(args[1]) or float(args[1]) < 0)) \
+			or what not in ["hp", "ink", "dash", "all"]:
 		return _reply(COMMANDS.give)
 	_isolate(isolate)
 	match what:
@@ -281,9 +281,9 @@ func _cmd_give(args: PackedStringArray, isolate: bool) -> String:
 		"dash":
 			p.dash_cd = 0.0
 			return _reply("рывок готов")
-		"soul":
-			p.soul = clampf(p.soul + (float(args[1]) if args.size() == 2 else 99.0), 0.0, 99.0)
-			return _reply("душа %.1f" % p.soul)
+		"ink":
+			p.ink = clampf(p.ink + (float(args[1]) if args.size() == 2 else p.max_ink), 0.0, p.max_ink)
+			return _reply("чернила %.0f из %.0f" % [p.ink, p.max_ink])
 		"all":
 			p.hp = p.MAX_HP
 			p.dash_cd = 0.0
@@ -362,7 +362,7 @@ func _cmd_rule(command: String, args: PackedStringArray, isolate: bool) -> Strin
 
 
 func _cmd_set(args: PackedStringArray, isolate: bool) -> String:
-	if args.size() != 2 or args[0] not in ["hp", "soul", "speed"] or not _numeric(args[1]):
+	if args.size() != 2 or args[0] not in ["hp", "ink", "speed"] or not _numeric(args[1]):
 		return _reply(COMMANDS.set)
 	var value := float(args[1])
 	var p = _player()
@@ -374,9 +374,9 @@ func _cmd_set(args: PackedStringArray, isolate: bool) -> String:
 			p.hp = int(clampf(value, 1, p.MAX_HP))
 			p.hp_changed.emit(p.hp, p.MAX_HP)
 			value = p.hp
-		"soul":
-			p.soul = clampf(value, 0.0, 99.0)
-			value = p.soul
+		"ink":
+			p.ink = clampf(value, 0.0, p.max_ink)
+			value = p.ink
 		"speed":
 			flow.debug_flight_speed = clampf(value, 50.0, 1800.0)
 			value = flow.debug_flight_speed
@@ -399,9 +399,9 @@ func inspect_player() -> String:
 	var p = _player()
 	if p == null or flow.level == null:
 		return "уровень не загружен"
-	return "%s / %s · X %.1f Y %.1f · V %.0f, %.0f · HP %d/%d · душа %.1f · враги %d" % [
+	return "%s / %s · X %.1f Y %.1f · V %.0f, %.0f · HP %d/%d · чернила %.0f/%.0f · враги %d" % [
 		flow.level_id, flow.checkpoint_id, p.global_position.x, p.global_position.y, p.velocity.x, p.velocity.y,
-		p.hp, p.MAX_HP, p.soul, flow.level.enemy_count()]
+		p.hp, p.MAX_HP, p.ink, p.max_ink, flow.level.enemy_count()]
 
 
 func _cmd_kill() -> String:
@@ -491,8 +491,8 @@ func _update_suggestions(text: String) -> void:
 		match command:
 			"cheat": candidates = ["flight", "god", "damage"] if index == 1 else ["on", "off", "toggle"] if index == 2 else []
 			"map": candidates = ["enemies", "particles", "platforms", "background"] if index == 1 else ["on", "off", "toggle"] if index == 2 else []
-			"give": candidates = ["hp", "soul", "dash", "all"] if index == 1 else []
-			"set": candidates = ["hp", "soul", "speed"] if index == 1 else []
+			"give": candidates = ["hp", "ink", "dash", "all"] if index == 1 else []
+			"set": candidates = ["hp", "ink", "speed"] if index == 1 else []
 			"weapon": candidates = PackedStringArray(WDB.ids()) if index == 1 else []
 			"level": candidates = LVL.ids(flow.qa_session) if index == 1 else []
 			"spawn": candidates = PackedStringArray(DB.ids()) if index == 1 else []

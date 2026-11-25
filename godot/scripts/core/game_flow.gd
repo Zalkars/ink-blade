@@ -525,7 +525,7 @@ func start_editor_test(world: Dictionary, options := {}) -> bool:
 	if WDB.get_weapon(StringName(weapon)) != null:
 		initial["weapons"] = ["weapon.blade", weapon] if weapon != "weapon.blade" else [weapon]
 		initial["weapon"] = weapon
-	initial["ink"] = clampf(float(options.get("soul", 0.0)), 0.0, 99.0)
+	initial["ink"] = clampf(float(options.get("ink", options.get("soul", 0.0))), 0.0, 100.0)
 	_autosave(false)
 	_complete_autosave(true)
 	var next := _draft_room(test_world)
@@ -631,7 +631,7 @@ func _travel_room(exit: Dictionary) -> bool:
 		return false
 	var current := _room_snapshot()
 	current.merge({"rooms": _room_states, "grants": granted_rewards, "weapons": player.weapon_ids(),
-		"weapon": player.current_weapon_id(), "hp": player.hp, "ink": player.soul})
+		"weapon": player.current_weapon_id(), "hp": player.hp, "ink": player.ink})
 	return _start_level(_arrival(current, level_id, target.id, str(exit.get("entry", ""))), false, target, true)
 
 
@@ -774,7 +774,7 @@ func load_level(wanted: String) -> bool:
 	return not is_testing_level() and _start_level({"level": wanted}, false)
 
 
-## Обычная загрузка сохраняет HP и душу. Смерть отмечается в сейве отдельно.
+## Обычная загрузка сохраняет HP и чернила. Смерть отмечается в сейве отдельно.
 func continue_run(slot: String = SaveGame.AUTOSAVE) -> void:
 	if is_testing_level():
 		debug_respawn()
@@ -927,7 +927,7 @@ func _start_level(save: Dictionary, with_intro := false, definition: LevelData =
 	var hp := int(save.get("hp", player.MAX_HP))
 	player.hp = clampi(hp, 1, player.MAX_HP)
 	# v7 пишет ink; fallback soul держит прямые вызовы _start_level со старыми данными.
-	player.soul = clampf(float(save.get("ink", save.get("soul", 0.0))), 0.0, 99.0)
+	player.ink = clampf(float(save.get("ink", save.get("soul", 0.0))), 0.0, player.max_ink)
 	player.hp_changed.emit(player.hp, player.MAX_HP)
 	var combat_ink := CombatFx.layer(player)
 	combat_ink.restore_state(save.get("ink_marks", []))
@@ -1205,7 +1205,7 @@ func _on_checkpoint(id: String, _pos: Vector2) -> void:
 
 
 ## Мир помнит убитых: после смерти они не возвращаются.
-## Один отложенный снимок после удара хранит и побеждённых врагов, и душу.
+## Один отложенный снимок после удара хранит и побеждённых врагов, и чернила.
 func _on_enemy_died(id: String) -> void:
 	# Временные враги (деление, призывы) не попадают в сохранение и не
 	# считаются в статистике — иначе после «Продолжить» счётчик скачет.
@@ -1430,7 +1430,7 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 		_room_entry, level.devices.active_switches.size(),
 		granted_rewards, player.weapon_ids(), player.current_weapon_id(),
 		player.MAX_HP if dead_now else player.hp,
-		0.0 if dead_now else snappedf(player.soul, 0.1),
+		0.0 if dead_now else snappedf(player.ink, 0.1),
 		dead_now, ink.revision, level.enemy_count(), cleared, _finale_seen,
 		PGS.save_dict(),
 		String(dialogue.dialogue_id) if dialogue_open else "",
@@ -1448,7 +1448,7 @@ func _autosave(cleared: bool, force := false, background := false) -> void:
 		"weapons": player.weapon_ids(),
 		"weapon": player.current_weapon_id(),
 		"hp": player.MAX_HP if dead_now else player.hp,
-		"ink": 0.0 if dead_now else player.soul,
+		"ink": 0.0 if dead_now else player.ink,
 		"dead": dead_now,
 		"dialogue": {"id": dialogue.dialogue_id, "line": dialogue.index} if dialogue_open else {},
 		"enemies_left": level.enemy_count(),

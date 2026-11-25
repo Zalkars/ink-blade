@@ -5,20 +5,22 @@ const Guide := preload("res://scenes/ui/control_guide.tscn")
 var failures := 0
 var dismissed_count := 0
 
-class LiquidAtlas extends Control:
+class InkAtlas extends Control:
 	func _draw() -> void:
 		for phase in 32:
-			for soul in 100:
-				draw_set_transform(Vector2(soul * 44 - 35, phase * 44 - 79))
-				for cell in Hud.soul_liquid_cells(float(soul) / 99.0, float(phase) * TAU / 96.0):
-					draw_colored_polygon(cell, Color.BLACK)
+			for step in 100:
+				draw_set_transform(Vector2(step * 44, phase * 44))
+				var fill := float(step) / 99.0
+				var points := Hud.ink_bar_points(fill, float(phase) * TAU / 96.0, 2.0, 2.0, 40.0, 40.0)
+				if points.size() >= 3:
+					draw_colored_polygon(PackedVector2Array(points), Color.BLACK)
 
-class Flask extends "res://scripts/ui/hud.gd":
+class Gauge extends "res://scripts/ui/hud.gd":
 	func _draw() -> void:
 		InkR.init_static()
 		InkR.set_canvas(self)
 		InkR.begin_frame(_t)
-		_draw_soul_flask()
+		_draw_ink_gauge()
 
 func check(ok: bool, label: String) -> void:
 	if not ok:
@@ -46,52 +48,54 @@ func _ready() -> void:
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	viewport.transparent_bg = false
 	add_child(viewport)
-	var atlas := LiquidAtlas.new()
+	var atlas := InkAtlas.new()
 	viewport.add_child(atlas)
 	var pixels: Image = await rendered(viewport)
-	pixels.save_png(output + "liquid-all-levels-32-phases.png")
+	pixels.save_png(output + "ink-bar-all-levels-32-phases.png")
 	var missing := 0
 	var decreases := 0
 	for phase in 32:
 		var previous := 0
-		for soul in 100:
+		for step in 100:
 			var count := 0
 			for y in 44:
 				for x in 44:
-					if pixels.get_pixel(soul * 44 + x, phase * 44 + y).r < 0.1:
+					if pixels.get_pixel(step * 44 + x, phase * 44 + y).r < 0.1:
 						count += 1
-			if (soul == 0 and count != 0) or (soul > 0 and count == 0):
+			if (step == 0 and count != 0) or (step >= 5 and count == 0):
 				missing += 1
 			if count < previous:
 				decreases += 1
 			previous = count
-	check(missing == 0, "rendered fill present for 1..99, empty at 0, all 32 phases (%d missing)" % missing)
-	check(decreases == 0, "rendered fill area monotonic at every phase (%d decreases)" % decreases)
+	check(missing == 0, "rendered ink bar present from 5%%, empty at 0, all 32 phases (%d missing)" % missing)
+	check(decreases == 0, "rendered ink fill area monotonic at every phase (%d decreases)" % decreases)
 	viewport.queue_free()
 	await get_tree().process_frame
 	var sheet := SubViewport.new()
 	sheet.size = Vector2i(1200, 1920)
 	sheet.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(sheet)
-	var values := [0, 1, 10, 39, 40, 50, 75, 98, 99]
+	var values := [0, 1, 24, 25, 49, 50, 75, 99, 100]
 	var players: Array[Player] = []
 	for row in 16:
 		for column in values.size():
-			var sample := Flask.new()
+			var sample := Gauge.new()
 			var p := Player.new()
-			p.soul = values[column]
+			p.ink = values[column]
 			players.append(p)
 			sample.player = p
+			sample._ink_shown = p.ink
+			sample._ink_before = p.ink
 			sample.position = Vector2(column * 132 + 4, row * 120 + 4)
 			sample._t = float(row) * TAU / 48.0
 			sheet.add_child(sample)
 			sample.set_process(false)
 	var shot: Image = await rendered(sheet)
-	shot.save_png(output + "flask-contact-sheet.png")
-	var soul_unchanged := true
+	shot.save_png(output + "ink-gauge-contact-sheet.png")
+	var ink_unchanged := true
 	for i in players.size():
-		soul_unchanged = soul_unchanged and players[i].soul == values[i % values.size()]
-	check(soul_unchanged, "144 flask renders preserve actual soul")
+		ink_unchanged = ink_unchanged and players[i].ink == values[i % values.size()]
+	check(ink_unchanged, "144 ink gauge renders preserve actual ink")
 	sheet.queue_free()
 	await get_tree().process_frame
 	for p in players:

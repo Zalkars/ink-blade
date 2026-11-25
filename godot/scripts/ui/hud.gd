@@ -1,6 +1,6 @@
 extends Control
 
-## HUD в чернильном стиле 0.2: маски здоровья, колба души, шевроны рывка,
+## HUD в чернильном стиле 0.2: маски здоровья, шкала чернил, шевроны рывка,
 ## счётчик комбо, баннер зала, затухающая подсказка и полоса босса.
 
 const FONT_TITLE := preload("res://assets/fonts/Underdog-Regular.ttf")
@@ -76,18 +76,18 @@ var _hp_anim := 0.0
 var _lost_from := 5
 var _t := 0.0
 var _banner := {"title": "", "sub": "", "t": 0.0, "max": 1.0}
-## Кэш жидкости в фляге: полигоны пересобираются не каждый кадр.
-var _soul_points := PackedVector2Array()
-var _soul_triangles := PackedInt32Array()
-var _soul_cells_k := -1.0
-var _soul_cells_t := -100.0
+## Чернильница: плавно проседает, поэтому храним показанное значение,
+## время последней волны и жизнь капли разлива.
+var _ink_before := 0.0
+var _ink_shown := 0.0
+var _ink_spill := 0.0
+var _ink_spill_frac := 0.0
+var _ink_wave_t := -100.0
 var _vitals := Vector4i(-1, -1, -1, -1)
 var _boss_status := Vector3i(-1, -1, -1)
 var _screen_fx := Vector2.ZERO
 var _combo_visible := false
 var _was_debug_on := false
-## Высота метки стоимости лечения постоянна — считается один раз.
-static var _soul_cost_surface := -1.0
 
 
 func _ready() -> void:
@@ -125,9 +125,24 @@ func _process(delta: float) -> void:
 	if is_instance_valid(player):
 		var dash := player.dash_ready()
 		vitals = Vector4i(player.hp, player.weapon_index, player.weapons.size(), 4 if dash >= 1.0 else ceili(dash * 3.0))
-		var fill := clampf(player.soul / 99.0, 0.0, 1.0)
-		var wave_due := fill > 0.0 and fill < 1.0 and _t - _soul_cells_t >= 1.0 / 30.0
-		animate = animate or player.hp == 1 or fill != _soul_cells_k or wave_due
+		if player.ink != _ink_before:
+			if player.ink < _ink_before:
+				_ink_spill_frac = clampf(_ink_before / maxf(1.0, player.max_ink), 0.02, 1.0)
+				_ink_spill = 0.7
+			_ink_before = player.ink
+			animate = true
+		var target := clampf(player.ink, 0.0, player.max_ink)
+		if not is_equal_approx(_ink_shown, target):
+			# Прирост виден сразу, а урон «проседает» за доли секунды.
+			_ink_shown = target if target > _ink_shown else move_toward(_ink_shown, target, delta * 60.0)
+			animate = true
+		if _ink_spill > 0.0:
+			_ink_spill = maxf(0.0, _ink_spill - delta)
+			animate = true
+		if _ink_shown > 0.0 and _ink_shown < player.max_ink and _t - _ink_wave_t >= 1.0 / 30.0:
+			_ink_wave_t = _t
+			animate = true
+		animate = animate or player.hp == 1
 	var boss_status := Vector3i(-1, -1, -1)
 	if is_instance_valid(boss) and boss.engaged and not boss.dead:
 		boss_status = Vector3i(boss.hp, boss.phase, int(boss.seal_open))
@@ -162,6 +177,9 @@ func bind(p: Player) -> void:
 	player = p
 	_hp_before = p.hp
 	_hp_anim = 0.0
+	_ink_before = p.ink
+	_ink_shown = p.ink
+	_ink_spill = 0.0
 	queue_redraw()
 
 
@@ -188,7 +206,7 @@ func _draw() -> void:
 		# Quiet paper wash keeps the small ink marks legible over every backdrop.
 		InkR.rect(26, 20, 224, 151, InkR.rgba(246, 237, 218, 192), null, 0, 1.0, 2.2, false)
 		_draw_masks()
-		_draw_soul_flask()
+		_draw_ink_gauge()
 		_draw_dash_chevrons()
 		_draw_weapon()
 
@@ -240,105 +258,73 @@ func _draw_masks() -> void:
 			InkR.blob(gx, gy, 11.0 * (1.0 - progress * 0.45), InkR.RED, InkR.INK, 1.6, 1.0 - progress, 0.8, 9, 0.1)
 
 
-func _draw_soul_flask() -> void:
-	var x := 57.0
-	var y := 101.0
-	var r := 21.0
-	var k := clampf(player.soul / 99.0, 0.0, 1.0)
-	var ready := player.soul >= Player.HEAL_COST
+func _draw_ink_gauge() -> void:
+	var x := 56.0
+	var y := 94.0
+	var w := 176.0
+	var h := 16.0
+	var max_value := maxf(1.0, player.max_ink)
+	var target := clampf(_ink_shown, 0.0, max_value)
+	var k := target / max_value
+	var ready := target >= Player.HEAL_COST
+	var full := k >= 0.999
 
 	InkR.srand(310)
-	InkR.circle(x, y, r - 2.0, InkR.rgba(240, 230, 208, 230), null, 2.0, 1.0, 0.5, 24, false)
-	# Independent vertical cells cannot self-intersect or fail triangulation.
-	# Clip both surface endpoints to the analytic circle, including at 1/99.
-	var liquid := Color(23.0 / 255.0, 19.0 / 255.0, 15.0 / 255.0, 210.0 / 255.0)
-	# Пересобираем не чаще 30 раз в секунду: волна в маленькой фляге
-	# не требует пересчёта 80 полигонов на каждом кадре отрисовки.
-	if k != _soul_cells_k or (k > 0.0 and k < 1.0 and _t - _soul_cells_t >= 1.0 / 30.0):
-		_soul_points.clear()
-		_soul_triangles.clear()
-		for cell in soul_liquid_cells(k, _t):
-			var offset := _soul_points.size()
-			_soul_points.append_array(cell)
-			_soul_triangles.append_array([offset, offset + 1, offset + 2])
-			if cell.size() == 4:
-				_soul_triangles.append_array([offset, offset + 2, offset + 3])
-		_soul_cells_k = k
-		_soul_cells_t = _t
-	if not _soul_triangles.is_empty():
-		RenderingServer.canvas_item_add_triangle_array(
-			get_canvas_item(), _soul_triangles, _soul_points, PackedColorArray([liquid]))
+	if full:
+		InkR.radial_glow(x + w * 0.5, y + h * 0.5, 74.0, InkR.RED, 0.16,
+			x - 12.0, y - 14.0, w + 24.0, h + 28.0)
+	InkR.rect(x, y, w, h, InkR.rgba(240, 230, 208, 180), InkR.rgba(23, 19, 15, 150), 1.6, 1.0, 0.5)
+	if k > 0.0:
+		InkR.fill_poly(ink_bar_points(k, _t), InkR.INK, 0.9, 0.25, false)
 
-	InkR.circle(x, y, r, null, InkR.RED if ready else InkR.rgba(23, 19, 15, 166), 2.6 if ready else 2.0, 1.0, 0.9, 14)
-	InkR.rect(x - 7.0, y - r - 7.0, 14.0, 9.0, InkR.CREAM, InkR.INK, 1.5, 1.0, 0.4)
-	InkR.line(x - 9, y - r - 8, x + 9, y - r - 8, 2.3, InkR.RED, 0.8, 0.4)
-	InkR.line(x - r + 4.0, y - 6.0, x - r + 4.0, y + 9.0, 1.2, InkR.rgba(246, 237, 218, 128), 1.0, 1.0)
+	var division := 25.0
+	var value := division
+	while value < max_value - 0.01:
+		var dx := x + 1.5 + (w - 3.0) * value / max_value
+		var cost := is_equal_approx(value, Player.HEAL_COST)
+		InkR.line(dx, y + 1.5, dx, y + h - 1.5, 1.6 if cost else 1.0,
+			InkR.RED if cost else InkR.rgba(23, 19, 15, 90), 0.85 if cost else 0.55, 0.2)
+		value += division
+	InkR.rect(x, y, w, h, null, InkR.RED if ready else InkR.rgba(23, 19, 15, 170),
+		2.2 if ready else 1.6, 1.0, 0.5)
 
-	if ready:
-		var pulse := 0.5 + sin(_t * 5.0) * 0.3
-		InkR.save()
-		InkR.alpha_push(pulse * 0.5)
-		InkR.circle(x, y, r + 5.0, null, InkR.RED, 1.2, 1.0, 1.0, 16)
-		InkR.restore()
+	InkR.text(L10N.t("HUD_INK"), x, y - 7.0, 10.0, InkR.F_DISPLAY, InkR.A_LEFT,
+		InkR.INK, 0.55 if ready else 0.42, 2.2)
+	InkR.text("%d/%d" % [roundi(target), roundi(max_value)], x + w, y - 7.0, 10.0,
+		InkR.F_DISPLAY, InkR.A_RIGHT, InkR.INK, 0.42, 0.5)
 
-	var cost_y := y + soul_cost_surface()
-	InkR.line(x + r + 3.0, cost_y, x + r + 11.0, cost_y, 1.5, InkR.rgba(156, 33, 41, 160), 1.0, 0.6)
-	InkR.text(L10N.t("HUD_SOUL"), x + r + 14.0, y + 4.0, 11.0, InkR.F_DISPLAY, InkR.A_LEFT, InkR.INK, 0.55 if ready else 0.42, 1.5)
+	# Капля отрывается от уровня, который был до урона, и падает вниз.
+	if _ink_spill > 0.0:
+		var progress := 1.0 - _ink_spill / 0.7
+		var drop_x := x + 1.5 + (w - 3.0) * clampf(_ink_spill_frac, 0.0, 1.0)
+		var drop_y := y + h + 1.0 + progress * 13.0
+		InkR.circle(drop_x, drop_y, 3.6 * (1.0 - progress * 0.45), InkR.INK, null,
+			1.0, 1.0 - progress * 0.85, 0.25, 8, false)
+		InkR.line(drop_x, y + h + 1.0, drop_x, drop_y - 2.0, 1.4, InkR.INK, 0.55 * (1.0 - progress), 0.3)
 
 
-## Высота метки стоимости лечения: значение постоянное, считается один раз.
-static func soul_cost_surface() -> float:
-	if _soul_cost_surface < 0.0:
-		_soul_cost_surface = soul_surface(Player.HEAL_COST / 99.0)
-	return _soul_cost_surface
-
-
-## Height corresponding to an area fraction of the round flask.
-static func soul_surface(fill: float, radius := 20.0) -> float:
-	var k := clampf(fill, 0.0, 1.0)
-	var low := -radius
-	var high := radius
-	for iteration in 18:
-		var middle := (low + high) * 0.5
-		var area := radius * radius * acos(middle / radius) - middle * sqrt(maxf(0.0, radius * radius - middle * middle))
-		if area > k * PI * radius * radius:
-			low = middle
-		else:
-			high = middle
-	return (low + high) * 0.5
-
-
-## Pure geometry shared with the rendered sweep regression.
-static func soul_liquid_cells(fill: float, phase: float) -> Array[PackedVector2Array]:
-	var cells: Array[PackedVector2Array] = []
+## Заполнение шкалы: левый край ровный, правый — волна. Чистая геометрия
+## для визуальной регрессии; координаты совпадают с полосой HUD.
+static func ink_bar_points(fill: float, phase: float, x := 56.0, y := 94.0, w := 176.0, h := 16.0) -> Array[Vector2]:
 	var k := clampf(fill, 0.0, 1.0)
 	if k <= 0.0:
-		return cells
-	var radius := 20.0
-	# Soul is proportional to the filled area, so a single unit occupies
-	# visible pixels instead of a subpixel cap at the bottom of the circle.
-	var surface := soul_surface(k, radius)
-	var amplitude := 1.2 * sin(PI * k)
-	for i in 80:
-		var x0 := -radius + float(i) * 0.5
-		var x1 := x0 + 0.5
-		var bottom0 := sqrt(maxf(0.0, radius * radius - x0 * x0))
-		var bottom1 := sqrt(maxf(0.0, radius * radius - x1 * x1))
-		var top0 := clampf(surface + sin(x0 * 0.28 + phase * 3.0) * amplitude, -bottom0, bottom0)
-		var top1 := clampf(surface + sin(x1 * 0.28 + phase * 3.0) * amplitude, -bottom1, bottom1)
-		if bottom0 - top0 + bottom1 - top1 < 0.00001:
-			continue
-		var origin := Vector2(57.0, 101.0)
-		var points := PackedVector2Array([origin + Vector2(x0, top0), origin + Vector2(x1, top1)])
-		# Avoid repeated endpoints at the clipped edge of a partially wet cell.
-		if bottom1 - top1 > 0.000001:
-			points.append(origin + Vector2(x1, bottom1))
-		if bottom0 - top0 > 0.000001:
-			points.append(origin + Vector2(x0, bottom0))
-		if not Geometry2D.triangulate_polygon(points).is_empty():
-			cells.append(points)
-	return cells
-
+		return []
+	var left := x + 1.5
+	var top := y + 1.5
+	var bottom := y + h - 1.5
+	var right := left + (w - 3.0) * k
+	if k >= 0.999:
+		right = x + w - 1.5
+	var points: Array[Vector2] = [Vector2(left, top), Vector2(right, top)]
+	var amplitude := 0.9 * sin(PI * k)
+	if amplitude > 0.0:
+		for i in range(1, 8):
+			var yy := lerpf(top, bottom, float(i) / 8.0)
+			var xx := clampf(right + sin(yy * 0.9 + phase * 3.0) * amplitude, left, x + w - 1.5)
+			points.append(Vector2(xx, yy))
+	points.append(Vector2(right, bottom))
+	points.append(Vector2(left, bottom))
+	return points
 
 
 func _draw_dash_chevrons() -> void:
@@ -465,7 +451,7 @@ func _debug_world_lines() -> PackedStringArray:
 	var result: PackedStringArray = ["%s / %s" % [flow.level_id, flow.checkpoint_id],
 		"XY %.1f / %.1f" % [player.global_position.x, player.global_position.y],
 		"V %.0f, %.0f · HP %d" % [player.velocity.x, player.velocity.y, player.hp],
-		"%s · %.1f" % [L10N.t("debug.soul"), player.soul],
+		"%s · %.0f / %.0f" % [L10N.t("debug.ink"), player.ink, player.max_ink],
 		"%s · %d (%d)" % [L10N.t("debug.enemies"), flow.level.enemy_count(), flow.level.killed_ids.size()]]
 	var initial_count := result.size()
 	for rule in ["flight", "god", "damage"]:

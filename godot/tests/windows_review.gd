@@ -56,7 +56,7 @@ func _ready() -> void:
 	for enemy in flow.level.enemies:
 		enemy.set_physics_process(false)
 	flow.player.iframes = 0
-	flow.player.soul = 64
+	flow.player.ink = 64
 	flow.player.hp = 3
 	await frames(240)
 	await shot("play")

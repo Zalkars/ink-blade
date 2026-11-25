@@ -108,7 +108,7 @@ func _measure(weapon_id: String, actual_scene := false) -> void:
 		p.facing = 1 if boss.position.x > p.position.x else -1
 		if boss.seal_open and absf(boss.position.x - p.position.x) < 100:
 			p._try_attack()
-		CTL.state['heal'] = p.hp < 4 and p.soul >= Player.HEAL_COST and absf(boss.position.x - p.position.x) > 130 and not danger
+		CTL.state['heal'] = p.hp < 4 and p.ink >= Player.HEAL_COST and absf(boss.position.x - p.position.x) > 130 and not danger
 	var won := not is_instance_valid(boss)
 	print('BALANCE %s seconds=%.2f hits=%d hp=%d min_hp=%d won=%s' % [scenario,t,hits,p.hp,min_hp,won])
 	check(won, scenario + ' defeated through real movement and attacks without invulnerability')

@@ -101,7 +101,7 @@ func _ready() -> void:
 		await frames()
 		check(guide.step == expected_step, "real control advances to step %d" % expected_step)
 		await shot("touch-step-%d-wide" % expected_step)
-	check(flow.player.weapon_ids() == original_weapons and flow.player.soul == 0, "teaching locked swap and heal does not grant weapons or resource")
+	check(flow.player.weapon_ids() == original_weapons and flow.player.ink == 0, "teaching locked swap and heal does not grant weapons or resource")
 	check(flow.player.position == original_position, "player remains at original position throughout tutorial")
 	tap(guide.target_center())
 	check(not guide.visible and flow.state == flow.State.PLAY and not get_tree().paused, "last real pause button starts gameplay")

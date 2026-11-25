@@ -26,10 +26,10 @@ func _ready() -> void:
 	while flow.dialogue.visible:
 		flow.dialogue.advance()
 	await _ticks(4)
-	flow.player.soul = 31.0
+	flow.player.ink = 31.0
 	flow.player.hp = 3
 	await _use(Vector2(3616, 576))
-	_check(flow.level_id == "archive_annex" and flow.player.soul == 31 and flow.player.hp == 3 and flow.player.has_weapon("weapon.brush"),
+	_check(flow.level_id == "archive_annex" and flow.player.ink == 31 and flow.player.hp == 3 and flow.player.has_weapon("weapon.brush"),
 		"archive exit preserves inventory and health")
 	if flow.level_id != "archive_annex":
 		_finish()
@@ -46,7 +46,7 @@ func _ready() -> void:
 	_move(Vector2(1312, 608))
 	await _ticks(8)
 	flow._flush_save()
-	_check(flow.level.collected_props == ["archive_reward"] and flow.player.soul == 41, "vault supplies an actual collectible reward")
+	_check(flow.level.collected_props == ["archive_reward"] and flow.player.ink == 41, "vault supplies an actual collectible reward")
 	flow.continue_run()
 	await _ticks(4)
 	_check(flow.level_id == "archive_annex" and flow.level.devices.is_open("vault_door") and flow.level.enemy_count() == 0
@@ -140,13 +140,13 @@ func _check_editor(before: Dictionary) -> void:
 	for i in editor._test_weapon.item_count:
 		if editor._test_weapon.get_item_metadata(i) == "weapon.brush":
 			editor._test_weapon.select(i)
-	editor._test_soul.value = 60
+	editor._test_ink.value = 60
 	await _capture("linked-editor")
 	editor._playtest()
 	await _ticks(4)
-	_check(flow.is_testing_level() and flow.level_id == "qa_room_one" and flow.player.soul == 60 and
+	_check(flow.is_testing_level() and flow.level_id == "qa_room_one" and flow.player.ink == 60 and
 		flow.player.current_weapon_id() == "weapon.brush" and absf(flow.player.global_position.x - 320) < 5,
-		"playtest starts at the selected checkpoint with the chosen weapon and soul")
+		"playtest starts at the selected checkpoint with the chosen weapon and ink")
 	if not flow.is_testing_level():
 		return
 	await _use(Vector2(544, 608))
@@ -221,7 +221,7 @@ func _resume_editor_route() -> void:
 	editor._route.get_popup().id_pressed.emit(1)
 	await _ticks(3)
 	_check(flow.is_custom_route() and flow.level_id == "qa_room_two" and absf(flow.player.global_position.x - 544) < 5 \
-		and flow.player.soul == 10 and flow.level.collected_props == ["prop_1"],
+		and flow.player.ink == 10 and flow.level.collected_props == ["prop_1"],
 		"fresh game instance resumes the correct editor room, checkpoint and inventory from disk")
 	if not flow.is_custom_route():
 		return
@@ -271,7 +271,7 @@ func _check_story_chapter() -> void:
 	flow.title_screen.activate(flow.title_screen.actions.find("play"))
 	_check(flow.title_screen.actions.has("next_chapter"), "title offers Chapter II after exiting a completed Chapter I")
 	flow.title_screen.activate(flow.title_screen.actions.find("next_chapter"))
-	_check(flow.level_id == "ch02_cistern" and flow.player.current_weapon_id() == "weapon.brush" and flow.player.soul == 21,
+	_check(flow.level_id == "ch02_cistern" and flow.player.current_weapon_id() == "weapon.brush" and flow.player.ink == 21,
 		"title opens Chapter II from a completed Chapter I save with the same inventory")
 	if flow.level_id != "ch02_cistern":
 		return

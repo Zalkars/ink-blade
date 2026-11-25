@@ -47,12 +47,12 @@ func _ready() -> void:
 	old_save.erase("dialogue")
 	SaveGame.write_slot("auto", old_save)
 	flow.continue_run()
-	check(flow.player.has_weapon("weapon.brush") and flow.player.soul == 0, "old interrupted-dialogue save repaired")
+	check(flow.player.has_weapon("weapon.brush") and flow.player.ink == 0, "old interrupted-dialogue save repaired")
 	var v6_save := {"version": 6, "level": "ch01_hall", "checkpoint": "", "hp": 7, "soul": 80.0,
 		"weapons": ["weapon.blade", "weapon.brush"], "weapon": "weapon.brush", "cleared": false}
 	SaveGame.write_slot("auto", v6_save)
 	flow.continue_run()
-	check(flow.player.soul == 80 and flow.player.hp == 5, "v6 save opens with ink and capped hp")
+	check(flow.player.ink == 80 and flow.player.hp == 5, "v6 save opens with ink and capped hp")
 	PGS.grant_ability(&"ability.double_jump")
 	PGS.shards = 3
 	flow._autosave(true)
@@ -60,12 +60,12 @@ func _ready() -> void:
 	flow.continue_run()
 	check(PGS.has_ability(&"ability.double_jump") and PGS.shards == 3,
 		"progression survives autosave and continue")
-	flow.player.soul = 80
+	flow.player.ink = 80
 	flow.player.hp = 2
 	flow._autosave(false)
 	flow.continue_run()
 	flow.host.process_mode = Node.PROCESS_MODE_DISABLED
-	check(flow.player.soul == 80, "healing resource survives continue")
+	check(flow.player.ink == 80, "healing resource survives continue")
 	check(flow.player.hp == 2, "ordinary continue preserves saved HP")
 	flow.host.process_mode = Node.PROCESS_MODE_PAUSABLE
 	flow.player.set_physics_process(false)
@@ -140,13 +140,13 @@ func _ready() -> void:
 	var victim = flow.level.enemies[0]
 	victim.position = Vector2(2040, 300)
 	victim.hp = 1
-	p.soul = 0
+	p.ink = 0
 	p._hit_targets.clear()
 	await get_tree().physics_frame
 	p._strike()
 	await get_tree().process_frame
 	var saved := SaveGame.read_slot("auto")
-	check(p.soul == 12 and saved.ink == 12 and not saved.has("soul"), "killing blow ink included in v7 autosave")
+	check(p.ink == 17 and saved.ink == 17 and not saved.has("soul"), "killing blow ink included in v7 autosave")
 	# Kill all placements but the final splitting enemy, then reload mid-split.
 	fresh()
 	var last
@@ -227,17 +227,17 @@ func _ready() -> void:
 	# M1: damage to 1 HP + enemy kill -> die -> continue restores MAX_HP.
 	fresh()
 	flow.player.hp = 1
-	flow.player.soul = 63
+	flow.player.ink = 63
 	flow._on_enemy_died("e1")
 	flow._on_player_died()
 	flow.continue_run()
 	check(flow.player.hp == flow.player.MAX_HP, "continue after death restores full HP")
-	check(flow.player.soul == 0, "death resets soul even after app-style continue")
+	check(flow.player.ink == 0, "death resets ink even after app-style continue")
 	flow.player.hp = 1
-	flow.player.soul = 45
+	flow.player.ink = 45
 	flow._on_player_died()
 	flow._on_overlay_choice("checkpoint")
-	check(flow.player.hp == flow.player.MAX_HP and flow.player.soul == 0, "death overlay restores full HP with zero soul")
+	check(flow.player.hp == flow.player.MAX_HP and flow.player.ink == 0, "death overlay restores full HP with zero ink")
 
 	# M1: cleared without finale_seen keeps Continue and replays finale; finishing finale marks finale_seen.
 	fresh()
@@ -261,7 +261,7 @@ func _ready() -> void:
 
 	# M1: Play over unfinished autosave asks confirmation and keeps .bak.
 	fresh()
-	flow.player.soul = 44.0
+	flow.player.ink = 44.0
 	flow._autosave(false)
 	flow.title_screen.reset_menu()
 	flow.title_screen.visible = true
@@ -294,12 +294,12 @@ func _ready() -> void:
 	# M1: Manual save slot save, summary, and load.
 	SaveGame.erase_slot("slot_1")
 	fresh()
-	flow.player.soul = 72.0
+	flow.player.ink = 72.0
 	check(flow.save_to_slot("slot_1"), "manual slot saves")
 	check(not SaveGame.slot_summary("slot_1").contains(L10N.t("ui.slots.empty")), "slot summary reads saved state")
-	flow.player.soul = 0.0
+	flow.player.ink = 0.0
 	flow.continue_run("slot_1")
-	check(is_equal_approx(flow.player.soul, 72.0), "loading manual slot restores progress")
+	check(is_equal_approx(flow.player.ink, 72.0), "loading manual slot restores progress")
 	SaveGame.erase_slot("slot_1")
 	SaveGame.erase_slot(SaveGame.AUTOSAVE)
 	SaveGame.current_slot = SaveGame.AUTOSAVE

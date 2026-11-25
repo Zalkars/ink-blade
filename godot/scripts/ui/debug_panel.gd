@@ -126,7 +126,7 @@ func _show_section(section: String) -> void:
 			_number("speed", 50, 1800, 10, flow.debug_flight_speed)
 			if is_instance_valid(flow.player):
 				_number("hp", 1, flow.player.MAX_HP, 1, flow.player.hp)
-				_number("soul", 0, 99, 0.1, flow.player.soul)
+				_number("ink", 0, flow.player.max_ink, 0.1, flow.player.ink)
 				_body.add_child(_button("debug.respawn", _respawn))
 				_warp_row()
 		"map":

@@ -16,7 +16,7 @@ func _collect(body: Node2D) -> void:
 	if _collected or not body is Player or body.dead or definition == null:
 		return
 	_collected = true
-	body.soul = minf(99.0, body.soul + definition.soul_amount)
+	body.ink = minf(body.max_ink, body.ink + float(definition.soul_amount))
 	collected.emit(placement_id, definition.display_name_key)
 	queue_free()
 

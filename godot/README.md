@@ -107,7 +107,7 @@ PCK.
 - `player.gd` (`InkPlayer`) — порт `Player.cs`.
 - `enemy_base.gd` + `grunt/sentry/dummy/enemy_bolt` — враги; у подклассов
   метод называется `draw()` (не `_draw()`).
-- `hud.gd` (`InkHud`) — душа, рывок, комбо, баннер, подсказки, панели.
+- `hud.gd` (`InkHud`) — чернила, рывок, комбо, баннер, подсказки, панели.
 - `fx.gd` (`InkFx`) — частицы, спарки, кольца, shake/flash/damage-оверлеи.
 
 ## Управление

@@ -132,11 +132,11 @@ func _ready() -> void:
 	flow.player.velocity = Vector2.ZERO
 	flow.player.iframes = 9999.0
 	flow.player.hp = 3
-	flow.player.soul = 66.0
+	flow.player.ink = 66.0
 	await frames(90)
 	touch(3, mobile.buttons().heal, true)
 	await frames(120)
-	check(flow.player.hp > 3 and flow.player.soul < 66.0, "holding Y heals using soul")
+	check(flow.player.hp > 3 and flow.player.ink < 66.0, "holding Y heals using ink")
 	touch(3, mobile.buttons().heal, false)
 	await frames()
 	get_window().size = Vector2i(1600, 720)

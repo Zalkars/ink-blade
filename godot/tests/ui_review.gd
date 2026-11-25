@@ -92,14 +92,35 @@ func _ready() -> void:
 	flow.start_run()
 	await frames(4)
 	flow.host.process_mode = Node.PROCESS_MODE_DISABLED
+	flow.player.set_physics_process(false)
+	flow.level.set_physics_process(false)
+	for enemy in flow.level.enemies:
+		enemy.set_physics_process(false)
 	flow.player.global_position = Vector2(600, 540)
 	flow.camera.global_position = Vector2(780, 360)
 	flow.camera.reset_smoothing()
 	flow.player.hp = 2
-	flow.player.soul = 54
+	flow.player.ink = 54
 	flow.hud.show_banner("Ink Blade", "")
 	await frames(20)
 	await shot("hud-wide")
+	flow.player.hp = 3
+	flow.player.ink = 80
+	flow.hud._ink_before = 80.0
+	flow.hud._ink_shown = 80.0
+	flow.player.iframes = 0.0
+	flow.player.hurt_t = 0.0
+	flow.hud.set_process(false)
+	flow.player.take_damage(1, -1)
+	flow.hud._process(0.016)
+	flow.hud._ink_shown = flow.player.ink
+	check(flow.hud._ink_spill > 0.0, "damage leaves a visible ink drop on the HUD")
+	await shot("hud-spill")
+	flow.hud.set_process(true)
+	flow.player.hp = 3
+	flow.player.ink = 54
+	flow.player.iframes = 0.0
+	flow.player.hurt_t = 0.0
 	get_window().size = Vector2i(1560, 720)
 	CTL.touch_enabled = true
 	CTL.device = "touch"

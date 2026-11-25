@@ -123,7 +123,7 @@ func _process(delta: float) -> void:
 		var dash: float = flow.player.dash_ready()
 		var heal := Vector2(
 			clampf(flow.player.heal_t / Player.HEAL_TIME, 0.0, 1.0) if flow.player.healing else -1.0,
-			clampf(flow.player.soul / Player.HEAL_COST, 0.0, 1.0))
+			clampf(flow.player.ink / Player.HEAL_COST, 0.0, 1.0))
 		var heal_available := available("heal")
 		var swap := available("swap")
 		changed = changed or dash != _last_dash or heal != _last_heal \
@@ -379,7 +379,7 @@ func available(action: String) -> bool:
 		return true
 	match action:
 		"heal":
-			return flow.player.soul >= Player.HEAL_COST and flow.player.hp < Player.MAX_HP
+			return flow.player.ink >= Player.HEAL_COST and flow.player.hp < Player.MAX_HP
 		"swap":
 			return flow.player.weapons.size() > 1
 	return true
@@ -470,8 +470,8 @@ func _draw() -> void:
 				var progress: float = clampf(flow.player.heal_t / Player.HEAL_TIME, 0.0, 1.0)
 				draw_arc(c, radius - 6.0, -PI * 0.5, -PI * 0.5 + TAU * progress, 48, InkR.GOLD, 3.0, true)
 			else:
-				# Как счётчик фляг Dead Cells: видно, сколько души до лечения.
-				var charge: float = clampf(flow.player.soul / Player.HEAL_COST, 0.0, 1.0)
+				# Как счётчик фляг Dead Cells: видно, сколько чернил до лечения.
+				var charge: float = clampf(flow.player.ink / Player.HEAL_COST, 0.0, 1.0)
 				if charge > 0.0:
 					draw_arc(c, radius - 6.0, -PI * 0.5, -PI * 0.5 + TAU * charge, 48, Color(InkR.GOLD, 0.35 + 0.4 * dim), 2.0, true)
 
