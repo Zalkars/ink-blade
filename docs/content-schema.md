@@ -62,11 +62,15 @@ level.ch01_01
 
 Шаблоны сцен: наземный, летающий, турель, босс. Новые враги делаются дублированием шаблона.
 
+Необязательные поля `EntityStats` из 0.6: `poise`, `ink_reward`, `parryable_melee`, `parryable_projectile`, `armor`, `shield_arc`, `contact_damage`. Значения по умолчанию (`0`, `true`, `0.0`) сохраняют поведение старых карточек. `AIProfile.Kind` получает новые роли только в конец enum: `SHIELDER=5`, `DISRUPTOR=6`, `DUELIST=7`, `BURROWER=8`, `TANK=9`, `TRAP=10`; значения `CHASER=1`…`BOSS=4` не сдвигаются.
+
 ---
 
 ## 4. `PropDef` — пикапы
 
-Карточка `content/props/*.tres` задаёт `id`, `kind` (`pickup`), `scene`, `version`, `display_name_key` и `soul_amount`. `PDB` читает карточки из папки при работе с исходниками и из манифеста в экспорте. Новый экземпляр задаётся в `props` уровня как объект с `id`, `def_id`, `x`, `y`.
+Карточка `content/props/*.tres` задаёт `id`, `kind`, `scene`, `version`, `display_name_key`, `soul_amount`, `amount` и `payload`. `PDB` читает карточки из папки при работе с исходниками и из манифеста в экспорте. Новый экземпляр задаётся в `props` уровня как объект с `id`, `def_id`, `x`, `y`.
+
+`kind` остаётся строкой. Допустимые значения: `pickup` (старый осколок души), `heart_shard`, `ink_vessel`, `mark`, `name`, `weapon`, `key`. Для `mark`, `name`, `weapon` и `key` обязателен `payload` — ID пометки, имени, оружия или ключа. Для `pickup` проверяется `soul_amount` (1–99); у остальных видов поле игнорируется. `amount` задаёт количество и должен быть не меньше 1.
 
 `id` экземпляра уникален внутри `props` уровня. Сохранение запоминает его после подбора, поэтому при перемещении предмета сохраняйте тот же ID. `prop.soul_shard` добавляет до 10 души с пределом 99.
 
@@ -196,9 +200,22 @@ windup / active / cooldown: float
 reach: Vector2
 knockback: float
 hit_both_sides: bool
+heavy_damage: int
+heavy_windup / heavy_active / heavy_cooldown: float
+heavy_reach: Vector2
+heavy_ink_cost: int
+heavy_pierce: int
+heavy_marks: bool
+ranged: bool
+projectile_scene: PackedScene
+projectile_speed: float
+ink_cost: int
+pierce: int
 ink: Color
 swing_radius / swing_width: float
 ```
+
+Группа «Тяжёлый удар» и поля дальнего боя необязательны: их значения по умолчанию (`heavy_damage = 2`, `heavy_ink_cost = 25`, `ranged = false`, `ink_cost = 6`) сохраняют поведение клинка и кисти 0.5.2.
 
 `Player` при старте берёт все карточки из `WDB`, сортирует по `order` и применяет текущую к удару. Новое оружие = новый `.tres` в `content/weapons` и ключ имени в локализации; код игрока не меняется.
 
@@ -292,6 +309,7 @@ Godot --headless --path godot --script res://tools/validate_content.gd
 | `tools/build_manifest.gd` | генератор манифеста |
 | `scripts/content/weapon_def.gd` | `WeaponDef` — карточка оружия |
 | `scripts/content/weapon_database.gd` | автозагрузка `WDB` |
+| `scripts/systems/progression.gd` | автозагрузка `PGS`: способности, осколки, сосуды, пометки, имена |
 | `scripts/world/level.gd` | сцена уровня: тайлы, враги, чекпоинты |
 | `scripts/world/checkpoint.gd` | чекпоинт-метка |
 | `scripts/world/ink_tileset.gd` | `TileSet` из атласа, коллизии тайлов |

@@ -19,6 +19,7 @@ DB="*res://scripts/content/entity_database.gd"
 WDB="*res://scripts/content/weapon_database.gd"
 LVL="*res://scripts/content/level_database.gd"
 PDB="*res://scripts/content/prop_database.gd"
+PGS="*res://scripts/systems/progression.gd"
 
 [display]
 window/size/viewport_width=1280

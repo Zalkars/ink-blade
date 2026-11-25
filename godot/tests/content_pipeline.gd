@@ -9,6 +9,7 @@ func _ready() -> void:
 	SaveGame.use_storage("user://pipeline-tests/saves")
 	for slot in [SaveGame.AUTOSAVE, "slot_1", "slot_2"]:
 		SaveGame.erase_slot(slot)
+	_check_schema()
 	flow = preload("res://scenes/flow/game_flow.tscn").instantiate()
 	add_child(flow)
 	await _ticks(2)
@@ -97,6 +98,61 @@ func _ready() -> void:
 	print("CONTENT_PIPELINE: %d checks, %d failures" % [checks, failures])
 	print("CONTENT_PIPELINE_RESULT=" + ("OK" if failures == 0 else "FAIL"))
 	get_tree().quit(0 if failures == 0 else 1)
+
+
+## Поля 0.6.1: новые значения по умолчанию не меняют старые карточки,
+## enum не сдвигает записанные Kind, PGS стартует с базовыми числами 0.5.2.
+func _check_schema() -> void:
+	var stats := EntityStats.new()
+	_check(stats.poise == 0 and stats.ink_reward == 0 and stats.armor == 0 and is_zero_approx(stats.shield_arc)
+		and stats.parryable_melee and stats.parryable_projectile and stats.contact_damage,
+		"entity stats defaults keep old cards unchanged")
+	_check(AIProfile.Kind.CHASER == 1 and AIProfile.Kind.FLYER == 2 and AIProfile.Kind.TURRET == 3
+		and AIProfile.Kind.BOSS == 4 and AIProfile.Kind.SHIELDER == 5 and AIProfile.Kind.TRAP == 10,
+		"AI profile enum keeps stored values and appends new roles")
+	var weapon := WeaponDef.new()
+	_check(weapon.heavy_damage == 2 and is_equal_approx(weapon.heavy_windup, 0.10)
+		and is_equal_approx(weapon.heavy_active, 0.14) and is_equal_approx(weapon.heavy_cooldown, 0.22)
+		and weapon.heavy_reach == Vector2(80, 64) and weapon.heavy_ink_cost == 25
+		and weapon.heavy_pierce == 0 and not weapon.heavy_marks and not weapon.ranged
+		and weapon.projectile_scene == null and is_equal_approx(weapon.projectile_speed, 720.0)
+		and weapon.ink_cost == 6 and weapon.pierce == 1,
+		"weapon card gains heavy and ranged defaults")
+	var old_prop := PDB.get_def(&"prop.soul_shard")
+	_check(old_prop != null and old_prop.is_valid() and old_prop.kind == "pickup",
+		"legacy pickup card still validates")
+	if old_prop != null:
+		var mark_prop := old_prop.duplicate() as PropDef
+		mark_prop.kind = "mark"
+		mark_prop.payload = &"mark.blot"
+		_check(mark_prop.is_valid(), "mark prop accepts a payload")
+		mark_prop.payload = &""
+		_check(not mark_prop.is_valid(), "mark prop without payload is rejected")
+	PGS.reset()
+	_check(PGS.max_hp() == 5 and PGS.max_ink() == 100 and PGS.abilities.is_empty()
+		and not PGS.has_ability(&"ability.double_jump"), "PGS starts with base health and ink")
+	PGS.grant_ability(&"ability.double_jump")
+	PGS.grant_ability(&"ability.double_jump")
+	_check(PGS.abilities.size() == 1 and PGS.has_ability(&"ability.double_jump"),
+		"abilities are granted once")
+	PGS.shards = 9
+	PGS.vessels = 3
+	_check(PGS.max_hp() == 8 and PGS.max_ink() == 175, "shards and vessels raise caps to maximum")
+	PGS.marks_owned.assign([&"mark.blot", &"mark.seal", &"mark.clean", &"mark.press"])
+	_check(not PGS.equip_marks([&"mark.blot", &"mark.blot", &"mark.seal"]),
+		"duplicate marks are rejected")
+	_check(not PGS.equip_marks([&"mark.ghost"]), "unowned marks are rejected")
+	_check(not PGS.equip_marks([&"mark.blot", &"mark.seal", &"mark.clean", &"mark.press"]),
+		"a fourth mark is rejected")
+	_check(PGS.marks_equipped.is_empty(), "failed equip leaves the loadout unchanged")
+	_check(PGS.equip_marks([&"mark.blot", &"mark.seal"]), "two owned marks equip")
+	var snapshot := PGS.save_dict()
+	PGS.reset()
+	PGS.load_dict(snapshot)
+	_check(PGS.shards == 9 and PGS.vessels == 3 and PGS.has_ability(&"ability.double_jump")
+		and PGS.marks_equipped.size() == 2 and PGS.marks_equipped.has(&"mark.blot"),
+		"PGS state round-trips through save_dict")
+	PGS.reset()
 
 
 func _pickup() -> SoulPickup:
