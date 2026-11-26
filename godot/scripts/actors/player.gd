@@ -31,6 +31,7 @@ const DASH_IFRAMES := 0.19
 # Буфер нажатий атаки и рывка (как в Dead Cells): нажатие чуть раньше
 # окончания восстановления не теряется, особенно на сенсорном экране.
 const INPUT_BUFFER := 0.12
+const HEAVY_HOLD := 0.18
 
 const ATTACK_TIME := 0.18
 const ATTACK_COOLDOWN := 0.08
@@ -83,6 +84,7 @@ var _struck := false
 const HEAL_TIME := 0.8
 const HEAL_COST := 50.0
 const INK_HIT := 7.0
+const INK_HIT_HEAVY := 12.0
 const INK_KILL := 10.0
 const INK_PROJECTILE := 5.0
 const INK_DAMAGE := 20.0
@@ -98,6 +100,12 @@ var swing_windup := 0.05
 var swing_reach := Vector2(66, 58)
 var swing_damage := 1
 var swing_knock := 280.0
+var swing_heavy := false
+var heavy_hold := 0.0
+var heavy_ready := false
+var _attack_down := false
+var _attack_resolved := false
+var _queued_heavy := false
 var _hit_targets := {}
 var combo_time := 0.0
 var _dust_time := 0.0
@@ -202,6 +210,13 @@ func _equip(index: int) -> void:
 	attack_windup = 0.0
 	# Switching cancels the swing, but retains its recovery time.
 	_struck = false
+	swing_heavy = false
+	heavy_hold = 0.0
+	heavy_ready = false
+	_attack_down = false
+	_attack_resolved = false
+	_queued_heavy = false
+	attack_buf = 0.0
 	weapon_changed.emit(weapon_name())
 
 
@@ -418,16 +433,43 @@ func _try_dash() -> bool:
 
 func _handle_weapon_input(delta: float) -> void:
 	attack_buf = maxf(0.0, attack_buf - delta)
-	if CTL.pressed("attack"):
-		attack_buf = INPUT_BUFFER
-	if (attack_buf > 0.0 or (CTL.hold_attack and CTL.down("attack"))) and _try_attack():
+	if CTL.pressed("attack") and not _attack_down:
+		_attack_down = true
+		_attack_resolved = false
+		heavy_hold = 0.0
+		heavy_ready = false
+	if _attack_down:
+		if CTL.down("attack"):
+			heavy_hold += delta
+			if not heavy_ready and heavy_hold >= HEAVY_HOLD:
+				heavy_ready = true
+				if weapon != null and ink >= float(weapon.heavy_ink_cost):
+					InkFx.ring(global_position.x, global_position.y, 18, 38, weapon.ink, 0.18, 2)
+		else:
+			_attack_down = false
+			if not _attack_resolved:
+				var heavy := (heavy_hold >= HEAVY_HOLD and weapon != null
+					and ink >= float(weapon.heavy_ink_cost))
+				_queue_attack(heavy)
+			heavy_hold = 0.0
+			heavy_ready = false
+	if attack_buf > 0.0 and _try_attack(_queued_heavy):
 		attack_buf = 0.0
+		_queued_heavy = false
 	if CTL.pressed("swap"):
 		next_weapon()
 
 
-func _try_attack() -> bool:
+func _queue_attack(heavy: bool) -> void:
+	attack_buf = INPUT_BUFFER
+	_queued_heavy = heavy
+	_attack_resolved = true
+
+
+func _try_attack(heavy := false) -> bool:
 	if attack_cd > 0.0 or weapon == null or hurt_t > 0.0 or dash_t > 0.0 or dead:
+		return false
+	if heavy and ink < float(weapon.heavy_ink_cost):
 		return false
 	var par := get_parent()
 	if par is Level:
@@ -437,26 +479,42 @@ func _try_attack() -> bool:
 		fl.hitstop = 0.0
 	healing = false
 	heal_t = 0.0
-	attack_step = attack_step % 3 + 1 if combo_time > 0 else 1
-	combo_time = 0.55
+	heavy_hold = 0.0
+	heavy_ready = false
 	attack_dir = "up" if CTL.axis_y() < -0.45 else ("down" if CTL.axis_y() > 0.45 and not is_on_floor() else "fwd")
 	_hit_targets.clear()
 	attack_facing = facing
 	_struck = false
-	swing_windup = weapon.windup
-	swing_active = weapon.active
-	swing_recover = weapon.cooldown
-	swing_reach = weapon.reach
-	swing_damage = weapon.damage
-	swing_knock = weapon.knockback
-	if String(weapon.id) == "weapon.blade":
-		var profile: Array = BLADE_ATTACKS[attack_step]
-		swing_windup = profile[0]
-		swing_active = profile[1]
-		swing_recover = profile[2]
-		swing_reach = Vector2(profile[3], 58)
-		swing_damage = int(profile[4])
-		swing_knock = profile[5]
+	swing_heavy = heavy
+	if heavy:
+		# Тяжёлый удар не продолжает серию клинка: после него комбо
+		# начинается заново, а звук и росчерк берут самый широкий шаг.
+		attack_step = 3
+		combo_time = 0.0
+		ink = maxf(0.0, ink - float(weapon.heavy_ink_cost))
+		swing_windup = weapon.heavy_windup
+		swing_active = weapon.heavy_active
+		swing_recover = weapon.heavy_cooldown
+		swing_reach = weapon.heavy_reach
+		swing_damage = weapon.heavy_damage
+		swing_knock = weapon.knockback
+	else:
+		attack_step = attack_step % 3 + 1 if combo_time > 0 else 1
+		combo_time = 0.55
+		swing_windup = weapon.windup
+		swing_active = weapon.active
+		swing_recover = weapon.cooldown
+		swing_reach = weapon.reach
+		swing_damage = weapon.damage
+		swing_knock = weapon.knockback
+		if String(weapon.id) == "weapon.blade":
+			var profile: Array = BLADE_ATTACKS[attack_step]
+			swing_windup = profile[0]
+			swing_active = profile[1]
+			swing_recover = profile[2]
+			swing_reach = Vector2(profile[3], 58)
+			swing_damage = int(profile[4])
+			swing_knock = profile[5]
 	attack_windup = swing_windup
 	attack_total = swing_windup + swing_active
 	attack_t = attack_total
@@ -518,20 +576,22 @@ func _strike() -> void:
 			body.hit(maxi(hp_before, swing_damage) if lethal else swing_damage, attack_facing, swing_knock)
 			var hp_after := int(body.get("hp"))
 			if hp_after < hp_before:
-				_add_ink(INK_HIT)
+				_add_ink(INK_HIT_HEAVY if swing_heavy else INK_HIT)
 				if hp_after <= 0:
 					_add_ink(INK_KILL)
-				CombatFx.burst(self, body.global_position, Vector2(attack_facing, -0.35))
-				InkFx.add_shake(3.0)
-				InkFx.sparks(body.global_position.x, body.global_position.y, 0.0, 7, InkR.CREAM)
+				CombatFx.burst(self, body.global_position, Vector2(attack_facing, -0.35),
+					CombatFx.RED, 22 if swing_heavy else 12)
+				InkFx.add_shake(5.0 if swing_heavy else 3.0)
+				InkFx.sparks(body.global_position.x, body.global_position.y, 0.0,
+					11 if swing_heavy else 7, InkR.CREAM)
 				if fl != null:
 					fl.add_combo()
-					fl.freeze(0.075 if (swing_damage >= 2 or hp_after <= 0) else 0.055)
+					fl.freeze(0.075 if (swing_heavy or swing_damage >= 2 or hp_after <= 0) else 0.055)
 				if attack_dir == "down":
 					velocity.y = -660
 					air_dash = true
 					InkFx.ring(global_position.x, global_position.y + 23, 8, 44, InkR.RED)
-				SND.hit(swing_damage >= 3)
+				SND.hit(swing_heavy or swing_damage >= 3)
 	params.collision_mask = EnemyProjectile.ATTACK_LAYER
 	params.collide_with_areas = true
 	params.collide_with_bodies = false
@@ -566,6 +626,13 @@ func take_damage(amount: int, from_dir: float) -> void:
 	hurt_t = 0.28
 	attack_t = 0.0
 	attack_windup = 0.0
+	swing_heavy = false
+	heavy_hold = 0.0
+	heavy_ready = false
+	_attack_down = false
+	_attack_resolved = true
+	_queued_heavy = false
+	attack_buf = 0.0
 	dash_t = 0.0
 	healing = false
 	heal_t = 0.0
@@ -612,6 +679,12 @@ func respawn() -> void:
 	attack_t = 0.0
 	attack_cd = 0.0
 	attack_windup = 0.0
+	swing_heavy = false
+	heavy_hold = 0.0
+	heavy_ready = false
+	_attack_down = false
+	_attack_resolved = false
+	_queued_heavy = false
 	hurt_t = 0.0
 	attack_buf = 0.0
 	dash_buf = 0.0
@@ -720,5 +793,9 @@ func spawn_slash() -> void:
 		a0 = 0.35
 		a1 = PI - 0.35
 		origin = global_position + Vector2(0, 12)
-	InkFx.slash(origin.x, origin.y, a0, a1, maxf(54 + attack_step * 3, weapon.swing_radius), 20, 7, swing_active + 0.11, weapon.ink)
+	var radius := maxf(54 + attack_step * 3, weapon.swing_radius) + (12.0 if swing_heavy else 0.0)
+	InkFx.slash(origin.x, origin.y, a0, a1, radius, 27.0 if swing_heavy else 20.0,
+		10.0 if swing_heavy else 7.0, swing_active + 0.11, weapon.ink)
+	if swing_heavy:
+		InkFx.ring(origin.x, origin.y, 8, 82, weapon.ink, 0.24, 4)
 	InkFx.sparks(origin.x + cos(a1) * 34, origin.y + sin(a1) * 34, a1, 3, InkR.INK_SOFT)

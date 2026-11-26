@@ -116,6 +116,26 @@ func _ready() -> void:
 	flow.hud._ink_shown = flow.player.ink
 	check(flow.hud._ink_spill > 0.0, "damage leaves a visible ink drop on the HUD")
 	await shot("hud-spill")
+	flow.player.attack_cd = 0.0
+	flow.player.hurt_t = 0.0
+	flow.player.dash_t = 0.0
+	flow.player.ink = 100.0
+	flow.player.global_position = Vector2(300, 540)
+	flow.player.facing = 1
+	flow.player._process(0.016)
+	flow.player.queue_redraw()
+	check(flow.player._try_attack(true), "heavy attack starts for capture")
+	flow.player.attack_windup = 0.0
+	flow.player._strike()
+	flow.hud._ink_before = 100.0
+	flow.hud._ink_shown = 75.0
+	flow.hud.queue_redraw()
+	flow.level.queue_redraw()
+	check(flow.player.swing_heavy, "capture uses the heavy swing profile")
+	await shot("heavy-swing")
+	flow.player.attack_t = 0.0
+	flow.player.attack_cd = 0.0
+	flow.player.swing_heavy = false
 	flow.hud.set_process(true)
 	flow.player.hp = 3
 	flow.player.ink = 54

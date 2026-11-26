@@ -86,6 +86,8 @@ var touch_opacity := 0.8
 var swipe_dash := true
 var slide_buttons := true
 var touch_haptics := true
+## Устаревшая настройка 0.5: авто-повтор удара убран в 0.6.4.
+## Поле оставлено, чтобы старые settings.cfg открывались без ошибок.
 var hold_attack := true
 # Направление рывка, заданное свайпом; живёт ровно один кадр симуляции.
 var dash_hint := 0.0
@@ -621,8 +623,7 @@ func update(dt: float) -> void:
 			if _key_edges.has(int(key)):
 				edge[a] = true
 
-	# Удержание атаки = серия (hold_attack) обрабатывает Player: следующий
-	# удар выходит сразу по окончании восстановления, на любом устройстве.
+	# Удержание атаки готовит тяжёлый удар; авто-повтора больше нет.
 
 	for a in ["up", "down"]:
 		if edge[a]:
